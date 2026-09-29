@@ -100,7 +100,7 @@ function viewHome() {
       </a>
       <button class="btn primary" data-action="start" data-id="${r.id}" ${r.exercises.length ? '' : 'disabled'}>Empezar</button>
     </div>`).join('');
-  return `${header('SdeSdeL')}
+  return `${header('SdeSdel')}
     ${resume}
     ${routines || '<p class="empty">Aún no tienes rutinas. Crea la primera abajo.</p>'}
     <form class="add-row" data-form="new-routine">
