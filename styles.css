@@ -196,6 +196,9 @@ select { width: auto; }
 .tally { display: flex; gap: 8px; flex-shrink: 0; font-size: 14px; }
 .summary { display: grid; gap: 6px; }
 .summary .saved { color: var(--accent); font-size: 17px; }
+.legend { display: grid; gap: 2px; color: var(--muted); font-size: 14px; }
+.legend .mark { display: inline-block; width: 18px; text-align: center; }
+.sets { margin-top: 10px; }
 
 /* Aviso "Serie borrada · Deshacer" */
 .toast {

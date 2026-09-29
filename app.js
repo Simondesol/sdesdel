@@ -176,7 +176,7 @@ function viewHome() {
       </div>` : ''}
       <button class="btn primary" data-action="start" data-id="${r.id}" ${r.exercises.length ? '' : 'disabled'}>Empezar</button>
     </div>`).join('');
-  return `${header('SdeSdel')}
+  return `${header('SdeSdel', { sub: 'Entrena. Anota. Supera.' })}
     ${resume}
     ${routines || '<p class="empty">Aún no tienes rutinas. Crea la primera abajo.</p>'}
     <form class="add-row" data-form="new-routine">
@@ -222,10 +222,6 @@ function viewWorkout() {
   const before = beforeIndex(d);
 
   const blocks = d.exercises.map((ex, i) => {
-    const prev = lastFor(ex.exerciseId, before);
-    const prevText = prev
-      ? `Anterior (${fmtDate(prev.date)}): ${prev.ex.sets.map(s => `${fmtNum(s.w)}×${fmtNum(s.r)}`).join(' · ')} ${prev.ex.unit}`
-      : 'Primera vez';
     const best = bestSets(ex.exerciseId, before);
     const sets = ex.sets.map((s, j) => `
       <div class="set">
@@ -249,8 +245,8 @@ function viewWorkout() {
     return `<section class="card" data-ex="${i}">
       <div class="ex-head"><strong>${esc(ex.name)}</strong></div>
       ${noteHtml(ex.exerciseId, i)}
-      <p class="prev">${esc(prevText)}</p>
-      ${sets}
+      ${best.length ? '' : '<p class="prev">Primera vez</p>'}
+      <div class="sets">${sets}</div>
       <div class="ex-actions">
         <button class="btn ghost" data-action="add-set" data-i="${i}">+ serie</button>
         ${restBtn}
@@ -332,7 +328,11 @@ function viewSession(id) {
     <section class="card summary">
       ${justFinished === id ? '<strong class="saved">¡Entrenamiento guardado!</strong>' : ''}
       ${w.durationSec ? `<div>Duración total: <strong>${fmtDuration(w.durationSec)}</strong></div>` : ''}
-      <div class="muted">▲ superaste tu mejor marca · = la igualaste · ▼ quedaste bajo ella</div>
+      <div class="legend">
+        <div><span class="mark up">▲</span> Superaste tu récord</div>
+        <div><span class="mark eq">=</span> Igualaste tu récord</div>
+        <div><span class="mark down">▼</span> Quedaste por debajo de tu récord</div>
+      </div>
     </section>`;
 
   return `${header(w.routineName, { back: true, sub: fmtLongDate(w.date) })}
