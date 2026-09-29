@@ -10,6 +10,7 @@ let lastUnit = 'kg';
 const openHistory = new Set();   // ejercicios con el historial desplegado
 let editingNote = null;          // ejercicio cuya nota se está editando
 let editBuf = null;              // copia de un entrenamiento guardado que se está editando
+let justFinished = null;         // entrenamiento recién guardado (para mostrar el resumen)
 
 function load() {
   try {
@@ -51,6 +52,48 @@ function parseRest(text) {
   const n = Number(t);                       // sin ":" se toma como minutos (ej. "5" o "1.5")
   return Number.isFinite(n) && n >= 0 ? Math.round(n * 60) : null;
 }
+
+function fmtDuration(sec) {
+  if (sec < 60) return 'menos de 1 min';
+  const h = Math.floor(sec / 3600), m = Math.round((sec % 3600) / 60);
+  return h ? `${h} h ${m} min` : `${m} min`;
+}
+
+// ---------- Comparación de series ----------
+// Una serie es mejor si tiene más peso; con el mismo peso, si tiene más reps.
+// Las libras se pasan a kg para poder comparar ejercicios que cambiaron de unidad.
+const toKg = (w, unit) => (w == null ? 0 : unit === 'lb' ? w * 0.45359237 : w);
+function cmpSet(a, b) {
+  const dw = toKg(a.w, a.unit) - toKg(b.w, b.unit);
+  if (Math.abs(dw) > 0.01) return dw > 0 ? 1 : -1;
+  const dr = (a.r ?? 0) - (b.r ?? 0);
+  return dr === 0 ? 0 : dr > 0 ? 1 : -1;
+}
+
+// Mejor serie de cada posición (serie 1, serie 2...) en los entrenamientos anteriores a `before`
+function bestSets(exerciseId, before = db.workouts.length) {
+  const best = [];
+  for (let k = 0; k < before; k++) {
+    const ex = db.workouts[k].exercises.find(e => e.exerciseId === exerciseId);
+    if (!ex) continue;
+    ex.sets.forEach((s, j) => {
+      const c = { w: s.w, r: s.r, unit: ex.unit };
+      if (!best[j] || cmpSet(c, best[j]) > 0) best[j] = c;
+    });
+  }
+  return best;
+}
+
+// Compara lo que se está escribiendo con la mejor marca (null si no hay nada que comparar)
+function liveCmp(s, unit, best) {
+  if (!best) return null;
+  const w = num(s.w), r = num(s.r);
+  if (w == null && r == null) return null;
+  return cmpSet({ w, r, unit }, best);
+}
+
+const markSpan = c => (c == null ? '' :
+  `<span class="mark ${c > 0 ? 'up' : c < 0 ? 'down' : 'eq'}">${c > 0 ? '▲' : c < 0 ? '▼' : '='}</span>`);
 
 function header(title, { back = false, sub = '' } = {}) {
   return `<header class="bar">
@@ -109,6 +152,8 @@ const curRoutine = () => db.routines.find(r => r.id === routeParts()[1]);
 const isEditing = () => routeParts()[0] === 'editar';
 // Sesión con la que se trabaja: el entrenamiento en curso o la copia de uno guardado
 const cur = () => (isEditing() ? editBuf : db.draft);
+// Posición en el historial hasta donde se compara (al editar, solo con lo anterior a esa sesión)
+const beforeIndex = d => (d.editOf ? db.workouts.findIndex(w => w.id === d.editOf) : db.workouts.length);
 
 // ---------- Pantallas ----------
 function viewHome() {
@@ -118,12 +163,17 @@ function viewHome() {
       <div class="grow"><strong>Entrenamiento en curso</strong><span class="muted">${esc(d.routineName)}</span></div>
       <span class="chev">›</span>
     </a>` : '';
-  const routines = db.routines.map(r => `
+  const last = db.routines.length - 1;
+  const routines = db.routines.map((r, i) => `
     <div class="card routine">
       <a href="#/rutina/${r.id}">
         <strong>${esc(r.name) || '(sin nombre)'}</strong>
         <span class="muted">${plural(r.exercises.length, 'ejercicio')} · editar</span>
       </a>
+      ${last > 0 ? `<div class="order">
+        <button class="icon small" data-action="move-routine" data-i="${i}" data-d="-1" ${i === 0 ? 'disabled' : ''} aria-label="Subir rutina">↑</button>
+        <button class="icon small" data-action="move-routine" data-i="${i}" data-d="1" ${i === last ? 'disabled' : ''} aria-label="Bajar rutina">↓</button>
+      </div>` : ''}
       <button class="btn primary" data-action="start" data-id="${r.id}" ${r.exercises.length ? '' : 'disabled'}>Empezar</button>
     </div>`).join('');
   return `${header('SdeSdel')}
@@ -161,20 +211,22 @@ function viewRoutine() {
       ${unitSelect()}
       <button class="btn">Agregar</button>
     </form>
-    <button class="btn ghost block danger-text" data-action="del-routine" style="margin-top:32px">Eliminar rutina</button>`;
+    <button class="btn block" data-action="dup-routine" style="margin-top:32px">Duplicar rutina</button>
+    <button class="btn ghost block danger-text" data-action="del-routine">Eliminar rutina</button>`;
 }
 
 function viewWorkout() {
   const d = cur();
   if (!d) { location.replace(isEditing() ? '#/historial' : '#/'); return ''; }
   const editing = !!d.editOf;
-  const before = editing ? db.workouts.findIndex(w => w.id === d.editOf) : db.workouts.length;
+  const before = beforeIndex(d);
 
   const blocks = d.exercises.map((ex, i) => {
     const prev = lastFor(ex.exerciseId, before);
     const prevText = prev
       ? `Anterior (${fmtDate(prev.date)}): ${prev.ex.sets.map(s => `${fmtNum(s.w)}×${fmtNum(s.r)}`).join(' · ')} ${prev.ex.unit}`
       : 'Primera vez';
+    const best = bestSets(ex.exerciseId, before);
     const sets = ex.sets.map((s, j) => `
       <div class="set">
         <span class="n">${j + 1}</span>
@@ -182,8 +234,10 @@ function viewWorkout() {
         <span class="u">${ex.unit}</span>
         <span class="x">×</span>
         <input inputmode="numeric" data-bind="r" data-i="${i}" data-j="${j}" value="${esc(s.r)}" placeholder="reps" aria-label="Repeticiones serie ${j + 1}">
+        <span class="mark-cell" data-mark="${i}-${j}">${markSpan(liveCmp(s, ex.unit, best[j]))}</span>
         <button class="icon danger" data-action="del-set" data-i="${i}" data-j="${j}" aria-label="Borrar serie">✕</button>
-      </div>`).join('');
+      </div>
+      ${best[j] ? `<div class="set-ref">Mejor: ${fmtNum(best[j].w)} ${best[j].unit} × ${fmtNum(best[j].r)}</div>` : ''}`).join('');
     const open = openHistory.has(ex.exerciseId);
     const past = open ? historyFor(ex.exerciseId, d.editOf).map(({ w, ex: pex }) => `
       <div class="hist-item">
@@ -232,7 +286,7 @@ function viewHistory() {
     <a class="card" href="#/sesion/${w.id}">
       <div class="grow">
         <strong>${esc(w.routineName)}</strong>
-        <span class="muted">${fmtDate(w.date)} · ${plural(w.exercises.length, 'ejercicio')} · ${plural(setsCount(w), 'serie')}</span>
+        <span class="muted">${fmtDate(w.date)} · ${plural(w.exercises.length, 'ejercicio')} · ${plural(setsCount(w), 'serie')}${w.durationSec ? ` · ${fmtDuration(w.durationSec)}` : ''}</span>
       </div>
       <span class="chev">›</span>
     </a>`).join('');
@@ -247,14 +301,42 @@ function viewHistory() {
 }
 
 function viewSession(id) {
-  const w = db.workouts.find(x => x.id === id);
+  const k = db.workouts.findIndex(x => x.id === id);
+  const w = db.workouts[k];
   if (!w) { location.replace('#/historial'); return ''; }
-  const blocks = w.exercises.map(ex => `
-    <section class="card">
-      <a class="ex-link" href="#/ejercicio/${encodeURIComponent(ex.exerciseId)}">${esc(ex.name)} <span class="chev">›</span></a>
-      ${setsChips(ex)}
-    </section>`).join('');
+
+  // Cada serie comparada con la mejor serie de esa posición en los entrenamientos anteriores
+  const blocks = w.exercises.map(ex => {
+    const best = bestSets(ex.exerciseId, k);
+    const count = { up: 0, eq: 0, down: 0 };
+    const chips = ex.sets.map((s, j) => {
+      const c = best[j] ? cmpSet({ ...s, unit: ex.unit }, best[j]) : null;
+      if (c != null) count[c > 0 ? 'up' : c < 0 ? 'down' : 'eq']++;
+      return `<span>${fmtNum(s.w)} ${ex.unit} × ${fmtNum(s.r)} ${markSpan(c)}</span>`;
+    }).join('');
+    const tally = !best.length ? '<span class="muted">Primera vez</span>'
+      : [count.up && `<span class="mark up">${count.up} ▲</span>`,
+         count.eq && `<span class="mark eq">${count.eq} =</span>`,
+         count.down && `<span class="mark down">${count.down} ▼</span>`].filter(Boolean).join(' ')
+        || '<span class="muted">Sin series para comparar</span>';
+    return `<section class="card">
+      <div class="ex-link">
+        <a href="#/ejercicio/${encodeURIComponent(ex.exerciseId)}">${esc(ex.name)} <span class="chev">›</span></a>
+        <span class="tally">${tally}</span>
+      </div>
+      <div class="sets-list">${chips}</div>
+    </section>`;
+  }).join('');
+
+  const summary = `
+    <section class="card summary">
+      ${justFinished === id ? '<strong class="saved">¡Entrenamiento guardado!</strong>' : ''}
+      ${w.durationSec ? `<div>Duración total: <strong>${fmtDuration(w.durationSec)}</strong></div>` : ''}
+      <div class="muted">▲ superaste tu mejor marca · = la igualaste · ▼ quedaste bajo ella</div>
+    </section>`;
+
   return `${header(w.routineName, { back: true, sub: fmtLongDate(w.date) })}
+    ${summary}
     ${blocks}
     <a class="btn block center" href="#/editar/${w.id}">Editar entrenamiento</a>
     <button class="btn ghost block danger-text" data-action="del-session" data-id="${w.id}" style="margin-top:24px">Eliminar este entrenamiento</button>`;
@@ -277,6 +359,7 @@ function render() {
   const [screen, arg = ''] = routeParts();
   if (screen !== 'editar') editBuf = null;
   else if (!editBuf || editBuf.editOf !== arg) editBuf = makeEditBuf(arg);
+  if (screen !== 'sesion' || arg !== justFinished) justFinished = null;
 
   let html, tab = null;
   switch (screen) {
@@ -296,7 +379,31 @@ function render() {
 
 const go = hash => { location.hash = hash; };
 
-window.addEventListener('hashchange', () => { render(); window.scrollTo(0, 0); });
+window.addEventListener('hashchange', () => { hideToast(); render(); window.scrollTo(0, 0); });
+
+// ---------- Aviso con "Deshacer" ----------
+const $toast = document.createElement('div');
+$toast.className = 'toast';
+$toast.hidden = true;
+document.body.appendChild($toast);
+let undoFn = null, toastTimer = null;
+
+function showUndo(text, fn) {
+  undoFn = fn;
+  $toast.innerHTML = `<span>${esc(text)}</span><button class="btn ghost" data-undo>Deshacer</button>`;
+  $toast.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(hideToast, 5000);
+}
+function hideToast() {
+  $toast.hidden = true;
+  undoFn = null;
+  clearTimeout(toastTimer);
+}
+$toast.addEventListener('click', e => {
+  if (e.target.closest('[data-undo]') && undoFn) undoFn();
+  hideToast();
+});
 
 // ---------- Entrenamiento ----------
 function startWorkout(r) {
@@ -329,10 +436,13 @@ function finishWorkout() {
   const exercises = cleanExercises(d);
   if (!exercises.length) { alert('No hay series anotadas todavía.'); return; }
   setTimer(null);
-  db.workouts.push({ id: uid(), routineId: d.routineId, routineName: d.routineName, date: d.start, exercises });
+  const id = uid();
+  const durationSec = Math.max(0, Math.round((Date.now() - new Date(d.start).getTime()) / 1000));
+  db.workouts.push({ id, routineId: d.routineId, routineName: d.routineName, date: d.start, durationSec, exercises });
   db.draft = null;
   save();
-  location.replace('#/historial');
+  justFinished = id;
+  location.replace('#/sesion/' + id);
 }
 
 function makeEditBuf(id) {
@@ -376,7 +486,7 @@ function addExtraExercise(name, unit) {
   const found = findExercise(name);
   const id = found ? found.id : uid();
   if (d.exercises.some(e => e.exerciseId === id)) { alert(`"${name}" ya está en este entrenamiento.`); return; }
-  const before = d.editOf ? db.workouts.findIndex(w => w.id === d.editOf) : db.workouts.length;
+  const before = beforeIndex(d);
   d.exercises.push({
     exerciseId: id,
     name: found ? found.name : name,
@@ -518,6 +628,25 @@ $app.addEventListener('click', e => {
       save(); render();
       break;
     }
+    case 'move-routine': {
+      const list = db.routines, k = i + Number(el.dataset.d);
+      [list[i], list[k]] = [list[k], list[i]];
+      save(); render();
+      break;
+    }
+    case 'dup-routine': {
+      // La copia usa los mismos ejercicios, así comparten historial y mejores marcas
+      const r = curRoutine();
+      const copy = { id: uid(), name: `${r.name} (copia)`, exercises: r.exercises.map(ex => ({ ...ex })) };
+      db.routines.splice(db.routines.indexOf(r) + 1, 0, copy);
+      save();
+      location.replace('#/rutina/' + copy.id);
+      setTimeout(() => {
+        const input = $app.querySelector('[data-bind="routine-name"]');
+        if (input) { input.focus(); input.select(); }
+      }, 50);
+      break;
+    }
     case 'del-routine': {
       const r = curRoutine();
       if (!confirm(`¿Eliminar la rutina "${r.name}"? Tu historial se mantiene.`)) return;
@@ -531,10 +660,17 @@ $app.addEventListener('click', e => {
       cur().exercises[i].sets.push({ w: '', r: '' });
       save(); render();
       break;
-    case 'del-set':
-      cur().exercises[i].sets.splice(j, 1);
+    case 'del-set': {
+      const d = cur(), sets = d.exercises[i].sets;
+      const [removed] = sets.splice(j, 1);
       save(); render();
+      showUndo('Serie borrada', () => {
+        if (cur() !== d) return;               // ya no estás en ese entrenamiento
+        sets.splice(Math.min(j, sets.length), 0, removed);
+        save(); render();
+      });
       break;
+    }
     case 'toggle-history': {
       const exId = cur().exercises[i].exerciseId;
       if (!openHistory.delete(exId)) openHistory.add(exId);
@@ -594,7 +730,12 @@ $app.addEventListener('input', e => {
     const sec = parseRest(el.value);
     if (sec !== null) curRoutine().exercises[i].rest = sec;
   }
-  else if (bind === 'w' || bind === 'r') cur().exercises[i].sets[j][bind] = el.value;
+  else if (bind === 'w' || bind === 'r') {
+    const d = cur(), ex = d.exercises[i];
+    ex.sets[j][bind] = el.value;
+    const cell = $app.querySelector(`[data-mark="${i}-${j}"]`);
+    if (cell) cell.innerHTML = markSpan(liveCmp(ex.sets[j], ex.unit, bestSets(ex.exerciseId, beforeIndex(d))[j]));
+  }
   else if (bind === 'note') {
     const exId = cur().exercises[i].exerciseId, text = el.value.trim();
     if (text) db.notes[exId] = text; else delete db.notes[exId];

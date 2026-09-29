@@ -104,6 +104,8 @@ select { width: auto; }
 /* Home */
 .routine { display: flex; align-items: center; gap: 12px; }
 .routine a { flex: 1; min-width: 0; padding: 4px 0; }
+.routine .order { display: flex; gap: 4px; }
+.icon.small { width: 34px; min-width: 34px; min-height: 40px; font-size: 16px; }
 .resume { border-color: var(--accent); }
 .resume strong { color: var(--accent); }
 
@@ -120,10 +122,18 @@ select { width: auto; }
 .prev { margin: 4px 0 10px; color: var(--muted); font-size: 14px; }
 .set {
   display: grid;
-  grid-template-columns: 22px 1fr 22px 12px 1fr 40px;
+  grid-template-columns: 18px 1fr 20px 10px 1fr 20px 40px;
   gap: 6px; align-items: center;
   margin-bottom: 6px;
 }
+.set-ref { margin: -2px 0 8px 24px; font-size: 12px; color: var(--muted); }
+
+/* ▲ = ▼ comparado con la mejor marca */
+.mark-cell { text-align: center; }
+.mark { font-weight: 700; font-size: 14px; }
+.mark.up { color: var(--accent); }
+.mark.eq { color: var(--text); }
+.mark.down { color: var(--muted); }
 .set .n { color: var(--muted); font-size: 14px; text-align: center; }
 .set .u, .set .x { color: var(--muted); font-size: 14px; text-align: center; }
 .set input { text-align: center; padding: 0 6px; }
@@ -177,11 +187,30 @@ select { width: auto; }
 
 /* History */
 .sets-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-.sets-list span {
+.sets-list > span {
   background: var(--surface2); border-radius: 8px; padding: 4px 8px;
   font-size: 14px; font-variant-numeric: tabular-nums;
 }
-.ex-link { display: flex; justify-content: space-between; align-items: center; font-weight: 600; }
+.ex-link { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-weight: 600; }
+.ex-link a { min-width: 0; }
+.tally { display: flex; gap: 8px; flex-shrink: 0; font-size: 14px; }
+.summary { display: grid; gap: 6px; }
+.summary .saved { color: var(--accent); font-size: 17px; }
+
+/* Aviso "Serie borrada · Deshacer" */
+.toast {
+  position: fixed; left: 12px; right: 12px; z-index: 30;
+  bottom: calc(80px + env(safe-area-inset-bottom));
+  max-width: 536px; margin: 0 auto;
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 4px 4px 4px 16px;
+  background: var(--text); color: var(--bg);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .5);
+  font-weight: 600;
+}
+.toast[hidden] { display: none; }
+.toast .btn { color: #1c7a10; border: 0; }
 
 /* Bottom tabs */
 #tabs {
