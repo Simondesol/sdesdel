@@ -1,7 +1,7 @@
 // Guarda la app en el teléfono para que funcione sin internet.
 // Sirve la versión guardada al instante y la actualiza en segundo plano.
 // Al publicar cambios, subir el número de versión.
-const CACHE = 'sdesdel-v5';
+const CACHE = 'sdesdel-v6';
 const ASSETS = [
   './',
   './index.html',
@@ -11,6 +11,7 @@ const ASSETS = [
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/icon-maskable-512.png',
+  './icons/apple-touch-icon.png',
 ];
 
 self.addEventListener('install', e => {

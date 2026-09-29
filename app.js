@@ -156,7 +156,6 @@ function viewRoutine() {
     </label>
     <h2>Ejercicios</h2>
     <ul class="list ex-edit">${items || '<p class="empty">Agrega los ejercicios de esta rutina.</p>'}</ul>
-    <p class="muted hint">Rest = descanso entre series del mismo ejercicio (ej. 5:00 o 1:30).</p>
     <form class="add-row" data-form="new-ex">
       <input name="title" placeholder="Nombre del ejercicio" autocomplete="off" required>
       ${unitSelect()}
