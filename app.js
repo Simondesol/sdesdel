@@ -9,6 +9,7 @@ let db = load();
 let lastUnit = 'kg';
 const openHistory = new Set();   // ejercicios con el historial desplegado
 let editingNote = null;          // ejercicio cuya nota se está editando
+let editBuf = null;              // copia de un entrenamiento guardado que se está editando
 
 function load() {
   try {
@@ -38,6 +39,18 @@ const fmtDate = iso => new Date(iso).toLocaleDateString('es', { weekday: 'short'
 const fmtLongDate = iso => new Date(iso).toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 const plural = (n, one, many = one + 's') => `${n} ${n === 1 ? one : many}`;
 const setsCount = w => w.exercises.reduce((a, ex) => a + ex.sets.length, 0);
+const sameName = (a, b) => a.trim().toLowerCase() === b.trim().toLowerCase();
+
+// Descanso: se guarda en segundos y se muestra como m:ss
+const fmtRest = sec => `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+function parseRest(text) {
+  const t = text.trim().replace(',', '.');
+  if (t === '') return 0;
+  const m = t.match(/^(\d+):(\d{1,2})$/);
+  if (m) return +m[1] * 60 + +m[2];
+  const n = Number(t);                       // sin ":" se toma como minutos (ej. "5" o "1.5")
+  return Number.isFinite(n) && n >= 0 ? Math.round(n * 60) : null;
+}
 
 function header(title, { back = false, sub = '' } = {}) {
   return `<header class="bar">
@@ -46,9 +59,9 @@ function header(title, { back = false, sub = '' } = {}) {
   </header>`;
 }
 
-// Última vez que se hizo un ejercicio
-function lastFor(exerciseId) {
-  for (let i = db.workouts.length - 1; i >= 0; i--) {
+// Última vez que se hizo un ejercicio (antes de la posición `before` del historial)
+function lastFor(exerciseId, before = db.workouts.length) {
+  for (let i = before - 1; i >= 0; i--) {
     const w = db.workouts[i];
     const ex = w.exercises.find(e => e.exerciseId === exerciseId);
     if (ex) return { date: w.date, ex };
@@ -57,16 +70,26 @@ function lastFor(exerciseId) {
 }
 
 // Todas las veces que se hizo un ejercicio, de la más reciente a la más antigua
-function historyFor(exerciseId) {
+function historyFor(exerciseId, skipId = null) {
   const rows = [];
   for (const w of db.workouts) {
+    if (w.id === skipId) continue;
     const ex = w.exercises.find(e => e.exerciseId === exerciseId);
     if (ex) rows.push({ w, ex });
   }
   return rows.reverse();
 }
 
+const prefillSets = prev => (prev
+  ? prev.ex.sets.map(s => ({ w: toField(s.w), r: toField(s.r) }))
+  : [{ w: '', r: '' }]);
+
 const setsChips = ex => `<div class="sets-list">${ex.sets.map(s => `<span>${fmtNum(s.w)} ${ex.unit} × ${fmtNum(s.r)}</span>`).join('')}</div>`;
+
+const unitSelect = () => `<select name="unit" aria-label="Unidad">
+  <option ${lastUnit === 'kg' ? 'selected' : ''}>kg</option>
+  <option ${lastUnit === 'lb' ? 'selected' : ''}>lb</option>
+</select>`;
 
 function noteHtml(exerciseId, i) {
   const note = db.notes[exerciseId] || '';
@@ -83,6 +106,9 @@ function noteHtml(exerciseId, i) {
 
 const routeParts = () => location.hash.replace(/^#\/?/, '').split('/');
 const curRoutine = () => db.routines.find(r => r.id === routeParts()[1]);
+const isEditing = () => routeParts()[0] === 'editar';
+// Sesión con la que se trabaja: el entrenamiento en curso o la copia de uno guardado
+const cur = () => (isEditing() ? editBuf : db.draft);
 
 // ---------- Pantallas ----------
 function viewHome() {
@@ -119,6 +145,9 @@ function viewRoutine() {
       <button class="chip" data-action="toggle-unit" data-i="${i}" aria-label="Cambiar unidad">${ex.unit}</button>
       <button class="icon" data-action="move" data-i="${i}" data-d="-1" ${i === 0 ? 'disabled' : ''} aria-label="Subir">↑</button>
       <button class="icon" data-action="move" data-i="${i}" data-d="1" ${i === last ? 'disabled' : ''} aria-label="Bajar">↓</button>
+      <label class="rest-field">Rest
+        <input data-bind="ex-rest" data-i="${i}" value="${ex.rest ? fmtRest(ex.rest) : ''}" placeholder="m:ss" autocomplete="off" aria-label="Descanso entre series">
+      </label>
       <button class="icon danger" data-action="del-ex" data-i="${i}" aria-label="Quitar">✕</button>
     </li>`).join('');
   return `${header('Editar rutina', { back: true })}
@@ -127,22 +156,23 @@ function viewRoutine() {
     </label>
     <h2>Ejercicios</h2>
     <ul class="list ex-edit">${items || '<p class="empty">Agrega los ejercicios de esta rutina.</p>'}</ul>
+    <p class="muted hint">Rest = descanso entre series del mismo ejercicio (ej. 5:00 o 1:30).</p>
     <form class="add-row" data-form="new-ex">
       <input name="title" placeholder="Nombre del ejercicio" autocomplete="off" required>
-      <select name="unit" aria-label="Unidad">
-        <option ${lastUnit === 'kg' ? 'selected' : ''}>kg</option>
-        <option ${lastUnit === 'lb' ? 'selected' : ''}>lb</option>
-      </select>
+      ${unitSelect()}
       <button class="btn">Agregar</button>
     </form>
     <button class="btn ghost block danger-text" data-action="del-routine" style="margin-top:32px">Eliminar rutina</button>`;
 }
 
 function viewWorkout() {
-  const d = db.draft;
-  if (!d) { location.replace('#/'); return ''; }
+  const d = cur();
+  if (!d) { location.replace(isEditing() ? '#/historial' : '#/'); return ''; }
+  const editing = !!d.editOf;
+  const before = editing ? db.workouts.findIndex(w => w.id === d.editOf) : db.workouts.length;
+
   const blocks = d.exercises.map((ex, i) => {
-    const prev = lastFor(ex.exerciseId);
+    const prev = lastFor(ex.exerciseId, before);
     const prevText = prev
       ? `Anterior (${fmtDate(prev.date)}): ${prev.ex.sets.map(s => `${fmtNum(s.w)}×${fmtNum(s.r)}`).join(' · ')} ${prev.ex.unit}`
       : 'Primera vez';
@@ -156,29 +186,46 @@ function viewWorkout() {
         <button class="icon danger" data-action="del-set" data-i="${i}" data-j="${j}" aria-label="Borrar serie">✕</button>
       </div>`).join('');
     const open = openHistory.has(ex.exerciseId);
-    const past = open ? historyFor(ex.exerciseId).map(({ w, ex: pex }) => `
+    const past = open ? historyFor(ex.exerciseId, d.editOf).map(({ w, ex: pex }) => `
       <div class="hist-item">
         <div class="muted">${fmtDate(w.date)}</div>
         ${setsChips(pex)}
       </div>`).join('') || '<p class="muted">Aún no hay historial de este ejercicio.</p>' : '';
-    return `<section class="card">
+    const restBtn = !editing && ex.rest
+      ? `<button class="btn ghost" data-action="rest" data-i="${i}" data-rest="${i}">Rest ${fmtRest(ex.rest)}</button>` : '';
+    return `<section class="card" data-ex="${i}">
       <div class="ex-head"><strong>${esc(ex.name)}</strong></div>
       ${noteHtml(ex.exerciseId, i)}
       <p class="prev">${esc(prevText)}</p>
       ${sets}
       <div class="ex-actions">
         <button class="btn ghost" data-action="add-set" data-i="${i}">+ serie</button>
+        ${restBtn}
         <button class="btn ghost ${open ? 'on' : ''}" data-action="toggle-history" data-i="${i}">Historial ${open ? '▴' : '▾'}</button>
       </div>
       ${open ? `<div class="hist">${past}</div>` : ''}
     </section>`;
   }).join('');
-  return `${header(d.routineName, { back: true, sub: fmtLongDate(d.start) })}
+
+  const title = editing ? `Editar · ${d.routineName}` : d.routineName;
+  return `${header(title, { back: true, sub: fmtLongDate(d.start) })}
     ${blocks}
+    <form class="add-row" data-form="extra-ex">
+      <input name="title" placeholder="+ Ejercicio extra" autocomplete="off" required>
+      ${unitSelect()}
+      <button class="btn">Agregar</button>
+    </form>
     <div class="actions">
-      <button class="btn primary block" data-action="finish">Terminar y guardar</button>
-      <button class="btn ghost block danger-text" data-action="discard">Descartar entrenamiento</button>
-    </div>`;
+      ${editing
+        ? `<button class="btn primary block" data-action="save-edit">Guardar cambios</button>
+           <button class="btn ghost block" data-action="back">Cancelar</button>`
+        : `<button class="btn primary block" data-action="finish">Terminar y guardar</button>
+           <button class="btn ghost block danger-text" data-action="discard">Descartar entrenamiento</button>`}
+    </div>
+    ${editing ? '' : `<div id="restbar" class="restbar" hidden>
+      <span class="rb-text"></span>
+      <button class="icon" data-action="rest-stop" aria-label="Cerrar descanso">✕</button>
+    </div>`}`;
 }
 
 function viewHistory() {
@@ -190,7 +237,14 @@ function viewHistory() {
       </div>
       <span class="chev">›</span>
     </a>`).join('');
-  return `${header('Historial')}${list || '<p class="empty">Aún no hay entrenamientos guardados.</p>'}`;
+  return `${header('Historial')}
+    ${list || '<p class="empty">Aún no hay entrenamientos guardados.</p>'}
+    <h2>Respaldo</h2>
+    <p class="muted hint">Guarda un archivo con todas tus rutinas, notas e historial, o restaura uno anterior (por ejemplo, si cambias de celular).</p>
+    <div class="ex-actions">
+      <button class="btn" data-action="export">Exportar respaldo</button>
+      <label class="btn file-btn">Importar<input type="file" accept=".json,application/json" data-file="import" hidden></label>
+    </div>`;
 }
 
 function viewSession(id) {
@@ -203,6 +257,7 @@ function viewSession(id) {
     </section>`).join('');
   return `${header(w.routineName, { back: true, sub: fmtLongDate(w.date) })}
     ${blocks}
+    <a class="btn block center" href="#/editar/${w.id}">Editar entrenamiento</a>
     <button class="btn ghost block danger-text" data-action="del-session" data-id="${w.id}" style="margin-top:24px">Eliminar este entrenamiento</button>`;
 }
 
@@ -221,10 +276,14 @@ function viewExercise(id) {
 // ---------- Render / navegación ----------
 function render() {
   const [screen, arg = ''] = routeParts();
+  if (screen !== 'editar') editBuf = null;
+  else if (!editBuf || editBuf.editOf !== arg) editBuf = makeEditBuf(arg);
+
   let html, tab = null;
   switch (screen) {
     case 'rutina': html = viewRoutine(); break;
-    case 'entrenar': html = viewWorkout(); break;
+    case 'entrenar':
+    case 'editar': html = viewWorkout(); break;
     case 'historial': html = viewHistory(); tab = 'historial'; break;
     case 'sesion': html = viewSession(arg); break;
     case 'ejercicio': html = viewExercise(decodeURIComponent(arg)); break;
@@ -233,47 +292,192 @@ function render() {
   $app.innerHTML = html;
   $tabs.hidden = !tab;
   $tabs.querySelectorAll('a').forEach(a => a.classList.toggle('active', a.dataset.tab === tab));
+  paintTimer();
 }
 
 const go = hash => { location.hash = hash; };
 
 window.addEventListener('hashchange', () => { render(); window.scrollTo(0, 0); });
 
-// ---------- Acciones ----------
+// ---------- Entrenamiento ----------
 function startWorkout(r) {
   db.draft = {
     routineId: r.id,
     routineName: r.name,
     start: new Date().toISOString(),
-    exercises: r.exercises.map(ex => {
-      const prev = lastFor(ex.id);
-      const sets = prev
-        ? prev.ex.sets.map(s => ({ w: toField(s.w), r: toField(s.r) }))
-        : [{ w: '', r: '' }];
-      return { exerciseId: ex.id, name: ex.name, unit: ex.unit, sets };
-    }),
+    timer: null,
+    exercises: r.exercises.map(ex => ({
+      exerciseId: ex.id, name: ex.name, unit: ex.unit, rest: ex.rest || 0,
+      sets: prefillSets(lastFor(ex.id)),
+    })),
   };
   save();
   go('#/entrenar');
 }
 
+// Convierte las series escritas en números y quita las vacías
+const cleanExercises = d => d.exercises
+  .map(ex => ({
+    exerciseId: ex.exerciseId,
+    name: ex.name,
+    unit: ex.unit,
+    sets: ex.sets.map(s => ({ w: num(s.w), r: num(s.r) })).filter(s => s.w != null || s.r != null),
+  }))
+  .filter(ex => ex.sets.length);
+
 function finishWorkout() {
   const d = db.draft;
-  const exercises = d.exercises
-    .map(ex => ({
-      exerciseId: ex.exerciseId,
-      name: ex.name,
-      unit: ex.unit,
-      sets: ex.sets.map(s => ({ w: num(s.w), r: num(s.r) })).filter(s => s.w != null || s.r != null),
-    }))
-    .filter(ex => ex.sets.length);
+  const exercises = cleanExercises(d);
   if (!exercises.length) { alert('No hay series anotadas todavía.'); return; }
   db.workouts.push({ id: uid(), routineId: d.routineId, routineName: d.routineName, date: d.start, exercises });
   db.draft = null;
   save();
+  setTimer(null);
   location.replace('#/historial');
 }
 
+function makeEditBuf(id) {
+  const w = db.workouts.find(x => x.id === id);
+  if (!w) return null;
+  return {
+    editOf: w.id,
+    routineName: w.routineName,
+    start: w.date,
+    exercises: w.exercises.map(ex => ({
+      exerciseId: ex.exerciseId, name: ex.name, unit: ex.unit, rest: 0,
+      sets: ex.sets.map(s => ({ w: toField(s.w), r: toField(s.r) })),
+    })),
+  };
+}
+
+function saveEdit() {
+  const w = db.workouts.find(x => x.id === editBuf.editOf);
+  const exercises = cleanExercises(editBuf);
+  if (!exercises.length) { alert('El entrenamiento quedó sin series. Si quieres borrarlo, usa "Eliminar este entrenamiento".'); return; }
+  w.exercises = exercises;
+  save();
+  history.back();
+}
+
+// Busca un ejercicio que ya exista con ese nombre (en rutinas o historial) para mantener su historial
+function findExercise(name) {
+  for (const r of db.routines) {
+    const ex = r.exercises.find(e => sameName(e.name, name));
+    if (ex) return { id: ex.id, name: ex.name, unit: ex.unit, rest: ex.rest || 0 };
+  }
+  for (let i = db.workouts.length - 1; i >= 0; i--) {
+    const ex = db.workouts[i].exercises.find(e => sameName(e.name, name));
+    if (ex) return { id: ex.exerciseId, name: ex.name, unit: ex.unit, rest: 0 };
+  }
+  return null;
+}
+
+function addExtraExercise(name, unit) {
+  const d = cur();
+  const found = findExercise(name);
+  const id = found ? found.id : uid();
+  if (d.exercises.some(e => e.exerciseId === id)) { alert(`"${name}" ya está en este entrenamiento.`); return; }
+  const before = d.editOf ? db.workouts.findIndex(w => w.id === d.editOf) : db.workouts.length;
+  d.exercises.push({
+    exerciseId: id,
+    name: found ? found.name : name,
+    unit: found ? found.unit : unit,
+    rest: found ? found.rest : 0,
+    sets: prefillSets(lastFor(id, before)),
+  });
+  save(); render();
+  $app.querySelector(`[data-ex="${d.exercises.length - 1}"]`).scrollIntoView({ block: 'center' });
+}
+
+// ---------- Cronómetro de descanso ----------
+let wakeLock = null;
+async function keepScreenOn(on) {
+  try {
+    if (on && !wakeLock && 'wakeLock' in navigator && document.visibilityState === 'visible') {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => { wakeLock = null; });
+    } else if (!on && wakeLock) {
+      await wakeLock.release();
+      wakeLock = null;
+    }
+  } catch (e) { /* el navegador no lo permite; no pasa nada */ }
+}
+
+function setTimer(t) {
+  if (db.draft) { db.draft.timer = t; save(); }
+  keepScreenOn(!!t);
+  paintTimer();
+}
+
+// Actualiza solo los textos del cronómetro (sin redibujar la pantalla)
+function paintTimer() {
+  const d = db.draft;
+  const t = routeParts()[0] === 'entrenar' && d && d.timer ? d.timer : null;
+  const left = t ? Math.ceil((t.endsAt - Date.now()) / 1000) : 0;
+
+  $app.querySelectorAll('[data-rest]').forEach(b => {
+    const i = +b.dataset.rest;
+    const active = t && t.i === i;
+    b.classList.toggle('running', !!active && left > 0);
+    b.classList.toggle('done', !!active && left <= 0);
+    b.textContent = !active ? `Rest ${fmtRest(d.exercises[i].rest)}` : left > 0 ? `Rest ${fmtRest(left)}` : '¡A darle!';
+  });
+
+  const bar = document.getElementById('restbar');
+  if (!bar) return;
+  bar.hidden = !t;
+  if (!t) return;
+  const ex = d.exercises[t.i];
+  bar.classList.toggle('done', left <= 0);
+  bar.querySelector('.rb-text').textContent = left > 0
+    ? `Rest · ${ex ? ex.name : ''} · ${fmtRest(left)}`
+    : `¡A darle! · ${ex ? ex.name : ''}`;
+}
+
+setInterval(paintTimer, 500);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    paintTimer();
+    if (db.draft && db.draft.timer) keepScreenOn(true);
+  }
+});
+
+// ---------- Respaldo ----------
+function exportBackup() {
+  const payload = {
+    app: 'sdesdel',
+    exportedAt: new Date().toISOString(),
+    data: { routines: db.routines, workouts: db.workouts, notes: db.notes },
+  };
+  const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `sdesdel-respaldo-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+}
+
+async function importBackup(file) {
+  try {
+    const parsed = JSON.parse(await file.text());
+    const data = parsed.data || parsed;
+    if (!Array.isArray(data.routines) || !Array.isArray(data.workouts)) throw new Error('formato');
+    const msg = `Este respaldo tiene ${plural(data.routines.length, 'rutina')} y ${plural(data.workouts.length, 'entrenamiento')}.\n\n` +
+      'Va a REEMPLAZAR todo lo que tienes ahora en la app. ¿Continuar?';
+    if (!confirm(msg)) return;
+    db = { routines: data.routines, workouts: data.workouts, notes: data.notes || {}, draft: null };
+    save();
+    setTimer(null);
+    render();
+    alert('Respaldo restaurado.');
+  } catch (e) {
+    alert('No se pudo leer el archivo. Asegúrate de elegir un respaldo exportado desde SdeSdel.');
+  }
+}
+
+// ---------- Acciones ----------
 $app.addEventListener('click', e => {
   const el = e.target.closest('[data-action]');
   if (!el || el.disabled) return;
@@ -293,6 +497,7 @@ $app.addEventListener('click', e => {
       break;
     }
 
+    // Rutina
     case 'toggle-unit': {
       const ex = curRoutine().exercises[i];
       ex.unit = ex.unit === 'kg' ? 'lb' : 'kg';
@@ -320,41 +525,59 @@ $app.addEventListener('click', e => {
       break;
     }
 
+    // Entrenamiento (en curso o editando uno guardado)
     case 'add-set':
-      db.draft.exercises[i].sets.push({ w: '', r: '' });
+      cur().exercises[i].sets.push({ w: '', r: '' });
+      save(); render();
+      break;
+    case 'del-set':
+      cur().exercises[i].sets.splice(j, 1);
       save(); render();
       break;
     case 'toggle-history': {
-      const exId = db.draft.exercises[i].exerciseId;
+      const exId = cur().exercises[i].exerciseId;
       if (!openHistory.delete(exId)) openHistory.add(exId);
       render();
       break;
     }
     case 'edit-note': {
-      editingNote = db.draft.exercises[i].exerciseId;
+      editingNote = cur().exercises[i].exerciseId;
       redrawNote(i);
       const input = $app.querySelector(`[data-note="${i}"] input`);
       input.focus();
       input.setSelectionRange(input.value.length, input.value.length);
       break;
     }
-    case 'del-set':
-      db.draft.exercises[i].sets.splice(j, 1);
-      save(); render();
+    case 'rest': {
+      const t = db.draft.timer;
+      if (t && t.i === i) setTimer(null);    // tocar de nuevo lo detiene
+      else setTimer({ i, endsAt: Date.now() + db.draft.exercises[i].rest * 1000 });
+      break;
+    }
+    case 'rest-stop':
+      setTimer(null);
       break;
     case 'finish':
       finishWorkout();
       break;
     case 'discard':
       if (!confirm('¿Descartar este entrenamiento? No se guardará nada.')) return;
+      setTimer(null);
       db.draft = null;
       save(); location.replace('#/');
       break;
+    case 'save-edit':
+      saveEdit();
+      break;
 
+    // Historial
     case 'del-session':
       if (!confirm('¿Eliminar este entrenamiento del historial?')) return;
       db.workouts = db.workouts.filter(w => w.id !== id);
       save(); history.back();
+      break;
+    case 'export':
+      exportBackup();
       break;
   }
 });
@@ -366,28 +589,44 @@ $app.addEventListener('input', e => {
   const i = +el.dataset.i, j = +el.dataset.j;
   if (bind === 'routine-name') curRoutine().name = el.value;
   else if (bind === 'ex-name') curRoutine().exercises[i].name = el.value;
-  else if (bind === 'w' || bind === 'r') db.draft.exercises[i].sets[j][bind] = el.value;
+  else if (bind === 'ex-rest') {
+    const sec = parseRest(el.value);
+    if (sec !== null) curRoutine().exercises[i].rest = sec;
+  }
+  else if (bind === 'w' || bind === 'r') cur().exercises[i].sets[j][bind] = el.value;
   else if (bind === 'note') {
-    const exId = db.draft.exercises[i].exerciseId, text = el.value.trim();
+    const exId = cur().exercises[i].exerciseId, text = el.value.trim();
     if (text) db.notes[exId] = text; else delete db.notes[exId];
   }
   save();
 });
 
+$app.addEventListener('change', e => {
+  if (e.target.dataset.file === 'import' && e.target.files[0]) {
+    importBackup(e.target.files[0]);
+    e.target.value = '';
+  }
+});
+
 // Redibuja solo la nota (sin tocar el resto, para no perder el toque en otro botón)
 function redrawNote(i) {
   const wrap = $app.querySelector(`[data-note="${i}"]`);
-  if (wrap) wrap.outerHTML = noteHtml(db.draft.exercises[i].exerciseId, i);
+  if (wrap) wrap.outerHTML = noteHtml(cur().exercises[i].exerciseId, i);
 }
 
 $app.addEventListener('focusout', e => {
-  if (e.target.dataset.bind !== 'note' || editingNote === null) return;
-  editingNote = null;
-  redrawNote(+e.target.dataset.i);
+  const bind = e.target.dataset.bind;
+  if (bind === 'note' && editingNote !== null) {
+    editingNote = null;
+    redrawNote(+e.target.dataset.i);
+  } else if (bind === 'ex-rest') {
+    const ex = curRoutine() && curRoutine().exercises[+e.target.dataset.i];
+    if (ex) e.target.value = ex.rest ? fmtRest(ex.rest) : '';   // muestra el tiempo como m:ss
+  }
 });
 
 $app.addEventListener('keydown', e => {
-  if (e.key === 'Enter' && e.target.dataset.bind === 'note') e.target.blur();
+  if (e.key === 'Enter' && (e.target.dataset.bind === 'note' || e.target.dataset.bind === 'ex-rest')) e.target.blur();
 });
 
 $app.addEventListener('submit', e => {
@@ -402,14 +641,18 @@ $app.addEventListener('submit', e => {
     go('#/rutina/' + r.id);
   } else if (f.dataset.form === 'new-ex') {
     lastUnit = f.elements.unit.value;
-    curRoutine().exercises.push({ id: uid(), name: title, unit: lastUnit });
+    curRoutine().exercises.push({ id: uid(), name: title, unit: lastUnit, rest: 0 });
     save(); render();
     $app.querySelector('[data-form="new-ex"] input').focus();
+  } else if (f.dataset.form === 'extra-ex') {
+    lastUnit = f.elements.unit.value;
+    addExtraExercise(title, lastUnit);
   }
 });
 
 // ---------- Inicio ----------
 render();
+if (db.draft && db.draft.timer) keepScreenOn(true);
 
 if ('serviceWorker' in navigator) {
   // Si llega una versión nueva de la app, recarga una vez para mostrarla (los datos ya están guardados)
