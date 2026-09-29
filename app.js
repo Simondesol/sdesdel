@@ -329,10 +329,10 @@ function finishWorkout() {
   const d = db.draft;
   const exercises = cleanExercises(d);
   if (!exercises.length) { alert('No hay series anotadas todavía.'); return; }
+  setTimer(null);
   db.workouts.push({ id: uid(), routineId: d.routineId, routineName: d.routineName, date: d.start, exercises });
   db.draft = null;
   save();
-  setTimer(null);
   location.replace('#/historial');
 }
 
@@ -415,8 +415,10 @@ function paintTimer() {
   const t = routeParts()[0] === 'entrenar' && d && d.timer ? d.timer : null;
   const left = t ? Math.ceil((t.endsAt - Date.now()) / 1000) : 0;
 
+  if (!d) return;
   $app.querySelectorAll('[data-rest]').forEach(b => {
     const i = +b.dataset.rest;
+    if (!d.exercises[i]) return;
     const active = t && t.i === i;
     b.classList.toggle('running', !!active && left > 0);
     b.classList.toggle('done', !!active && left <= 0);
