@@ -1,6 +1,7 @@
 // Guarda la app en el teléfono para que funcione sin internet.
 // Sirve la versión guardada al instante y la actualiza en segundo plano.
-const CACHE = 'sdesdel-v1';
+// Al publicar cambios, subir el número de versión.
+const CACHE = 'sdesdel-v2';
 const ASSETS = [
   './',
   './index.html',
@@ -12,7 +13,7 @@ const ASSETS = [
 ];
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)));
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS.map(u => new Request(u, { cache: 'reload' })))));
   self.skipWaiting();
 });
 
@@ -28,7 +29,7 @@ self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET' || !e.request.url.startsWith(self.location.origin)) return;
   e.respondWith(caches.open(CACHE).then(async cache => {
     const cached = await cache.match(e.request, { ignoreSearch: true });
-    const fresh = fetch(e.request)
+    const fresh = fetch(e.request, { cache: 'no-cache' })
       .then(res => { if (res.ok) cache.put(e.request, res.clone()); return res; })
       .catch(() => cached);
     e.waitUntil(fresh.then(() => {}, () => {}));

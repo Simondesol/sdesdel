@@ -7,13 +7,18 @@ const $tabs = document.getElementById('tabs');
 
 let db = load();
 let lastUnit = 'kg';
+const openHistory = new Set();   // ejercicios con el historial desplegado
+let editingNote = null;          // ejercicio cuya nota se está editando
 
 function load() {
   try {
     const d = JSON.parse(localStorage.getItem(KEY));
-    if (d && Array.isArray(d.routines) && Array.isArray(d.workouts)) return d;
+    if (d && Array.isArray(d.routines) && Array.isArray(d.workouts)) {
+      d.notes = d.notes || {};   // agregado en v2: notas por ejercicio
+      return d;
+    }
   } catch (e) { /* datos corruptos o vacíos */ }
-  return { routines: [], workouts: [], draft: null };
+  return { routines: [], workouts: [], draft: null, notes: {} };
 }
 function save() { localStorage.setItem(KEY, JSON.stringify(db)); }
 
@@ -49,6 +54,31 @@ function lastFor(exerciseId) {
     if (ex) return { date: w.date, ex };
   }
   return null;
+}
+
+// Todas las veces que se hizo un ejercicio, de la más reciente a la más antigua
+function historyFor(exerciseId) {
+  const rows = [];
+  for (const w of db.workouts) {
+    const ex = w.exercises.find(e => e.exerciseId === exerciseId);
+    if (ex) rows.push({ w, ex });
+  }
+  return rows.reverse();
+}
+
+const setsChips = ex => `<div class="sets-list">${ex.sets.map(s => `<span>${fmtNum(s.w)} ${ex.unit} × ${fmtNum(s.r)}</span>`).join('')}</div>`;
+
+function noteHtml(exerciseId, i) {
+  const note = db.notes[exerciseId] || '';
+  let inner;
+  if (editingNote === exerciseId) {
+    inner = `<input class="note-input" data-bind="note" data-i="${i}" value="${esc(note)}" placeholder="Ej. altura asiento 7" enterkeyhint="done" autocomplete="off">`;
+  } else if (note) {
+    inner = `<button class="note" data-action="edit-note" data-i="${i}">${esc(note)}</button>`;
+  } else {
+    inner = `<button class="note add" data-action="edit-note" data-i="${i}">+ nota</button>`;
+  }
+  return `<div class="note-wrap" data-note="${i}">${inner}</div>`;
 }
 
 const routeParts = () => location.hash.replace(/^#\/?/, '').split('/');
@@ -125,11 +155,22 @@ function viewWorkout() {
         <input inputmode="numeric" data-bind="r" data-i="${i}" data-j="${j}" value="${esc(s.r)}" placeholder="reps" aria-label="Repeticiones serie ${j + 1}">
         <button class="icon danger" data-action="del-set" data-i="${i}" data-j="${j}" aria-label="Borrar serie">✕</button>
       </div>`).join('');
+    const open = openHistory.has(ex.exerciseId);
+    const past = open ? historyFor(ex.exerciseId).map(({ w, ex: pex }) => `
+      <div class="hist-item">
+        <div class="muted">${fmtDate(w.date)}</div>
+        ${setsChips(pex)}
+      </div>`).join('') || '<p class="muted">Aún no hay historial de este ejercicio.</p>' : '';
     return `<section class="card">
       <div class="ex-head"><strong>${esc(ex.name)}</strong></div>
+      ${noteHtml(ex.exerciseId, i)}
       <p class="prev">${esc(prevText)}</p>
       ${sets}
-      <button class="btn ghost" data-action="add-set" data-i="${i}">+ serie</button>
+      <div class="ex-actions">
+        <button class="btn ghost" data-action="add-set" data-i="${i}">+ serie</button>
+        <button class="btn ghost ${open ? 'on' : ''}" data-action="toggle-history" data-i="${i}">Historial ${open ? '▴' : '▾'}</button>
+      </div>
+      ${open ? `<div class="hist">${past}</div>` : ''}
     </section>`;
   }).join('');
   return `${header(d.routineName, { back: true, sub: fmtLongDate(d.start) })}
@@ -140,44 +181,16 @@ function viewWorkout() {
     </div>`;
 }
 
-function viewHistory(mode) {
-  const seg = `<div class="seg">
-    <button class="${mode === 'sesiones' ? 'on' : ''}" data-action="seg" data-to="#/historial">Sesiones</button>
-    <button class="${mode === 'ejercicios' ? 'on' : ''}" data-action="seg" data-to="#/historial/ejercicios">Ejercicios</button>
-  </div>`;
-  const empty = '<p class="empty">Aún no hay entrenamientos guardados.</p>';
-
-  if (mode === 'sesiones') {
-    const list = db.workouts.slice().reverse().map(w => `
-      <a class="card" href="#/sesion/${w.id}">
-        <div class="grow">
-          <strong>${esc(w.routineName)}</strong>
-          <span class="muted">${fmtDate(w.date)} · ${plural(w.exercises.length, 'ejercicio')} · ${plural(setsCount(w), 'serie')}</span>
-        </div>
-        <span class="chev">›</span>
-      </a>`).join('');
-    return `${header('Historial')}${seg}${list || empty}`;
-  }
-
-  const byId = new Map();
-  for (const w of db.workouts) {
-    for (const ex of w.exercises) {
-      const e = byId.get(ex.exerciseId) || { id: ex.exerciseId, count: 0 };
-      e.name = ex.name; e.date = w.date; e.count++;
-      byId.set(ex.exerciseId, e);
-    }
-  }
-  const list = [...byId.values()]
-    .sort((a, b) => a.name.localeCompare(b.name, 'es'))
-    .map(e => `
-      <a class="card" href="#/ejercicio/${encodeURIComponent(e.id)}">
-        <div class="grow">
-          <strong>${esc(e.name)}</strong>
-          <span class="muted">${plural(e.count, 'vez', 'veces')} · última: ${fmtDate(e.date)}</span>
-        </div>
-        <span class="chev">›</span>
-      </a>`).join('');
-  return `${header('Historial')}${seg}${list || empty}`;
+function viewHistory() {
+  const list = db.workouts.slice().reverse().map(w => `
+    <a class="card" href="#/sesion/${w.id}">
+      <div class="grow">
+        <strong>${esc(w.routineName)}</strong>
+        <span class="muted">${fmtDate(w.date)} · ${plural(w.exercises.length, 'ejercicio')} · ${plural(setsCount(w), 'serie')}</span>
+      </div>
+      <span class="chev">›</span>
+    </a>`).join('');
+  return `${header('Historial')}${list || '<p class="empty">Aún no hay entrenamientos guardados.</p>'}`;
 }
 
 function viewSession(id) {
@@ -186,7 +199,7 @@ function viewSession(id) {
   const blocks = w.exercises.map(ex => `
     <section class="card">
       <a class="ex-link" href="#/ejercicio/${encodeURIComponent(ex.exerciseId)}">${esc(ex.name)} <span class="chev">›</span></a>
-      <div class="sets-list">${ex.sets.map(s => `<span>${fmtNum(s.w)} ${ex.unit} × ${fmtNum(s.r)}</span>`).join('')}</div>
+      ${setsChips(ex)}
     </section>`).join('');
   return `${header(w.routineName, { back: true, sub: fmtLongDate(w.date) })}
     ${blocks}
@@ -194,17 +207,13 @@ function viewSession(id) {
 }
 
 function viewExercise(id) {
-  const rows = [];
-  for (const w of db.workouts) {
-    const ex = w.exercises.find(e => e.exerciseId === id);
-    if (ex) rows.push({ w, ex });
-  }
-  if (!rows.length) { location.replace('#/historial/ejercicios'); return ''; }
-  const name = rows[rows.length - 1].ex.name;
-  const blocks = rows.reverse().map(({ w, ex }) => `
+  const rows = historyFor(id);
+  if (!rows.length) { location.replace('#/historial'); return ''; }
+  const name = rows[0].ex.name;
+  const blocks = rows.map(({ w, ex }) => `
     <section class="card">
       <div class="ex-head"><strong>${fmtDate(w.date)}</strong><span class="muted">${esc(w.routineName)}</span></div>
-      <div class="sets-list">${ex.sets.map(s => `<span>${fmtNum(s.w)} ${ex.unit} × ${fmtNum(s.r)}</span>`).join('')}</div>
+      ${setsChips(ex)}
     </section>`).join('');
   return `${header(name, { back: true, sub: plural(rows.length, 'sesión', 'sesiones') })}${blocks}`;
 }
@@ -216,7 +225,7 @@ function render() {
   switch (screen) {
     case 'rutina': html = viewRoutine(); break;
     case 'entrenar': html = viewWorkout(); break;
-    case 'historial': html = viewHistory(arg === 'ejercicios' ? 'ejercicios' : 'sesiones'); tab = 'historial'; break;
+    case 'historial': html = viewHistory(); tab = 'historial'; break;
     case 'sesion': html = viewSession(arg); break;
     case 'ejercicio': html = viewExercise(decodeURIComponent(arg)); break;
     default: html = viewHome(); tab = 'rutinas';
@@ -311,11 +320,22 @@ $app.addEventListener('click', e => {
       break;
     }
 
-    case 'add-set': {
-      const sets = db.draft.exercises[i].sets;
-      const last = sets[sets.length - 1];
-      sets.push(last ? { ...last } : { w: '', r: '' });
+    case 'add-set':
+      db.draft.exercises[i].sets.push({ w: '', r: '' });
       save(); render();
+      break;
+    case 'toggle-history': {
+      const exId = db.draft.exercises[i].exerciseId;
+      if (!openHistory.delete(exId)) openHistory.add(exId);
+      render();
+      break;
+    }
+    case 'edit-note': {
+      editingNote = db.draft.exercises[i].exerciseId;
+      redrawNote(i);
+      const input = $app.querySelector(`[data-note="${i}"] input`);
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
       break;
     }
     case 'del-set':
@@ -331,9 +351,6 @@ $app.addEventListener('click', e => {
       save(); location.replace('#/');
       break;
 
-    case 'seg':
-      location.replace(el.dataset.to);
-      break;
     case 'del-session':
       if (!confirm('¿Eliminar este entrenamiento del historial?')) return;
       db.workouts = db.workouts.filter(w => w.id !== id);
@@ -350,7 +367,27 @@ $app.addEventListener('input', e => {
   if (bind === 'routine-name') curRoutine().name = el.value;
   else if (bind === 'ex-name') curRoutine().exercises[i].name = el.value;
   else if (bind === 'w' || bind === 'r') db.draft.exercises[i].sets[j][bind] = el.value;
+  else if (bind === 'note') {
+    const exId = db.draft.exercises[i].exerciseId, text = el.value.trim();
+    if (text) db.notes[exId] = text; else delete db.notes[exId];
+  }
   save();
+});
+
+// Redibuja solo la nota (sin tocar el resto, para no perder el toque en otro botón)
+function redrawNote(i) {
+  const wrap = $app.querySelector(`[data-note="${i}"]`);
+  if (wrap) wrap.outerHTML = noteHtml(db.draft.exercises[i].exerciseId, i);
+}
+
+$app.addEventListener('focusout', e => {
+  if (e.target.dataset.bind !== 'note' || editingNote === null) return;
+  editingNote = null;
+  redrawNote(+e.target.dataset.i);
+});
+
+$app.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && e.target.dataset.bind === 'note') e.target.blur();
 });
 
 $app.addEventListener('submit', e => {
@@ -374,6 +411,14 @@ $app.addEventListener('submit', e => {
 // ---------- Inicio ----------
 render();
 
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
+if ('serviceWorker' in navigator) {
+  // Si llega una versión nueva de la app, recarga una vez para mostrarla (los datos ya están guardados)
+  const hadController = !!navigator.serviceWorker.controller;
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (hadController && !reloaded) { reloaded = true; location.reload(); }
+  });
+  navigator.serviceWorker.register('sw.js');
+}
 // Pide al navegador que no borre los datos automáticamente
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist();

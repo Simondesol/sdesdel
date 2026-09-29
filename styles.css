@@ -126,15 +126,28 @@ select { width: auto; }
 .set .u, .set .x { color: var(--muted); font-size: 14px; text-align: center; }
 .set input { text-align: center; padding: 0 6px; }
 .actions { margin-top: 16px; }
+.ex-actions { display: flex; gap: 8px; }
+.btn.on { border-color: var(--accent); color: var(--accent); }
+
+/* Nota fija del ejercicio */
+.note-wrap { margin-top: 6px; }
+.note {
+  font: inherit; font-size: 14px; text-align: left;
+  color: var(--accent); background: none;
+  border: 0; border-left: 3px solid var(--accent);
+  padding: 4px 8px; cursor: pointer;
+}
+.note.add { color: var(--muted); border-left-color: var(--border); }
+.note-input { min-height: 38px; font-size: 15px; }
+
+/* Historial desplegado bajo el ejercicio */
+.hist { margin-top: 10px; border-top: 1px solid var(--border); padding-top: 4px; }
+.hist-item { padding: 8px 0; border-bottom: 1px solid var(--border); }
+.hist-item:last-child { border-bottom: 0; }
+.hist-item .sets-list { margin-top: 4px; }
+.hist p { margin: 8px 0; }
 
 /* History */
-.seg { display: flex; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 3px; margin-bottom: 12px; }
-.seg button {
-  flex: 1; font: inherit; font-weight: 600; color: var(--muted);
-  background: none; border: 0; border-radius: 8px; min-height: 38px; cursor: pointer;
-}
-.seg button.on { background: var(--surface2); color: var(--text); }
-
 .sets-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .sets-list span {
   background: var(--surface2); border-radius: 8px; padding: 4px 8px;
