@@ -8,6 +8,7 @@
   --accent: #5fe04b;
   --accent-ink: #06200a;
   --danger: #ff5d5d;
+  --chart: #43ad35;   /* línea del gráfico: verde del logo ajustado para leerse bien sobre fondo oscuro */
   --r: 14px;
   color-scheme: dark;
 }
@@ -115,6 +116,13 @@ select { width: auto; }
 .ex-edit li .danger { margin-left: auto; }
 .rest-field { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 14px; }
 .ex-edit li .rest-field input { flex: none; width: 72px; text-align: center; padding: 0 6px; }
+.ex-opts { flex: 1 1 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.chip.toggle { color: var(--muted); }
+.chip.toggle.on { color: var(--accent); border-color: var(--accent); }
+
+/* Serie con RIR: una columna más */
+.set.has-rir { grid-template-columns: 18px 1fr 20px 10px 1fr 44px 20px 40px; }
+.set input.rir { padding: 0 2px; font-size: 15px; }
 
 /* Workout */
 .ex-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -199,6 +207,37 @@ select { width: auto; }
 .legend { display: grid; gap: 2px; color: var(--muted); font-size: 14px; }
 .legend .mark { display: inline-block; width: 18px; text-align: center; }
 .sets { margin-top: 10px; }
+
+/* Progreso */
+.range { display: flex; gap: 4px; padding: 3px; margin-bottom: 12px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px; }
+.range button {
+  flex: 1; font: inherit; font-size: 14px; font-weight: 600; color: var(--muted);
+  background: none; border: 0; border-radius: 8px; min-height: 38px; cursor: pointer;
+}
+.range button.on { background: var(--surface2); color: var(--text); }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 10px; }
+.stat { display: grid; gap: 2px; padding: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); }
+.stat strong { font-size: 22px; font-variant-numeric: tabular-nums; }
+.stat .muted { font-size: 13px; }
+.chart-card { position: relative; padding: 8px 4px 4px; }
+.chart { display: block; width: 100%; height: auto; touch-action: pan-y; }
+.chart .grid { stroke: var(--border); stroke-width: 1; }
+.chart .axis { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.chart .value { fill: var(--text); font-size: 12px; font-weight: 700; }
+.chart .line { fill: none; stroke: var(--chart); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.chart .dot { fill: var(--chart); stroke: var(--surface); stroke-width: 2; }
+.chart .cross { stroke: var(--muted); stroke-width: 1; }
+.chart .hit { fill: transparent; cursor: crosshair; }
+.tip {
+  position: absolute; transform: translate(-50%, -100%); pointer-events: none;
+  display: grid; gap: 2px; padding: 6px 10px; white-space: nowrap;
+  background: var(--surface2); border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, .4); font-size: 13px;
+}
+.tip[hidden] { display: none; }
+.prog-row { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+.prog-row:last-child { border-bottom: 0; }
 
 /* Acceso: login, registro y pantallas de carga */
 .auth {

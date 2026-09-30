@@ -138,11 +138,14 @@ function historyFor(exerciseId, skipId = null) {
   return rows.reverse();
 }
 
-const prefillSets = prev => (prev
-  ? prev.ex.sets.map(s => ({ w: toField(s.w), r: toField(s.r) }))
-  : [{ w: '', r: '' }]);
+// Series prellenadas con la última vez (peso, reps y RIR si el ejercicio lo usa)
+const prefillSets = (prev, rir) => (prev
+  ? prev.ex.sets.map(s => ({ w: toField(s.w), r: toField(s.r), ...(rir ? { rir: toField(s.rir) } : {}) }))
+  : [{ w: '', r: '', ...(rir ? { rir: '' } : {}) }]);
 
-const setsChips = ex => `<div class="sets-list">${ex.sets.map(s => `<span>${fmtNum(s.w)} ${ex.unit} × ${fmtNum(s.r)}</span>`).join('')}</div>`;
+// Texto de una serie guardada: "40 kg × 10" o "40 kg × 10 · RIR 2"
+const setText = (s, unit) => `${fmtNum(s.w)} ${unit} × ${fmtNum(s.r)}${s.rir != null ? ` · RIR ${fmtNum(s.rir)}` : ''}`;
+const setsChips = ex => `<div class="sets-list">${ex.sets.map(s => `<span>${setText(s, ex.unit)}</span>`).join('')}</div>`;
 
 const unitSelect = () => `<select name="unit" aria-label="Unidad">
   <option ${lastUnit === 'kg' ? 'selected' : ''}>kg</option>
@@ -219,10 +222,13 @@ function viewRoutine() {
       <button class="chip" data-action="toggle-unit" data-i="${i}" aria-label="Cambiar unidad">${ex.unit}</button>
       <button class="icon" data-action="move" data-i="${i}" data-d="-1" ${i === 0 ? 'disabled' : ''} aria-label="Subir">↑</button>
       <button class="icon" data-action="move" data-i="${i}" data-d="1" ${i === last ? 'disabled' : ''} aria-label="Bajar">↓</button>
-      <label class="rest-field">Rest
-        <input data-bind="ex-rest" data-i="${i}" value="${ex.rest ? fmtRest(ex.rest) : ''}" placeholder="m:ss" autocomplete="off" aria-label="Descanso entre series">
-      </label>
       <button class="icon danger" data-action="del-ex" data-i="${i}" aria-label="Quitar">✕</button>
+      <div class="ex-opts">
+        <label class="rest-field">Rest
+          <input data-bind="ex-rest" data-i="${i}" value="${ex.rest ? fmtRest(ex.rest) : ''}" placeholder="m:ss" autocomplete="off" aria-label="Descanso entre series">
+        </label>
+        <button class="chip toggle ${ex.rir ? 'on' : ''}" data-action="toggle-rir" data-i="${i}" aria-pressed="${!!ex.rir}">RIR ${ex.rir ? '✓' : ''}</button>
+      </div>
     </li>`).join('');
   return `${header('Editar rutina', { back: true })}
     <label class="field"><span>Nombre de la rutina</span>
@@ -259,12 +265,13 @@ function viewWorkout() {
   const blocks = d.exercises.map((ex, i) => {
     const best = bestSets(ex.exerciseId, before);
     const sets = ex.sets.map((s, j) => `
-      <div class="set">
+      <div class="set ${ex.rir ? 'has-rir' : ''}">
         <span class="n">${j + 1}</span>
         <input inputmode="decimal" data-bind="w" data-i="${i}" data-j="${j}" value="${esc(s.w)}" placeholder="peso" aria-label="Peso serie ${j + 1}">
         <span class="u">${ex.unit}</span>
         <span class="x">×</span>
         <input inputmode="numeric" data-bind="r" data-i="${i}" data-j="${j}" value="${esc(s.r)}" placeholder="reps" aria-label="Repeticiones serie ${j + 1}">
+        ${ex.rir ? `<input class="rir" inputmode="numeric" data-bind="rir" data-i="${i}" data-j="${j}" value="${esc(s.rir ?? '')}" placeholder="RIR" aria-label="RIR serie ${j + 1}">` : ''}
         <span class="mark-cell" data-mark="${i}-${j}">${markSpan(liveCmp(s, ex.unit, best[j]))}</span>
         <button class="icon danger" data-action="del-set" data-i="${i}" data-j="${j}" aria-label="Borrar serie">✕</button>
       </div>
@@ -461,7 +468,7 @@ async function shareRoutine(btn) {
   const r = curRoutine();
   if (!r.exercises.length) { alert('Agrega ejercicios a la rutina antes de compartirla.'); return; }
   // Solo se comparten los ejercicios: sin pesos, historial ni notas
-  const routine = { name: r.name, exercises: r.exercises.map(ex => ({ name: ex.name, unit: ex.unit, rest: ex.rest || 0 })) };
+  const routine = { name: r.name, exercises: r.exercises.map(ex => ({ name: ex.name, unit: ex.unit, rest: ex.rest || 0, rir: !!ex.rir })) };
   await busy(btn, 'Generando código…', async () => {
     for (let attempt = 0; attempt < 3; attempt++) {
       const code = newCode();
@@ -518,7 +525,7 @@ async function importByCode(code, showError) {
       const found = findExercise(ex.name);
       const mine = found && !used.has(found.id) ? found : null;
       if (mine) used.add(mine.id);
-      return { id: mine ? mine.id : uid(), name: mine ? mine.name : ex.name, unit: mine ? mine.unit : ex.unit, rest: ex.rest || 0 };
+      return { id: mine ? mine.id : uid(), name: mine ? mine.name : ex.name, unit: mine ? mine.unit : ex.unit, rest: ex.rest || 0, rir: !!ex.rir };
     }),
   };
   db.routines.push(routine);
@@ -555,7 +562,7 @@ function viewSession(id) {
     const chips = ex.sets.map((s, j) => {
       const c = best[j] ? cmpSet({ ...s, unit: ex.unit }, best[j]) : null;
       if (c != null) count[c > 0 ? 'up' : c < 0 ? 'down' : 'eq']++;
-      return `<span>${fmtNum(s.w)} ${ex.unit} × ${fmtNum(s.r)} ${markSpan(c)}</span>`;
+      return `<span>${setText(s, ex.unit)} ${markSpan(c)}</span>`;
     }).join('');
     const tally = !best.length ? '<span class="muted">Primera vez</span>'
       : [count.up && `<span class="mark up">${count.up} ▲</span>`,
@@ -589,6 +596,164 @@ function viewSession(id) {
     <button class="btn ghost block danger-text" data-action="del-session" data-id="${w.id}" style="margin-top:24px">Eliminar este entrenamiento</button>`;
 }
 
+// ---------- Progreso ----------
+const RANGES = [['semana', 'Semana', 7], ['mes', 'Mes', 30], ['3m', '3 meses', 91], ['6m', '6 meses', 182]];
+let progressRange = '3m';
+let chart = null;   // puntos del gráfico en pantalla (para el tooltip)
+
+const convertWeight = (w, from, to) => (from === to ? w : from === 'lb' ? w * 0.45359237 : w / 0.45359237);
+const round1 = n => Math.round(n * 10) / 10;
+
+// Un punto por sesión: la mejor serie del día (más peso; con igual peso, más reps)
+function progressPoints(exerciseId, days) {
+  const rows = historyFor(exerciseId).reverse();          // de la más antigua a la más reciente
+  if (!rows.length) return { unit: 'kg', points: [] };
+  const unit = rows[rows.length - 1].ex.unit;
+  const since = Date.now() - days * 86400000;
+  const points = [];
+  for (const { w, ex } of rows) {
+    const t = Date.parse(w.date);
+    if (t < since) continue;
+    let best = null;
+    for (const s of ex.sets) {
+      if (s.w == null) continue;
+      const c = { w: s.w, r: s.r, rir: s.rir, unit: ex.unit };
+      if (!best || cmpSet(c, best) > 0) best = c;
+    }
+    if (best) points.push({ t, date: w.date, y: round1(convertWeight(best.w, best.unit, unit)), set: best });
+  }
+  return { unit, points };
+}
+
+// Marcas del eje con números redondos (ej. 90, 100, 110)
+function niceTicks(lo, hi) {
+  if (hi === lo) { lo -= 5; hi += 5; }
+  const raw = (hi - lo) / 3;
+  const mag = 10 ** Math.floor(Math.log10(raw));
+  const step = [1, 2, 2.5, 5, 10].map(m => m * mag).find(s => s >= raw);
+  const ticks = [];
+  for (let v = Math.floor(lo / step) * step; v <= Math.ceil(hi / step) * step + step / 2; v += step) ticks.push(round1(v));
+  return ticks;
+}
+
+function chartSvg(points, unit, days) {
+  const W = 340, H = 200, L = 38, R = 14, T = 20, B = 26;
+  const t1 = Date.now(), t0 = t1 - days * 86400000;
+  const ticks = niceTicks(Math.min(...points.map(p => p.y)), Math.max(...points.map(p => p.y)));
+  const y0 = ticks[0], y1 = ticks[ticks.length - 1];
+  const x = t => L + ((t - t0) / (t1 - t0)) * (W - L - R);
+  const y = v => H - B - ((v - y0) / (y1 - y0)) * (H - T - B);
+  const dateLabel = t => new Date(t).toLocaleDateString('es', days <= 7 ? { weekday: 'short', day: 'numeric' } : { day: 'numeric', month: 'short' });
+  chart = { points: points.map(p => ({ ...p, x: x(p.t), yPx: y(p.y) })), unit, W, H, T, B };
+
+  const grid = ticks.map(v => `
+    <line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" class="grid"/>
+    <text x="${L - 6}" y="${y(v) + 4}" text-anchor="end" class="axis">${fmtNum(v)}</text>`).join('');
+  const xLabels = [t0, (t0 + t1) / 2, t1].map((t, k) =>
+    `<text x="${x(t)}" y="${H - 6}" text-anchor="${['start', 'middle', 'end'][k]}" class="axis">${dateLabel(t)}</text>`).join('');
+  const line = chart.points.length > 1
+    ? `<polyline class="line" points="${chart.points.map(p => `${p.x},${p.yPx}`).join(' ')}"/>` : '';
+  const dots = chart.points.map((p, k) => `<circle class="dot" data-k="${k}" cx="${p.x}" cy="${p.yPx}" r="4"/>`).join('');
+  const last = chart.points[chart.points.length - 1];
+  const lastLabel = `<text x="${Math.min(last.x, W - R)}" y="${last.yPx - 10}" text-anchor="${last.x > W - 50 ? 'end' : 'middle'}" class="value">${fmtNum(last.y)} ${unit}</text>`;
+
+  return `<svg viewBox="0 0 ${W} ${H}" class="chart" role="img" aria-label="Peso máximo por sesión">
+    ${grid}${xLabels}
+    <line class="cross" x1="0" x2="0" y1="${T}" y2="${H - B}" visibility="hidden"/>
+    ${line}${dots}${lastLabel}
+    <rect class="hit" x="${L}" y="0" width="${W - L - R}" height="${H}"/>
+  </svg>`;
+}
+
+function viewProgress() {
+  // Ejercicios que tienen historial, del entrenado más recientemente al más antiguo
+  const byId = new Map();
+  for (const w of db.workouts) {
+    for (const ex of w.exercises) {
+      const e = byId.get(ex.exerciseId) || { id: ex.exerciseId, count: 0 };
+      e.name = ex.name; e.date = w.date; e.count++;
+      byId.set(ex.exerciseId, e);
+    }
+  }
+  const list = [...byId.values()].sort((a, b) => (a.date < b.date ? 1 : -1)).map(e => `
+    <a class="card" href="#/progreso/${encodeURIComponent(e.id)}">
+      <div class="grow">
+        <strong>${esc(e.name)}</strong>
+        <span class="muted">${plural(e.count, 'sesión', 'sesiones')} · última: ${fmtDate(e.date)}</span>
+      </div>
+      <span class="chev">›</span>
+    </a>`).join('');
+  return `${header('Progreso', { sub: 'Elige un ejercicio para ver su gráfico' })}
+    ${list || '<p class="empty">Cuando guardes entrenamientos, aquí verás tu progreso en cada ejercicio.</p>'}`;
+}
+
+function viewProgressExercise(id) {
+  const rows = historyFor(id);
+  if (!rows.length) { location.replace('#/progreso'); return ''; }
+  const name = rows[0].ex.name;
+  const days = RANGES.find(r => r[0] === progressRange)[2];
+  const { unit, points } = progressPoints(id, days);
+  chart = null;
+
+  const range = `<div class="range" role="group" aria-label="Período">${RANGES.map(([key, label]) =>
+    `<button class="${key === progressRange ? 'on' : ''}" data-action="range" data-r="${key}">${label}</button>`).join('')}</div>`;
+
+  if (!points.length) {
+    return `${header(name, { back: true, sub: 'Peso máximo por sesión' })}${range}
+      <p class="empty">No entrenaste este ejercicio en este período${rows.some(r => r.ex.sets.some(s => s.w != null)) ? '' : ' (o no tiene peso anotado)'}.</p>`;
+  }
+
+  const max = points.reduce((a, p) => (p.y > a.y ? p : a));
+  const first = points[0], last = points[points.length - 1];
+  const diff = round1(last.y - first.y);
+  const stats = `<div class="stats">
+    <div class="stat"><span class="muted">Máximo del período</span><strong>${fmtNum(max.y)} ${unit}</strong><span class="muted">${fmtDate(max.date)}</span></div>
+    ${points.length > 1 ? `<div class="stat"><span class="muted">Cambio</span><strong>${diff > 0 ? '+' : ''}${fmtNum(diff)} ${unit}</strong><span class="muted">desde ${fmtDate(first.date)}</span></div>` : ''}
+  </div>`;
+
+  const table = points.slice().reverse().map(p => `
+    <div class="prog-row"><span class="muted">${fmtDate(p.date)}</span><span>${setText(p.set, p.set.unit)}</span></div>`).join('');
+
+  return `${header(name, { back: true, sub: 'Peso máximo por sesión' })}
+    ${range}
+    ${stats}
+    <section class="card chart-card">
+      ${chartSvg(points, unit, days)}
+      <div class="tip" hidden></div>
+    </section>
+    <h2>Sesiones</h2>
+    <section class="card">${table}</section>`;
+}
+
+// Tooltip: al pasar o tocar el gráfico se marca la sesión más cercana
+function showChartTip(e) {
+  const svg = e.target.closest('svg.chart');
+  if (!svg || !chart) return;
+  const box = svg.getBoundingClientRect();
+  const px = ((e.clientX - box.left) / box.width) * chart.W;
+  const k = chart.points.reduce((best, p, i) => (Math.abs(p.x - px) < Math.abs(chart.points[best].x - px) ? i : best), 0);
+  const p = chart.points[k];
+  const cross = svg.querySelector('.cross');
+  cross.setAttribute('x1', p.x); cross.setAttribute('x2', p.x); cross.setAttribute('visibility', 'visible');
+  svg.querySelectorAll('.dot').forEach(d => d.setAttribute('r', +d.dataset.k === k ? 6 : 4));
+  const tip = svg.parentElement.querySelector('.tip');
+  tip.innerHTML = `<span class="muted">${fmtDate(p.date)}</span><strong>${setText(p.set, p.set.unit)}</strong>`;
+  tip.hidden = false;
+  const left = (p.x / chart.W) * box.width, half = tip.offsetWidth / 2;
+  tip.style.left = `${Math.min(Math.max(left, half + 4), box.width - half - 4)}px`;
+  tip.style.top = `${(p.yPx / chart.H) * box.height - 12}px`;
+}
+$app.addEventListener('pointermove', e => { if (e.target.closest('svg.chart')) showChartTip(e); });
+$app.addEventListener('pointerdown', e => { if (e.target.closest('svg.chart')) showChartTip(e); });
+$app.addEventListener('pointerleave', e => {
+  if (e.pointerType !== 'mouse') return;
+  const svg = $app.querySelector('svg.chart');
+  if (!svg) return;
+  svg.querySelector('.cross').setAttribute('visibility', 'hidden');
+  svg.querySelectorAll('.dot').forEach(d => d.setAttribute('r', 4));
+  svg.parentElement.querySelector('.tip').hidden = true;
+}, true);
+
 function viewExercise(id) {
   const rows = historyFor(id);
   if (!rows.length) { location.replace('#/historial'); return ''; }
@@ -598,7 +763,9 @@ function viewExercise(id) {
       <div class="ex-head"><strong>${fmtDate(w.date)}</strong><span class="muted">${esc(w.routineName)}</span></div>
       ${setsChips(ex)}
     </section>`).join('');
-  return `${header(name, { back: true, sub: plural(rows.length, 'sesión', 'sesiones') })}${blocks}`;
+  return `${header(name, { back: true, sub: plural(rows.length, 'sesión', 'sesiones') })}
+    <a class="btn block center" href="#/progreso/${encodeURIComponent(id)}" style="margin:0 0 12px">📈 Ver gráfico de progreso</a>
+    ${blocks}`;
 }
 
 // ---------- Render / navegación ----------
@@ -625,6 +792,10 @@ function render() {
     case 'entrenar':
     case 'editar': html = viewWorkout(); break;
     case 'historial': html = viewHistory(); tab = 'historial'; break;
+    case 'progreso':
+      html = arg ? viewProgressExercise(decodeURIComponent(arg)) : viewProgress();
+      tab = arg ? null : 'progreso';
+      break;
     case 'sesion': html = viewSession(arg); break;
     case 'ejercicio': html = viewExercise(decodeURIComponent(arg)); break;
     case 'cuenta': html = viewAccount(); tab = 'cuenta'; break;
@@ -672,8 +843,8 @@ function startWorkout(r) {
     start: new Date().toISOString(),
     timer: null,
     exercises: r.exercises.map(ex => ({
-      exerciseId: ex.id, name: ex.name, unit: ex.unit, rest: ex.rest || 0,
-      sets: prefillSets(lastFor(ex.id)),
+      exerciseId: ex.id, name: ex.name, unit: ex.unit, rest: ex.rest || 0, rir: !!ex.rir,
+      sets: prefillSets(lastFor(ex.id), ex.rir),
     })),
   };
   save();
@@ -686,7 +857,10 @@ const cleanExercises = d => d.exercises
     exerciseId: ex.exerciseId,
     name: ex.name,
     unit: ex.unit,
-    sets: ex.sets.map(s => ({ w: num(s.w), r: num(s.r) })).filter(s => s.w != null || s.r != null),
+    ...(ex.rir ? { rir: true } : {}),
+    sets: ex.sets
+      .map(s => { const set = { w: num(s.w), r: num(s.r) }; const rir = num(s.rir); if (ex.rir && rir != null) set.rir = rir; return set; })
+      .filter(s => s.w != null || s.r != null),
   }))
   .filter(ex => ex.sets.length);
 
@@ -713,7 +887,8 @@ function makeEditBuf(id) {
     start: w.date,
     exercises: w.exercises.map(ex => ({
       exerciseId: ex.exerciseId, name: ex.name, unit: ex.unit, rest: 0,
-      sets: ex.sets.map(s => ({ w: toField(s.w), r: toField(s.r) })),
+      rir: !!ex.rir,
+      sets: ex.sets.map(s => ({ w: toField(s.w), r: toField(s.r), ...(ex.rir ? { rir: toField(s.rir) } : {}) })),
     })),
   };
 }
@@ -731,11 +906,11 @@ function saveEdit() {
 function findExercise(name) {
   for (const r of db.routines) {
     const ex = r.exercises.find(e => sameName(e.name, name));
-    if (ex) return { id: ex.id, name: ex.name, unit: ex.unit, rest: ex.rest || 0 };
+    if (ex) return { id: ex.id, name: ex.name, unit: ex.unit, rest: ex.rest || 0, rir: !!ex.rir };
   }
   for (let i = db.workouts.length - 1; i >= 0; i--) {
     const ex = db.workouts[i].exercises.find(e => sameName(e.name, name));
-    if (ex) return { id: ex.exerciseId, name: ex.name, unit: ex.unit, rest: 0 };
+    if (ex) return { id: ex.exerciseId, name: ex.name, unit: ex.unit, rest: 0, rir: !!ex.rir };
   }
   return null;
 }
@@ -751,7 +926,8 @@ function addExtraExercise(name, unit) {
     name: found ? found.name : name,
     unit: found ? found.unit : unit,
     rest: found ? found.rest : 0,
-    sets: prefillSets(lastFor(id, before)),
+    rir: found ? found.rir : false,
+    sets: prefillSets(lastFor(id, before), found && found.rir),
   });
   save(); render();
   $app.querySelector(`[data-ex="${d.exercises.length - 1}"]`).scrollIntoView({ block: 'center' });
@@ -1071,6 +1247,16 @@ $app.addEventListener('click', e => {
     }
 
     // Rutina
+    case 'range':
+      progressRange = el.dataset.r;
+      render();
+      break;
+    case 'toggle-rir': {
+      const ex = curRoutine().exercises[i];
+      ex.rir = !ex.rir;
+      save(); render();
+      break;
+    }
     case 'toggle-unit': {
       const ex = curRoutine().exercises[i];
       ex.unit = ex.unit === 'kg' ? 'lb' : 'kg';
@@ -1119,7 +1305,7 @@ $app.addEventListener('click', e => {
 
     // Entrenamiento (en curso o editando uno guardado)
     case 'add-set':
-      cur().exercises[i].sets.push({ w: '', r: '' });
+      cur().exercises[i].sets.push({ w: '', r: '', ...(cur().exercises[i].rir ? { rir: '' } : {}) });
       save(); render();
       break;
     case 'del-set': {
@@ -1229,6 +1415,7 @@ $app.addEventListener('input', e => {
     const cell = $app.querySelector(`[data-mark="${i}-${j}"]`);
     if (cell) cell.innerHTML = markSpan(liveCmp(ex.sets[j], ex.unit, bestSets(ex.exerciseId, beforeIndex(d))[j]));
   }
+  else if (bind === 'rir') cur().exercises[i].sets[j].rir = el.value;
   else if (bind === 'note') {
     const exId = cur().exercises[i].exerciseId, text = el.value.trim();
     if (text) db.notes[exId] = text; else delete db.notes[exId];
