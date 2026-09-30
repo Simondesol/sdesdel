@@ -6,7 +6,8 @@ const userKey = id => `sdesdel-u-${id}`;
 const $app = document.getElementById('app');
 const $tabs = document.getElementById('tabs');
 
-const emptyDb = () => ({ routines: [], workouts: [], draft: null, notes: {}, bodyweight: [] });
+const emptyWater = () => ({ goalMl: null, days: {} });   // days: { 'AAAA-MM-DD': [{ at, ml }] }
+const emptyDb = () => ({ routines: [], workouts: [], draft: null, notes: {}, bodyweight: [], water: emptyWater() });
 const emptySynced = () => ({ main: null, w: {} });
 let db = emptyDb();
 let user = null;                 // { uid, email, username }
@@ -110,11 +111,125 @@ function liveCmp(s, unit, best) {
 const markSpan = c => (c == null ? '' :
   `<span class="mark ${c > 0 ? 'up' : c < 0 ? 'down' : 'eq'}">${c > 0 ? '▲' : c < 0 ? '▼' : '='}</span>`);
 
-function header(title, { back = false, sub = '' } = {}) {
+function header(title, { back = false, sub = '', right = '' } = {}) {
   return `<header class="bar">
     ${back ? '<button class="icon" data-action="back" aria-label="Volver">‹</button>' : ''}
     <div class="titles"><h1>${esc(title)}</h1>${sub ? `<div class="sub">${esc(sub)}</div>` : ''}</div>
+    ${right}
   </header>`;
+}
+
+// ---------- Menú principal ----------
+const GEAR = `<a class="icon gear" href="#/cuenta" aria-label="Cuenta y configuración">
+  <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M19.4 13a7.6 7.6 0 0 0 0-2l2-1.6a.5.5 0 0 0 .1-.6l-1.9-3.3a.5.5 0 0 0-.6-.2l-2.4 1a7.3 7.3 0 0 0-1.7-1l-.4-2.6a.5.5 0 0 0-.5-.4h-3.8a.5.5 0 0 0-.5.4l-.4 2.6a7.3 7.3 0 0 0-1.7 1l-2.4-1a.5.5 0 0 0-.6.2L2.5 8.8a.5.5 0 0 0 .1.6l2 1.6a7.6 7.6 0 0 0 0 2l-2 1.6a.5.5 0 0 0-.1.6l1.9 3.3c.1.2.4.3.6.2l2.4-1c.5.4 1.1.7 1.7 1l.4 2.6c0 .2.3.4.5.4h3.8c.2 0 .5-.2.5-.4l.4-2.6c.6-.3 1.2-.6 1.7-1l2.4 1c.2.1.5 0 .6-.2l1.9-3.3a.5.5 0 0 0-.1-.6ZM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7Z"/></svg>
+</a>`;
+
+const bar = (value, goal) => `<div class="meter" role="progressbar" aria-valuemin="0" aria-valuemax="${goal}" aria-valuenow="${value}">
+  <span style="width:${Math.min(100, goal ? (value / goal) * 100 : 0)}%"></span></div>`;
+
+function viewHub() {
+  const d = db.draft;
+  const ml = waterToday(), goal = waterGoal().ml;
+  return `${header('Desdel', { sub: 'Entrena. Anota. Supera.', right: GEAR })}
+    <a class="card hub" href="#/rutinas">
+      <div class="hub-top"><span class="hub-icon">🏋️</span><strong>Entreno</strong><span class="chev">›</span></div>
+      <span class="muted">${d ? `Entrenamiento en curso: ${esc(d.routineName)}` : 'Rutinas · Historial · Progreso'}</span>
+    </a>
+
+    <div class="card hub soon" aria-disabled="true">
+      <div class="hub-top"><span class="hub-icon">🍽️</span><strong>Nutrición</strong><span class="badge">Próximamente</span></div>
+      <div class="hub-value"><strong>— / 2.000</strong> kcal</div>
+      ${bar(0, 2000)}
+    </div>
+
+    <div class="card hub">
+      <a class="hub-top" href="#/agua"><span class="hub-icon">💧</span><strong>Agua</strong><span class="chev">›</span></a>
+      <a class="hub-value" href="#/agua"><strong>${fmtL(ml)} / ${fmtL(goal)}</strong> L${ml >= goal ? ' · ¡Meta cumplida! 🎉' : ''}</a>
+      ${bar(ml, goal)}
+      <div class="ex-actions">
+        <button class="btn" data-action="water-add" data-ml="250">+250 ml</button>
+        <button class="btn" data-action="water-add" data-ml="500">+500 ml</button>
+      </div>
+    </div>`;
+}
+
+// ---------- Agua ----------
+const fmtL = ml => fmtNum(Math.round(ml / 100) / 10);
+const waterDay = (key = todayKey()) => db.water.days[key] || [];
+const waterToday = () => waterDay().reduce((a, e) => a + e.ml, 0);
+
+// Meta: la que escribas, o 35 ml por kg de tu último peso anotado (si no hay peso, 2,5 L)
+function waterGoal() {
+  if (db.water.goalMl) return { ml: db.water.goalMl, auto: false };
+  const last = db.bodyweight[db.bodyweight.length - 1];
+  return last ? { ml: Math.round((last.kg * 35) / 100) * 100, auto: true, kg: last.kg } : { ml: 2500, auto: true };
+}
+
+function addWater(ml) {
+  const key = todayKey(), entry = { at: new Date().toISOString(), ml };
+  (db.water.days[key] ||= []).push(entry);
+  save(); render();
+  showUndo(`+${ml} ml de agua`, () => {
+    const list = db.water.days[key], k = list ? list.indexOf(entry) : -1;
+    if (k >= 0) { list.splice(k, 1); if (!list.length) delete db.water.days[key]; save(); render(); }
+  });
+}
+
+function viewWater() {
+  const ml = waterToday(), g = waterGoal();
+  const entries = waterDay().map((e, k) => `
+    <div class="prog-row">
+      <span class="muted">${new Date(e.at).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })}</span>
+      <span class="bw-right">${e.ml} ml
+        <button class="icon small danger" data-action="water-del" data-k="${k}" aria-label="Borrar">✕</button>
+      </span>
+    </div>`).reverse().join('');
+
+  // Últimos 7 días
+  const days = [];
+  for (let k = 6; k >= 0; k--) {
+    const d = new Date(); d.setDate(d.getDate() - k);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const total = waterDay(key).reduce((a, e) => a + e.ml, 0);
+    days.push(`<div class="water-day">
+      <span class="muted">${k === 0 ? 'hoy' : d.toLocaleDateString('es', { weekday: 'short', day: 'numeric' })}</span>
+      ${bar(total, g.ml)}
+      <span>${fmtL(total)} L</span>
+    </div>`);
+  }
+
+  return `${header('Agua', { back: true, sub: 'Se reinicia cada día' })}
+    <section class="card water-now">
+      <div class="water-big"><strong>${fmtL(ml)}</strong> / ${fmtL(g.ml)} L</div>
+      ${bar(ml, g.ml)}
+      <div class="muted">${ml >= g.ml ? '¡Meta cumplida! 🎉' : `Te faltan ${fmtL(g.ml - ml)} L`}</div>
+      <div class="ex-actions water-btns">
+        <button class="btn primary" data-action="water-add" data-ml="250">+250 ml</button>
+        <button class="btn primary" data-action="water-add" data-ml="500">+500 ml</button>
+      </div>
+      <form class="add-row" data-form="water-custom" novalidate>
+        <input name="ml" inputmode="numeric" placeholder="Otra cantidad (ml)" autocomplete="off" aria-label="Cantidad en ml">
+        <button class="btn">Agregar</button>
+      </form>
+    </section>
+
+    ${entries ? `<h2>Hoy</h2><section class="card">${entries}</section>` : ''}
+
+    <h2>Últimos 7 días</h2>
+    <section class="card">${days.join('')}</section>
+
+    <h2>Meta diaria</h2>
+    <form class="stack card" data-form="water-goal" novalidate>
+      <p class="muted" style="margin:0">${g.auto
+        ? (g.kg ? `Calculada con tu peso: 35 ml × ${fmtNum(g.kg)} kg = ${fmtL(g.ml)} L` : 'Anota tu peso en Progreso para calcularla. Por ahora: 2,5 L')
+        : `Meta personalizada: ${fmtL(g.ml)} L`}</p>
+      <div class="add-row" style="margin-top:0">
+        <input name="liters" inputmode="decimal" placeholder="Litros (ej. 3)" value="${g.auto ? '' : fmtL(g.ml)}" autocomplete="off" aria-label="Meta en litros">
+        <button class="btn">Guardar</button>
+      </div>
+      ${g.auto ? '' : '<button type="button" class="btn ghost" data-action="water-auto">Usar la meta calculada con mi peso</button>'}
+      <p class="form-msg" hidden></p>
+    </form>`;
 }
 
 // Última vez que se hizo un ejercicio (antes de la posición `before` del historial)
@@ -194,7 +309,7 @@ function viewHome() {
       </div>` : ''}
       <button class="btn primary" data-action="start" data-id="${r.id}" ${r.exercises.length ? '' : 'disabled'}>Empezar</button>
     </div>`).join('');
-  return `${header('Desdel', { sub: 'Entrena. Anota. Supera.' })}
+  return `${header('Rutinas')}
     ${resume}
     ${routines || '<p class="empty">Aún no tienes rutinas. Crea la primera abajo.</p>'}
     <form class="add-row" data-form="new-routine">
@@ -214,7 +329,7 @@ function viewHome() {
 
 function viewRoutine() {
   const r = curRoutine();
-  if (!r) { location.replace('#/'); return ''; }
+  if (!r) { location.replace('#/rutinas'); return ''; }
   const last = r.exercises.length - 1;
   const items = r.exercises.map((ex, i) => `
     <li class="card">
@@ -258,7 +373,7 @@ function viewRoutine() {
 
 function viewWorkout() {
   const d = cur();
-  if (!d) { location.replace(isEditing() ? '#/historial' : '#/'); return ''; }
+  if (!d) { location.replace(isEditing() ? '#/historial' : '#/rutinas'); return ''; }
   const editing = !!d.editOf;
   const before = beforeIndex(d);
 
@@ -443,7 +558,7 @@ function syncHtml() {
 const paintSync = () => { const el = $app.querySelector('[data-sync]'); if (el) el.innerHTML = syncHtml(); };
 
 function viewAccount() {
-  return `${header('Cuenta')}
+  return `${header('Cuenta', { back: true })}
     <section class="card">
       <strong>${esc(user.username || 'Sin nombre de usuario')}</strong>
       <div class="muted">${esc(user.email)}</div>
@@ -474,6 +589,8 @@ function viewAccount() {
 
     <button class="btn ghost block danger-text" data-action="logout" style="margin-top:32px">Cerrar sesión</button>`;
 }
+
+const formMsgOr = (f, text) => (f.querySelector('.form-msg') ? formMsg(f, text) : alert(text));
 
 // Muestra un mensaje bajo un formulario (error en rojo o confirmación en verde)
 function formMsg(f, text, ok = false) {
@@ -1057,8 +1174,10 @@ function render() {
       break;
     case 'sesion': html = viewSession(arg); break;
     case 'ejercicio': html = viewExercise(decodeURIComponent(arg)); break;
-    case 'cuenta': html = viewAccount(); tab = 'cuenta'; break;
-    default: html = viewHome(); tab = 'rutinas';
+    case 'cuenta': html = viewAccount(); break;
+    case 'agua': html = viewWater(); break;
+    case 'rutinas': html = viewHome(); tab = 'rutinas'; break;
+    default: html = viewHub(); tab = 'inicio';
   }
   $app.innerHTML = html;
   $tabs.hidden = !tab;
@@ -1262,7 +1381,12 @@ function stable(v) {
 const clone = v => JSON.parse(JSON.stringify(v));
 // El peso corporal solo se incluye si hay registros: así un teléfono con la versión anterior
 // no ve una diferencia y no sobrescribe en la nube los pesos anotados en otro teléfono
-const mainData = () => ({ routines: db.routines, notes: db.notes, ...(db.bodyweight.length ? { bodyweight: db.bodyweight } : {}) });
+const hasWater = w => !!w && (w.goalMl != null || Object.keys(w.days || {}).length > 0);
+const mainData = () => ({
+  routines: db.routines, notes: db.notes,
+  ...(db.bodyweight.length ? { bodyweight: db.bodyweight } : {}),
+  ...(hasWater(db.water) ? { water: db.water } : {}),
+});
 const byDate = (a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
 
 function hasUnsynced() {
@@ -1313,11 +1437,16 @@ async function sync() {
 // Cambios que llegan desde otro dispositivo. Si aquí hay cambios sin subir, ganan los de aquí.
 function applyRemoteMain(data) {
   const bw = data.bodyweight || [];
-  const remote = { routines: data.routines || [], notes: data.notes || {}, ...(bw.length ? { bodyweight: bw } : {}) };
+  const water = hasWater(data.water) ? { ...emptyWater(), ...data.water } : emptyWater();
+  const remote = {
+    routines: data.routines || [], notes: data.notes || {},
+    ...(bw.length ? { bodyweight: bw } : {}),
+    ...(hasWater(water) ? { water } : {}),
+  };
   const r = stable(remote), local = stable(mainData());
   if (local !== synced.main) return;
   synced.main = r;
-  if (r !== local) { db.routines = remote.routines; db.notes = remote.notes; db.bodyweight = bw; refresh(); }
+  if (r !== local) { db.routines = remote.routines; db.notes = remote.notes; db.bodyweight = bw; db.water = water; refresh(); }
   persistLocal();
 }
 
@@ -1361,6 +1490,7 @@ async function loadFromCloud() {
     db.routines = main.routines || [];
     db.notes = main.notes || {};
     db.bodyweight = main.bodyweight || [];
+    db.water = hasWater(main.water) ? { ...emptyWater(), ...main.water } : emptyWater();
     synced.main = stable(mainData());
   }
   db.workouts = workouts.sort(byDate);
@@ -1639,7 +1769,7 @@ $app.addEventListener('click', e => {
       if (!confirm('¿Descartar este entrenamiento? No se guardará nada.')) return;
       setTimer(null);
       db.draft = null;
-      save(); location.replace('#/');
+      save(); location.replace('#/rutinas');
       break;
     case 'save-edit':
       saveEdit();
@@ -1656,6 +1786,25 @@ $app.addEventListener('click', e => {
     case 'hist-day':
       histDay = el.dataset.date && el.dataset.date !== histDay ? el.dataset.date : null;   // tocar de nuevo = todo el mes
       render();
+      break;
+    case 'water-add':
+      addWater(Number(el.dataset.ml));
+      break;
+    case 'water-del': {
+      const key = todayKey(), list = db.water.days[key] || [];
+      const [removed] = list.splice(Number(el.dataset.k), 1);
+      if (!list.length) delete db.water.days[key];
+      save(); render();
+      if (removed) showUndo(`${removed.ml} ml borrados`, () => {
+        (db.water.days[key] ||= []).push(removed);
+        db.water.days[key].sort((a, b) => (a.at < b.at ? -1 : 1));
+        save(); render();
+      });
+      break;
+    }
+    case 'water-auto':
+      db.water.goalMl = null;
+      save(); render();
       break;
     case 'share-workout':
       shareWorkout(el, el.dataset.id);
@@ -1766,6 +1915,20 @@ $app.addEventListener('submit', e => {
     case 'password': submitPassword(f); return;
     case 'import-code': importRoutine(f); return;
     case 'bodyweight': saveBodyweight(f); return;
+    case 'water-custom': {
+      const ml = Math.round(num(f.elements.ml.value) || 0);
+      if (ml < 10 || ml > 5000) return formMsgOr(f, 'Escribe una cantidad en ml (ej. 330).');
+      addWater(ml);
+      return;
+    }
+    case 'water-goal': {
+      const liters = num(f.elements.liters.value);
+      if (liters == null || liters < 0.5 || liters > 10) return formMsg(f, 'Escribe tu meta en litros (ej. 3 o 2,5).');
+      db.water.goalMl = Math.round(liters * 1000);
+      save(); render();
+      formMsg($app.querySelector('[data-form="water-goal"]'), `✓ Meta guardada: ${fmtL(db.water.goalMl)} L`, true);
+      return;
+    }
   }
   const title = f.elements.title.value.trim();
   if (!title) return;

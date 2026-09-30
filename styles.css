@@ -361,3 +361,27 @@ h2 .link {
   background: none; border: 0; padding: 0 0 0 8px; cursor: pointer;
 }
 .hist-title { text-transform: none; letter-spacing: 0; font-size: 15px; color: var(--text); }
+
+/* Menú principal */
+.bar .gear { display: grid; place-items: center; color: var(--muted); background: var(--surface2); }
+.hub { display: grid; gap: 8px; padding: 14px; }
+a.card.hub { display: grid; }
+.hub-top { display: flex; align-items: center; gap: 10px; }
+.hub-top strong { flex: 1; font-size: 18px; }
+.hub-icon { font-size: 22px; }
+.hub-value { font-size: 15px; color: var(--muted); }
+.hub-value strong { color: var(--text); font-size: 20px; font-variant-numeric: tabular-nums; }
+.hub .ex-actions .btn { flex: 1; }
+.hub.soon { opacity: .6; }
+.badge { font-size: 12px; font-weight: 600; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 2px 8px; }
+.meter { height: 8px; border-radius: 4px; background: var(--surface2); overflow: hidden; }
+.meter span { display: block; height: 100%; border-radius: 4px; background: var(--accent); }
+
+/* Agua */
+.water-now { display: grid; gap: 10px; }
+.water-big { font-size: 16px; color: var(--muted); }
+.water-big strong { font-size: 34px; color: var(--text); font-variant-numeric: tabular-nums; }
+.water-btns .btn { flex: 1; }
+.water-now .add-row { margin-top: 0; }
+.water-day { display: grid; grid-template-columns: 64px 1fr 52px; align-items: center; gap: 10px; padding: 6px 0; font-size: 14px; font-variant-numeric: tabular-nums; }
+.water-day > span:last-child { text-align: right; }
