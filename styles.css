@@ -209,6 +209,8 @@ select { width: auto; }
 .sets { margin-top: 10px; }
 
 /* Progreso */
+.search { margin-bottom: 4px; }
+.prog-group[hidden], .prog-group .card[hidden], [data-no-results][hidden] { display: none; }
 .range { display: flex; gap: 4px; padding: 3px; margin-bottom: 12px;
   background: var(--surface); border: 1px solid var(--border); border-radius: 10px; }
 .range button {

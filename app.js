@@ -665,8 +665,11 @@ function chartSvg(points, unit, days) {
   </svg>`;
 }
 
+let progressQuery = '';   // texto del buscador de Progreso
+const normText = s => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+
 function viewProgress() {
-  // Ejercicios que tienen historial, del entrenado más recientemente al más antiguo
+  // Ejercicios que tienen historial
   const byId = new Map();
   for (const w of db.workouts) {
     for (const ex of w.exercises) {
@@ -675,16 +678,51 @@ function viewProgress() {
       byId.set(ex.exerciseId, e);
     }
   }
-  const list = [...byId.values()].sort((a, b) => (a.date < b.date ? 1 : -1)).map(e => `
-    <a class="card" href="#/progreso/${encodeURIComponent(e.id)}">
+  if (!byId.size) {
+    return `${header('Progreso')}
+      <p class="empty">Cuando guardes entrenamientos, aquí verás tu progreso en cada ejercicio.</p>`;
+  }
+
+  // Agrupados por rutina (en el orden de tus rutinas); los que no están en ninguna van en "Otros"
+  const inRoutine = new Set();
+  const groups = db.routines.map(r => {
+    const items = r.exercises.filter(ex => byId.has(ex.id)).map(ex => { inRoutine.add(ex.id); return byId.get(ex.id); });
+    return { name: r.name || '(sin nombre)', items };
+  }).filter(g => g.items.length);
+  const others = [...byId.values()].filter(e => !inRoutine.has(e.id)).sort((a, b) => a.name.localeCompare(b.name, 'es'));
+  if (others.length) groups.push({ name: 'Otros', items: others });
+
+  const item = e => `
+    <a class="card" href="#/progreso/${encodeURIComponent(e.id)}" data-search="${esc(normText(e.name))}">
       <div class="grow">
         <strong>${esc(e.name)}</strong>
         <span class="muted">${plural(e.count, 'sesión', 'sesiones')} · última: ${fmtDate(e.date)}</span>
       </div>
       <span class="chev">›</span>
-    </a>`).join('');
+    </a>`;
   return `${header('Progreso', { sub: 'Elige un ejercicio para ver su gráfico' })}
-    ${list || '<p class="empty">Cuando guardes entrenamientos, aquí verás tu progreso en cada ejercicio.</p>'}`;
+    <input class="search" type="search" data-bind="progress-search" value="${esc(progressQuery)}"
+      placeholder="🔍 Buscar ejercicio…" autocomplete="off" aria-label="Buscar ejercicio">
+    ${groups.map(g => `<section class="prog-group"><h2>${esc(g.name)}</h2>${g.items.map(item).join('')}</section>`).join('')}
+    <p class="empty" data-no-results hidden>Ningún ejercicio coincide con la búsqueda.</p>`;
+}
+
+// Filtra la lista mientras escribes (sin redibujar, para no cerrar el teclado)
+function filterProgress() {
+  const q = normText(progressQuery.trim());
+  let any = false;
+  $app.querySelectorAll('.prog-group').forEach(g => {
+    let visible = 0;
+    g.querySelectorAll('[data-search]').forEach(a => {
+      const show = !q || a.dataset.search.includes(q);
+      a.hidden = !show;
+      if (show) visible++;
+    });
+    g.hidden = !visible;
+    if (visible) any = true;
+  });
+  const none = $app.querySelector('[data-no-results]');
+  if (none) none.hidden = any;
 }
 
 function viewProgressExercise(id) {
@@ -804,6 +842,7 @@ function render() {
   $app.innerHTML = html;
   $tabs.hidden = !tab;
   $tabs.querySelectorAll('a').forEach(a => a.classList.toggle('active', a.dataset.tab === tab));
+  if (tab === 'progreso' && progressQuery) filterProgress();
   paintTimer();
 }
 
@@ -1402,6 +1441,7 @@ $app.addEventListener('click', e => {
 $app.addEventListener('input', e => {
   const el = e.target, bind = el.dataset.bind;
   if (!bind) return;
+  if (bind === 'progress-search') { progressQuery = el.value; filterProgress(); return; }
   const i = +el.dataset.i, j = +el.dataset.j;
   if (bind === 'routine-name') curRoutine().name = el.value;
   else if (bind === 'ex-name') curRoutine().exercises[i].name = el.value;
