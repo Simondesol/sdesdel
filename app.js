@@ -71,7 +71,7 @@ function parseRest(text) {
 function fmtDuration(sec) {
   if (sec < 60) return 'menos de 1 min';
   const h = Math.floor(sec / 3600), m = Math.round((sec % 3600) / 60);
-  return h ? `${h} h ${m} min` : `${m} min`;
+  return h ? (m ? `${h} h ${m} min` : `${h} h`) : `${m} min`;
 }
 
 // ---------- Comparación de series ----------
@@ -339,17 +339,71 @@ function viewWorkout() {
     </div>`}`;
 }
 
+// ---------- Historial (calendario) ----------
+let histMonth = null;   // { y, m } del mes a la vista (m de 0 a 11)
+let histDay = null;     // día elegido 'AAAA-MM-DD' (null = todo el mes)
+const dayKeyOf = date => {
+  const d = new Date(date);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+const monthName = (y, m) => { const t = new Date(y, m, 1).toLocaleDateString('es', { month: 'long', year: 'numeric' }); return t[0].toUpperCase() + t.slice(1); };
+
+const sessionCard = w => `
+  <a class="card" href="#/sesion/${w.id}">
+    <div class="grow">
+      <strong>${esc(w.routineName)}</strong>
+      <span class="muted">${fmtDate(w.date)} · ${plural(w.exercises.length, 'ejercicio')} · ${plural(setsCount(w), 'serie')}${w.durationSec ? ` · ${fmtDuration(w.durationSec)}` : ''}</span>
+    </div>
+    <span class="chev">›</span>
+  </a>`;
+
 function viewHistory() {
-  const list = db.workouts.slice().reverse().map(w => `
-    <a class="card" href="#/sesion/${w.id}">
-      <div class="grow">
-        <strong>${esc(w.routineName)}</strong>
-        <span class="muted">${fmtDate(w.date)} · ${plural(w.exercises.length, 'ejercicio')} · ${plural(setsCount(w), 'serie')}${w.durationSec ? ` · ${fmtDuration(w.durationSec)}` : ''}</span>
-      </div>
-      <span class="chev">›</span>
-    </a>`).join('');
+  const now = new Date();
+  if (!histMonth) histMonth = { y: now.getFullYear(), m: now.getMonth() };
+  const { y, m } = histMonth;
+
+  // Entrenamientos por día
+  const byDay = new Map();
+  for (const w of db.workouts) {
+    const k = dayKeyOf(w.date);
+    if (!byDay.has(k)) byDay.set(k, []);
+    byDay.get(k).push(w);
+  }
+
+  // Cuadrícula del mes: la semana parte el lunes
+  const first = new Date(y, m, 1), daysInMonth = new Date(y, m + 1, 0).getDate();
+  const lead = (first.getDay() + 6) % 7;
+  const today = todayKey();
+  const cells = [];
+  for (let k = 0; k < lead; k++) cells.push('<span class="cal-cell empty"></span>');
+  for (let d = 1; d <= daysInMonth; d++) {
+    const key = `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    const n = (byDay.get(key) || []).length;
+    const cls = ['cal-cell', n ? 'trained' : '', key === today ? 'today' : '', key === histDay ? 'selected' : ''].join(' ');
+    cells.push(`<button class="${cls}" data-action="hist-day" data-date="${key}" aria-label="${d}${n ? `, ${plural(n, 'entrenamiento')}` : ''}">
+      ${d}${n > 1 ? `<small>${n}</small>` : ''}</button>`);
+  }
+
+  const monthKey = `${y}-${String(m + 1).padStart(2, '0')}`;
+  const monthWorkouts = db.workouts.filter(w => dayKeyOf(w.date).startsWith(monthKey)).reverse();
+  const shown = histDay ? (byDay.get(histDay) || []).slice().reverse() : monthWorkouts;
+  const title = histDay
+    ? new Date(`${histDay}T12:00:00`).toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long' })
+    : `${plural(monthWorkouts.length, 'entrenamiento')} en ${new Date(y, m, 1).toLocaleDateString('es', { month: 'long' })}`;
+  const isCurrent = y === now.getFullYear() && m === now.getMonth();
+
   return `${header('Historial')}
-    ${list || '<p class="empty">Aún no hay entrenamientos guardados.</p>'}`;
+    <section class="card cal">
+      <div class="cal-head">
+        <button class="icon" data-action="hist-month" data-d="-1" aria-label="Mes anterior">‹</button>
+        <strong>${monthName(y, m)}</strong>
+        <button class="icon" data-action="hist-month" data-d="1" ${isCurrent ? 'disabled' : ''} aria-label="Mes siguiente">›</button>
+      </div>
+      <div class="cal-grid cal-week">${['L', 'M', 'M', 'J', 'V', 'S', 'D'].map(d => `<span>${d}</span>`).join('')}</div>
+      <div class="cal-grid">${cells.join('')}</div>
+    </section>
+    <h2 class="hist-title">${title}${histDay ? ' <button class="link" data-action="hist-day" data-date="">Ver todo el mes</button>' : ''}</h2>
+    ${shown.map(sessionCard).join('') || `<p class="empty">${histDay ? 'Ese día no entrenaste.' : 'No hay entrenamientos este mes.'}</p>`}`;
 }
 
 // ---------- Cuenta ----------
@@ -1592,6 +1646,17 @@ $app.addEventListener('click', e => {
       break;
 
     // Historial
+    case 'hist-month': {
+      const d = new Date(histMonth.y, histMonth.m + Number(el.dataset.d), 1);
+      histMonth = { y: d.getFullYear(), m: d.getMonth() };
+      histDay = null;
+      render();
+      break;
+    }
+    case 'hist-day':
+      histDay = el.dataset.date && el.dataset.date !== histDay ? el.dataset.date : null;   // tocar de nuevo = todo el mes
+      render();
+      break;
     case 'share-workout':
       shareWorkout(el, el.dataset.id);
       break;
