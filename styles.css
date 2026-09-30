@@ -221,6 +221,23 @@ select { width: auto; }
 .auth-switch a { color: var(--accent); font-weight: 600; }
 .ok { color: var(--accent); font-weight: 600; }
 
+/* Formularios de la cuenta e importar rutina */
+.stack { display: grid; gap: 12px; }
+.form-msg { margin: 0; font-size: 14px; color: var(--danger); }
+.form-msg.ok { color: var(--accent); }
+.import-box { margin-top: 12px; }
+.import-box .add-row { margin-top: 0; }
+.import-box input { text-transform: uppercase; letter-spacing: .08em; }
+
+/* Código para compartir una rutina */
+.share-box { display: grid; gap: 10px; text-align: center; }
+.share-box .code {
+  font-size: 32px; font-weight: 700; letter-spacing: .12em;
+  color: var(--accent); font-variant-numeric: tabular-nums;
+}
+.share-box .ex-actions { justify-content: center; }
+.share-box .hint { margin: 0; }
+
 /* Aviso "Serie borrada · Deshacer" */
 .toast {
   position: fixed; left: 12px; right: 12px; z-index: 30;

@@ -197,7 +197,16 @@ function viewHome() {
     <form class="add-row" data-form="new-routine">
       <input name="title" placeholder="Nueva rutina (ej. Brazo)" autocomplete="off" required>
       <button class="btn">Crear</button>
-    </form>`;
+    </form>
+    ${importOpen ? `
+    <form class="stack import-box" data-form="import-code" novalidate>
+      <div class="add-row">
+        <input name="code" placeholder="Código (ej. K7P-9XQ)" autocomplete="off" autocapitalize="characters" maxlength="9" aria-label="Código de rutina">
+        <button class="btn">Importar</button>
+      </div>
+      <p class="form-msg" hidden></p>
+    </form>`
+    : '<button class="btn ghost block" data-action="show-import">Importar rutina con código</button>'}`;
 }
 
 function viewRoutine() {
@@ -226,7 +235,18 @@ function viewRoutine() {
       ${unitSelect()}
       <button class="btn">Agregar</button>
     </form>
-    <button class="btn block" data-action="dup-routine" style="margin-top:32px">Duplicar rutina</button>
+    ${shareResult && shareResult.routineId === r.id ? `
+    <section class="card share-box" style="margin-top:32px">
+      <div class="muted">Código para compartir "${esc(r.name)}"</div>
+      <div class="code">${fmtCode(shareResult.code)}</div>
+      <div class="ex-actions">
+        <button class="btn primary" data-action="send-code">Enviar</button>
+        <button class="btn" data-action="copy-code">Copiar</button>
+      </div>
+      <p class="muted hint">Tu amigo lo ingresa en Rutinas → "Importar rutina con código". Solo se comparten los ejercicios y el Rest, no tus pesos ni tu historial.</p>
+    </section>`
+    : '<button class="btn block" data-action="share-routine" style="margin-top:32px">Compartir rutina</button>'}
+    <button class="btn block" data-action="dup-routine">Duplicar rutina</button>
     <button class="btn ghost block danger-text" data-action="del-routine">Eliminar rutina</button>`;
 }
 
@@ -349,7 +369,143 @@ function viewAccount() {
     </section>
     <section class="card" data-sync>${syncHtml()}</section>
     <p class="muted hint">Tus rutinas e historial se guardan en tu cuenta. Inicia sesión con el mismo correo en otro teléfono para verlos.</p>
-    <button class="btn ghost block danger-text" data-action="logout" style="margin-top:24px">Cerrar sesión</button>`;
+
+    <h2>Nombre de usuario</h2>
+    <form class="stack" data-form="username" novalidate>
+      <div class="add-row" style="margin-top:0">
+        <input name="username" value="${esc(user.username)}" maxlength="30" autocomplete="nickname" aria-label="Nombre de usuario">
+        <button class="btn">Guardar</button>
+      </div>
+      <p class="form-msg" hidden></p>
+    </form>
+
+    <h2>Cambiar contraseña</h2>
+    <form class="stack" data-form="password" novalidate>
+      <label class="field"><span>Contraseña actual</span>
+        <input name="current" type="password" autocomplete="current-password">
+      </label>
+      <label class="field"><span>Nueva contraseña (mínimo 6 caracteres)</span>
+        <input name="next" type="password" autocomplete="new-password">
+      </label>
+      <p class="form-msg" hidden></p>
+      <button class="btn block">Cambiar contraseña</button>
+    </form>
+
+    <button class="btn ghost block danger-text" data-action="logout" style="margin-top:32px">Cerrar sesión</button>`;
+}
+
+// Muestra un mensaje bajo un formulario (error en rojo o confirmación en verde)
+function formMsg(f, text, ok = false) {
+  const p = f.querySelector('.form-msg');
+  p.textContent = text;
+  p.classList.toggle('ok', ok);
+  p.hidden = false;
+}
+
+// Algunas acciones necesitan internet; si no hay respuesta en 12 s se da por perdida
+const withTimeout = p => Promise.race([p, new Promise((_, rej) =>
+  setTimeout(() => rej(Object.assign(new Error('timeout'), { code: 'auth/network-request-failed' })), 12000))]);
+
+async function busy(btn, text, fn) {
+  const old = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = text;
+  try { return await fn(); } finally { btn.disabled = false; btn.textContent = old; }
+}
+
+async function submitUsername(f) {
+  const name = f.elements.username.value.trim();
+  if (!name) return formMsg(f, 'Escribe un nombre de usuario.');
+  if (name === user.username) return formMsg(f, 'Ese ya es tu nombre de usuario.', true);
+  try {
+    await busy(f.querySelector('button'), 'Guardando…', () => withTimeout(cloud.updateUsername(user.uid, name)));
+    user.username = name;
+    render();
+    formMsg($app.querySelector('[data-form="username"]'), '✓ Nombre actualizado', true);
+  } catch (e) { formMsg(f, authError(e)); }
+}
+
+async function submitPassword(f) {
+  const current = f.elements.current.value, next = f.elements.next.value;
+  if (!current) return formMsg(f, 'Escribe tu contraseña actual.');
+  if (next.length < 6) return formMsg(f, 'La nueva contraseña debe tener al menos 6 caracteres.');
+  if (next === current) return formMsg(f, 'La nueva contraseña es igual a la actual.');
+  try {
+    await busy(f.querySelector('button'), 'Cambiando…', () => withTimeout(cloud.changePassword(current, next)));
+    f.reset();
+    formMsg(f, '✓ Contraseña cambiada. Úsala la próxima vez que inicies sesión.', true);
+  } catch (e) {
+    formMsg(f, e && (e.code === 'auth/invalid-credential' || e.code === 'auth/wrong-password')
+      ? 'La contraseña actual no es correcta.' : authError(e));
+  }
+}
+
+// ---------- Compartir rutinas ----------
+// Códigos de 6 caracteres sin letras que se confunden (0/O, 1/I)
+const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const newCode = () => Array.from(crypto.getRandomValues(new Uint32Array(6)), n => CODE_CHARS[n % CODE_CHARS.length]).join('');
+const fmtCode = c => `${c.slice(0, 3)}-${c.slice(3)}`;
+const normCode = s => s.toUpperCase().replace(/[^A-Z0-9]/g, '');
+let shareResult = null;   // { routineId, code } del último código generado
+let importOpen = false;   // formulario "Importar rutina" visible en inicio
+
+const shareText = (name, code) =>
+  `Te comparto mi rutina "${name}" en Desdel 💪\n\nCódigo: ${fmtCode(code)}\n\n` +
+  'En Desdel toca "Importar rutina con código" (abajo en Rutinas) y pégalo.\nhttps://simondesol.github.io/sdesdel/';
+
+async function shareRoutine(btn) {
+  const r = curRoutine();
+  if (!r.exercises.length) { alert('Agrega ejercicios a la rutina antes de compartirla.'); return; }
+  // Solo se comparten los ejercicios: sin pesos, historial ni notas
+  const routine = { name: r.name, exercises: r.exercises.map(ex => ({ name: ex.name, unit: ex.unit, rest: ex.rest || 0 })) };
+  await busy(btn, 'Generando código…', async () => {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const code = newCode();
+      try {
+        await withTimeout(cloud.shareRoutine(code, { ownerUid: user.uid, ownerName: user.username || '', routine }));
+        shareResult = { routineId: r.id, code };
+        return;
+      } catch (e) {
+        if (e.code === 'permission-denied' && attempt < 2) continue;   // código repetido: se prueba otro
+        alert(e.code === 'auth/network-request-failed'
+          ? 'Se necesita internet para compartir una rutina.'
+          : 'No se pudo generar el código. Intenta de nuevo en un rato.');
+        return;
+      }
+    }
+  });
+  render();
+}
+
+async function importRoutine(f) {
+  const code = normCode(f.elements.code.value);
+  if (code.length !== 6) return formMsg(f, 'El código tiene 6 caracteres (ej. K7P-9XQ).');
+  let data;
+  try {
+    data = await busy(f.querySelector('button'), 'Buscando…', () => withTimeout(cloud.getShared(code)));
+  } catch (e) {
+    return formMsg(f, e.code === 'auth/network-request-failed' || !navigator.onLine
+      ? 'Se necesita internet para importar una rutina.' : 'No se pudo buscar el código. Intenta de nuevo.');
+  }
+  if (!data) return formMsg(f, 'No existe ninguna rutina con ese código.');
+  const r = data.routine;
+  if (!confirm(`¿Importar la rutina "${r.name}"${data.ownerName ? ` de ${data.ownerName}` : ''} (${plural(r.exercises.length, 'ejercicio')})?`)) return;
+  // Si ya tienes un ejercicio con el mismo nombre, se usa ese para mantener tu historial
+  const used = new Set();
+  const routine = {
+    id: uid(),
+    name: r.name,
+    exercises: r.exercises.map(ex => {
+      const found = findExercise(ex.name);
+      const mine = found && !used.has(found.id) ? found : null;
+      if (mine) used.add(mine.id);
+      return { id: mine ? mine.id : uid(), name: mine ? mine.name : ex.name, unit: mine ? mine.unit : ex.unit, rest: ex.rest || 0 };
+    }),
+  };
+  db.routines.push(routine);
+  importOpen = false;
+  save();
+  go('#/rutina/' + routine.id);
 }
 
 const logoImg = '<img class="auth-logo" src="icons/icon-192.png" alt="">';
@@ -442,6 +598,7 @@ function render() {
   if (screen !== 'editar') editBuf = null;
   else if (!editBuf || editBuf.editOf !== arg) editBuf = makeEditBuf(arg);
   if (screen !== 'sesion' || arg !== justFinished) justFinished = null;
+  if (screen !== 'rutina') shareResult = null;
 
   let html, tab = null;
   switch (screen) {
@@ -999,6 +1156,26 @@ $app.addEventListener('click', e => {
       save(); history.back();
       break;
 
+    // Compartir rutinas
+    case 'share-routine':
+      shareRoutine(el);
+      break;
+    case 'copy-code':
+      navigator.clipboard.writeText(fmtCode(shareResult.code))
+        .then(() => { el.textContent = '✓ Copiado'; }, () => alert(`Código: ${fmtCode(shareResult.code)}`));
+      break;
+    case 'send-code': {
+      const text = shareText(curRoutine().name, shareResult.code);
+      if (navigator.share) navigator.share({ text }).catch(() => {});
+      else window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+      break;
+    }
+    case 'show-import':
+      importOpen = true;
+      render();
+      $app.querySelector('[data-form="import-code"] input').focus();
+      break;
+
     // Cuenta
     case 'logout':
       logout();
@@ -1070,7 +1247,13 @@ $app.addEventListener('keydown', e => {
 $app.addEventListener('submit', e => {
   e.preventDefault();
   const f = e.target;
-  if (f.dataset.form === 'login' || f.dataset.form === 'register') { submitAuth(f); return; }
+  switch (f.dataset.form) {
+    case 'login':
+    case 'register': submitAuth(f); return;
+    case 'username': submitUsername(f); return;
+    case 'password': submitPassword(f); return;
+    case 'import-code': importRoutine(f); return;
+  }
   const title = f.elements.title.value.trim();
   if (!title) return;
   if (f.dataset.form === 'new-routine') {

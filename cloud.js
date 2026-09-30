@@ -3,11 +3,13 @@
 //   users/{uid}                 → { username, email, createdAt }
 //   users/{uid}/data/main       → { routines, notes }
 //   users/{uid}/workouts/{id}   → un entrenamiento guardado
+//   shared/{código}             → rutina compartida { ownerUid, ownerName, routine, createdAt }
 import { firebaseConfig } from './firebase-config.js';
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.8.0/firebase-app.js';
 import {
   getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword,
-  sendPasswordResetEmail, signOut, updateProfile,
+  sendPasswordResetEmail, signOut, updateProfile, updatePassword,
+  reauthenticateWithCredential, EmailAuthProvider,
 } from 'https://www.gstatic.com/firebasejs/12.8.0/firebase-auth.js';
 import {
   getFirestore, doc, collection, getDoc, getDocs, setDoc, deleteDoc, onSnapshot, serverTimestamp,
@@ -34,6 +36,25 @@ export async function register(email, password, username) {
 export const login = (email, password) => signInWithEmailAndPassword(auth, email, password);
 export const resetPassword = email => sendPasswordResetEmail(auth, email);
 export const logout = () => signOut(auth);
+
+export async function updateUsername(uid, username) {
+  await updateProfile(auth.currentUser, { displayName: username });
+  await setDoc(doc(fs, 'users', uid), { username }, { merge: true });
+}
+
+// Por seguridad, Firebase pide la contraseña actual antes de cambiarla
+export async function changePassword(current, next) {
+  const u = auth.currentUser;
+  await reauthenticateWithCredential(u, EmailAuthProvider.credential(u.email, current));
+  await updatePassword(u, next);
+}
+
+// Rutinas compartidas por código (si el código ya existe, las reglas lo rechazan)
+export const shareRoutine = (code, data) => setDoc(doc(fs, 'shared', code), { ...data, createdAt: serverTimestamp() });
+export async function getShared(code) {
+  const snap = await getDoc(doc(fs, 'shared', code));
+  return snap.exists() ? snap.data() : null;
+}
 
 export async function fetchAll(uid) {
   const [main, workouts] = await Promise.all([getDoc(mainRef(uid)), getDocs(workoutsRef(uid))]);

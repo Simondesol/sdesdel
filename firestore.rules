@@ -1,11 +1,21 @@
 rules_version = '2';
 
-// Cada usuario solo puede leer y escribir sus propios datos (users/{su uid}/...).
 // Copia de las reglas publicadas en la consola de Firebase → Firestore → Reglas.
 service cloud.firestore {
   match /databases/{database}/documents {
+    // Cada usuario solo puede leer y escribir sus propios datos
     match /users/{uid}/{document=**} {
       allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // Rutinas compartidas: quien tenga sesión puede abrir una si conoce el código
+    // (no se pueden listar). Solo el dueño la crea o la borra; no se puede sobrescribir.
+    match /shared/{code} {
+      allow get: if request.auth != null;
+      allow create: if request.auth != null
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.keys().hasOnly(['ownerUid', 'ownerName', 'routine', 'createdAt']);
+      allow delete: if request.auth != null && resource.data.ownerUid == request.auth.uid;
     }
   }
 }
