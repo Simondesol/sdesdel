@@ -241,9 +241,9 @@ function viewRoutine() {
       <div class="code">${fmtCode(shareResult.code)}</div>
       <div class="ex-actions">
         <button class="btn primary" data-action="send-code">Enviar</button>
-        <button class="btn" data-action="copy-code">Copiar</button>
+        <button class="btn" data-action="copy-code">Copiar link</button>
       </div>
-      <p class="muted hint">Tu amigo lo ingresa en Rutinas → "Importar rutina con código". Solo se comparten los ejercicios y el Rest, no tus pesos ni tu historial.</p>
+      <p class="muted hint">Tu amigo toca el link y la rutina se le agrega sola (o ingresa el código en Rutinas → "Importar rutina con código"). Solo se comparten los ejercicios y el Rest, no tus pesos ni tu historial.</p>
     </section>`
     : '<button class="btn block" data-action="share-routine" style="margin-top:32px">Compartir rutina</button>'}
     <button class="btn block" data-action="dup-routine">Duplicar rutina</button>
@@ -332,6 +332,7 @@ function viewAuth(mode) {
     <img class="auth-logo" src="icons/icon-192.png" alt="">
     <h1>Desdel</h1>
     <p class="muted">Entrena. Anota. Supera.</p>
+    ${localStorage.getItem(PENDING_IMPORT) ? `<p class="auth-note">Te compartieron una rutina. ${reg ? 'Crea tu cuenta' : 'Inicia sesión'} y se agrega automáticamente.</p>` : ''}
     ${readLegacy() ? `<p class="auth-note">Tienes rutinas guardadas en este celular. Al ${reg ? 'crear tu cuenta' : 'iniciar sesión'} se suben a tu cuenta automáticamente.</p>` : ''}
     <form class="auth-form" data-form="${reg ? 'register' : 'login'}" novalidate>
       <label class="field"><span>Correo</span>
@@ -449,9 +450,12 @@ const normCode = s => s.toUpperCase().replace(/[^A-Z0-9]/g, '');
 let shareResult = null;   // { routineId, code } del último código generado
 let importOpen = false;   // formulario "Importar rutina" visible en inicio
 
+// Link que abre Desdel y agrega la rutina (?r=CÓDIGO)
+const PENDING_IMPORT = 'desdel-importar';
+const shareLink = code => `${location.origin}${location.pathname}?r=${code}`;
 const shareText = (name, code) =>
-  `Te comparto mi rutina "${name}" en Desdel 💪\n\nCódigo: ${fmtCode(code)}\n\n` +
-  'En Desdel toca "Importar rutina con código" (abajo en Rutinas) y pégalo.\nhttps://simondesol.github.io/sdesdel/';
+  `Te comparto mi rutina "${name}" en Desdel 💪\n\nTócalo para agregarla:\n${shareLink(code)}\n\n` +
+  `Si no se abre, en Desdel toca "Importar rutina con código" y pega: ${fmtCode(code)}`;
 
 async function shareRoutine(btn) {
   const r = curRoutine();
@@ -477,19 +481,34 @@ async function shareRoutine(btn) {
   render();
 }
 
+// Formulario "Importar rutina con código"
 async function importRoutine(f) {
-  const code = normCode(f.elements.code.value);
-  if (code.length !== 6) return formMsg(f, 'El código tiene 6 caracteres (ej. K7P-9XQ).');
+  await busy(f.querySelector('button'), 'Buscando…',
+    () => importByCode(normCode(f.elements.code.value), text => formMsg(f, text)));
+}
+
+// Se abrió un link de rutina compartida: se importa apenas haya sesión
+async function importFromLink() {
+  const code = localStorage.getItem(PENDING_IMPORT);
+  if (!code) return;
+  localStorage.removeItem(PENDING_IMPORT);
+  await importByCode(code, text => alert(text));
+}
+
+async function importByCode(code, showError) {
+  if (code.length !== 6) return showError('El código tiene 6 caracteres (ej. K7P-9XQ).');
   let data;
   try {
-    data = await busy(f.querySelector('button'), 'Buscando…', () => withTimeout(cloud.getShared(code)));
+    data = await withTimeout(cloud.getShared(code));
   } catch (e) {
-    return formMsg(f, e.code === 'auth/network-request-failed' || !navigator.onLine
+    return showError(e.code === 'auth/network-request-failed' || !navigator.onLine
       ? 'Se necesita internet para importar una rutina.' : 'No se pudo buscar el código. Intenta de nuevo.');
   }
-  if (!data) return formMsg(f, 'No existe ninguna rutina con ese código.');
+  if (!data) return showError('No existe ninguna rutina con ese código.');
   const r = data.routine;
-  if (!confirm(`¿Importar la rutina "${r.name}"${data.ownerName ? ` de ${data.ownerName}` : ''} (${plural(r.exercises.length, 'ejercicio')})?`)) return;
+  const repeated = db.routines.some(x => sameName(x.name, r.name))
+    ? `\n\nYa tienes una rutina llamada "${r.name}"; se agregará otra.` : '';
+  if (!confirm(`¿Agregar la rutina "${r.name}"${data.ownerName ? ` de ${data.ownerName}` : ''} (${plural(r.exercises.length, 'ejercicio')})?${repeated}`)) return;
   // Si ya tienes un ejercicio con el mismo nombre, se usa ese para mantener tu historial
   const used = new Set();
   const routine = {
@@ -962,6 +981,7 @@ async function handleUser(u) {
   sync();
   render();
   if (db.draft && db.draft.timer) keepScreenOn(true);
+  importFromLink();
 }
 
 async function logout() {
@@ -1161,8 +1181,8 @@ $app.addEventListener('click', e => {
       shareRoutine(el);
       break;
     case 'copy-code':
-      navigator.clipboard.writeText(fmtCode(shareResult.code))
-        .then(() => { el.textContent = '✓ Copiado'; }, () => alert(`Código: ${fmtCode(shareResult.code)}`));
+      navigator.clipboard.writeText(shareLink(shareResult.code))
+        .then(() => { el.textContent = '✓ Link copiado'; }, () => alert(`Link: ${shareLink(shareResult.code)}`));
       break;
     case 'send-code': {
       const text = shareText(curRoutine().name, shareResult.code);
@@ -1273,6 +1293,15 @@ $app.addEventListener('submit', e => {
 });
 
 // ---------- Inicio ----------
+// Link de rutina compartida (?r=CÓDIGO): se guarda para importarla y se limpia la dirección
+const linkParams = new URLSearchParams(location.search);
+if (linkParams.get('r')) {
+  localStorage.setItem(PENDING_IMPORT, normCode(linkParams.get('r')));
+  linkParams.delete('r');
+  const qs = linkParams.toString();
+  history.replaceState(null, '', `${location.pathname}${qs ? `?${qs}` : ''}${location.hash}`);
+}
+
 render();   // pantalla de carga
 
 window.addEventListener('online', () => { sync(); paintSync(); });
