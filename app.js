@@ -590,13 +590,50 @@ function viewSession(id) {
 
   return `${header(w.routineName, { back: true, sub: fmtLongDate(w.date) })}
     ${summary}
+    <button class="btn primary block" data-action="share-workout" data-id="${w.id}" style="margin:0 0 10px">📤 Compartir entrenamiento</button>
     ${blocks}
     <a class="btn block center" href="#/editar/${w.id}">Editar entrenamiento</a>
     <button class="btn ghost block danger-text" data-action="del-session" data-id="${w.id}" style="margin-top:24px">Eliminar este entrenamiento</button>`;
 }
 
+// Mensaje para WhatsApp con el resumen de un entrenamiento guardado
+function workoutShareText(w) {
+  const k = db.workouts.indexOf(w);
+  let ups = 0;
+  const lines = w.exercises.map(ex => {
+    const best = bestSets(ex.exerciseId, k);
+    const sets = ex.sets.map((s, j) => {
+      const c = best[j] ? cmpSet({ ...s, unit: ex.unit }, best[j]) : null;
+      if (c > 0) ups++;
+      const mark = c == null ? '' : c > 0 ? ' ▲' : c < 0 ? ' ▼' : ' =';
+      return `${fmtNum(s.w)}×${fmtNum(s.r)}${mark}`;
+    });
+    return `• ${ex.name} (${ex.unit}): ${sets.join(' · ')}`;
+  });
+  const title = `💪 *${w.routineName}*${w.durationSec ? ` · ${fmtDuration(w.durationSec)}` : ''}`;
+  const closing = ups ? `🔥 Superé mi récord en ${plural(ups, 'serie')}` : '✅ Entrenamiento completado';
+  return `${title}\n${fmtLongDate(w.date)}\n\n${lines.join('\n')}\n\n${closing}\n\nDesdel · ${location.origin}${location.pathname}`;
+}
+
+async function shareWorkout(btn, id) {
+  const w = db.workouts.find(x => x.id === id);
+  if (!w) return;
+  const text = workoutShareText(w);
+  if (navigator.share) {
+    try { await navigator.share({ text }); } catch (e) { /* se cerró el menú de compartir */ }
+    return;
+  }
+  // Computador sin menú de compartir: se copia el texto
+  try {
+    await navigator.clipboard.writeText(text);
+    btn.textContent = '✓ Copiado, pégalo en WhatsApp';
+  } catch (e) {
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+  }
+}
+
 // ---------- Progreso ----------
-const RANGES = [['semana', 'Semana', 7], ['mes', 'Mes', 30], ['3m', '3 meses', 91], ['6m', '6 meses', 182]];
+const RANGES =[['semana', 'Semana', 7], ['mes', 'Mes', 30], ['3m', '3 meses', 91], ['6m', '6 meses', 182]];
 let progressRange = '3m';
 let chart = null;   // puntos del gráfico en pantalla (para el tooltip)
 
@@ -1521,6 +1558,9 @@ $app.addEventListener('click', e => {
       break;
 
     // Historial
+    case 'share-workout':
+      shareWorkout(el, el.dataset.id);
+      break;
     case 'del-session':
       if (!confirm('¿Eliminar este entrenamiento del historial?')) return;
       db.workouts = db.workouts.filter(w => w.id !== id);
