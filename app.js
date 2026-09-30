@@ -1533,6 +1533,7 @@ $app.addEventListener('click', e => {
       const d = cur();
       if (action === 'next-ex' && !d.done.includes(d.exercises[d.pos].exerciseId)) d.done.push(d.exercises[d.pos].exerciseId);
       d.pos = action === 'go-ex' ? i : d.pos + (action === 'next-ex' ? 1 : -1);
+      hideToast();
       save(); render();
       window.scrollTo(0, 0);
       const chip = $app.querySelector('.step.on');
