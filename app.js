@@ -176,7 +176,7 @@ function viewHome() {
       </div>` : ''}
       <button class="btn primary" data-action="start" data-id="${r.id}" ${r.exercises.length ? '' : 'disabled'}>Empezar</button>
     </div>`).join('');
-  return `${header('SdeSdel', { sub: 'Entrena. Anota. Supera.' })}
+  return `${header('Desdel', { sub: 'Entrena. Anota. Supera.' })}
     ${resume}
     ${routines || '<p class="empty">Aún no tienes rutinas. Crea la primera abajo.</p>'}
     <form class="add-row" data-form="new-routine">
@@ -584,7 +584,7 @@ async function importBackup(file) {
     render();
     alert('Respaldo restaurado.');
   } catch (e) {
-    alert('No se pudo leer el archivo. Asegúrate de elegir un respaldo exportado desde SdeSdel.');
+    alert('No se pudo leer el archivo. Asegúrate de elegir un respaldo exportado desde Desdel.');
   }
 }
 
