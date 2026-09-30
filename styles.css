@@ -5,10 +5,10 @@
   --border: #2c3140;
   --text: #e9ecf2;
   --muted: #8b93a7;
-  --accent: #5fe04b;
+  --accent: #4cad34;   /* verde del logo */
   --accent-ink: #06200a;
   --danger: #ff5d5d;
-  --chart: #43ad35;   /* línea del gráfico: verde del logo ajustado para leerse bien sobre fondo oscuro */
+  --chart: #4cad34;   /* línea del gráfico: verde del logo (validado sobre el fondo oscuro) */
   --r: 14px;
   color-scheme: dark;
 }
@@ -247,8 +247,8 @@ select { width: auto; }
   padding: calc(40px + env(safe-area-inset-top)) 0 24px;
   text-align: center;
 }
-.auth-logo { width: 96px; height: 96px; border-radius: 22px; }
-.auth h1 { margin: 12px 0 2px; font-size: 26px; }
+.auth-logo { display: block; width: 220px; max-width: 70%; height: auto; margin: 0 auto; }
+.auth h1 { margin: 0 0 12px; }
 .auth > .muted { margin: 0 0 20px; }
 .auth-form { display: grid; gap: 14px; text-align: left; margin-top: 8px; }
 .auth-form .btn { margin-top: 4px; }

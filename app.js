@@ -336,8 +336,7 @@ function viewHistory() {
 function viewAuth(mode) {
   const reg = mode === 'registro';
   return `<div class="auth">
-    <img class="auth-logo" src="icons/icon-192.png" alt="">
-    <h1>Desdel</h1>
+    <h1><img class="auth-logo" src="icons/logo-full.png" alt="Desdel"></h1>
     <p class="muted">Entrena. Anota. Supera.</p>
     ${localStorage.getItem(PENDING_IMPORT) ? `<p class="auth-note">Te compartieron una rutina. ${reg ? 'Crea tu cuenta' : 'Inicia sesión'} y se agrega automáticamente.</p>` : ''}
     ${readLegacy() ? `<p class="auth-note">Tienes rutinas guardadas en este celular. Al ${reg ? 'crear tu cuenta' : 'iniciar sesión'} se suben a tu cuenta automáticamente.</p>` : ''}
@@ -534,7 +533,7 @@ async function importByCode(code, showError) {
   go('#/rutina/' + routine.id);
 }
 
-const logoImg = '<img class="auth-logo" src="icons/icon-192.png" alt="">';
+const logoImg = '<img class="auth-logo" src="icons/logo-full.png" alt="Desdel">';
 function viewStatus() {
   if (status === 'booting') return `<div class="auth">${logoImg}<p class="muted">Cargando…</p></div>`;
   if (status === 'load-error') {

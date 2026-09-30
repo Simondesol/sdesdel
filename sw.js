@@ -1,7 +1,7 @@
 // Guarda la app en el teléfono para que funcione sin internet.
 // Sirve la versión guardada al instante y la actualiza en segundo plano.
 // Al publicar cambios, subir el número de versión.
-const CACHE = 'sdesdel-v15';
+const CACHE = 'sdesdel-v16';
 const FIREBASE = 'https://www.gstatic.com/firebasejs/12.8.0/';
 const ASSETS = [
   './',
@@ -15,6 +15,7 @@ const ASSETS = [
   './icons/icon-512.png',
   './icons/icon-maskable-512.png',
   './icons/apple-touch-icon.png',
+  './icons/logo-full.png',
   // Librerías de Firebase: se guardan para poder abrir la app sin internet
   `${FIREBASE}firebase-app.js`,
   `${FIREBASE}firebase-auth.js`,
