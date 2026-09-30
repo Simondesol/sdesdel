@@ -6,7 +6,7 @@ const userKey = id => `sdesdel-u-${id}`;
 const $app = document.getElementById('app');
 const $tabs = document.getElementById('tabs');
 
-const emptyDb = () => ({ routines: [], workouts: [], draft: null, notes: {} });
+const emptyDb = () => ({ routines: [], workouts: [], draft: null, notes: {}, bodyweight: [] });
 const emptySynced = () => ({ main: null, w: {} });
 let db = emptyDb();
 let user = null;                 // { uid, email, username }
@@ -620,7 +620,7 @@ function progressPoints(exerciseId, days) {
       const c = { w: s.w, r: s.r, rir: s.rir, unit: ex.unit };
       if (!best || cmpSet(c, best) > 0) best = c;
     }
-    if (best) points.push({ t, date: w.date, y: round1(convertWeight(best.w, best.unit, unit)), set: best });
+    if (best) points.push({ t, date: w.date, y: round1(convertWeight(best.w, best.unit, unit)), set: best, tip: setText(best, best.unit) });
   }
   return { unit, points };
 }
@@ -632,13 +632,13 @@ function niceTicks(lo, hi) {
   const mag = 10 ** Math.floor(Math.log10(raw));
   const step = [1, 2, 2.5, 5, 10].map(m => m * mag).find(s => s >= raw);
   const ticks = [];
-  for (let v = Math.floor(lo / step) * step; v <= Math.ceil(hi / step) * step + step / 2; v += step) ticks.push(round1(v));
+  for (let v = Math.floor(lo / step) * step; v <= Math.ceil(hi / step) * step + step / 2; v += step) ticks.push(Math.round(v * 100) / 100);
   return ticks;
 }
 
-function chartSvg(points, unit, days) {
+function chartSvg(points, unit, days, label = 'Peso máximo por sesión') {
   const W = 340, H = 200, L = 38, R = 14, T = 20, B = 26;
-  const t1 = Date.now(), t0 = t1 - days * 86400000;
+  const t1 = Math.max(Date.now(), ...points.map(p => p.t)), t0 = t1 - days * 86400000;
   const ticks = niceTicks(Math.min(...points.map(p => p.y)), Math.max(...points.map(p => p.y)));
   const y0 = ticks[0], y1 = ticks[ticks.length - 1];
   const x = t => L + ((t - t0) / (t1 - t0)) * (W - L - R);
@@ -653,11 +653,16 @@ function chartSvg(points, unit, days) {
     `<text x="${x(t)}" y="${H - 6}" text-anchor="${['start', 'middle', 'end'][k]}" class="axis">${dateLabel(t)}</text>`).join('');
   const line = chart.points.length > 1
     ? `<polyline class="line" points="${chart.points.map(p => `${p.x},${p.yPx}`).join(' ')}"/>` : '';
-  const dots = chart.points.map((p, k) => `<circle class="dot" data-k="${k}" cx="${p.x}" cy="${p.yPx}" r="4"/>`).join('');
+  // Con muchos puntos solo se dibuja la línea y el último punto (al tocar se marca el elegido)
+  const dense = chart.points.length > 20;
+  const dots = chart.points.map((p, k) => {
+    const r = dense && k < chart.points.length - 1 ? 0 : 4;
+    return `<circle class="dot" data-k="${k}" data-r="${r}" cx="${p.x}" cy="${p.yPx}" r="${r}"/>`;
+  }).join('');
   const last = chart.points[chart.points.length - 1];
   const lastLabel = `<text x="${Math.min(last.x, W - R)}" y="${last.yPx - 10}" text-anchor="${last.x > W - 50 ? 'end' : 'middle'}" class="value">${fmtNum(last.y)} ${unit}</text>`;
 
-  return `<svg viewBox="0 0 ${W} ${H}" class="chart" role="img" aria-label="Peso máximo por sesión">
+  return `<svg viewBox="0 0 ${W} ${H}" class="chart" role="img" aria-label="${label}">
     ${grid}${xLabels}
     <line class="cross" x1="0" x2="0" y1="${T}" y2="${H - B}" visibility="hidden"/>
     ${line}${dots}${lastLabel}
@@ -679,7 +684,7 @@ function viewProgress() {
     }
   }
   if (!byId.size) {
-    return `${header('Progreso')}
+    return `${header('Progreso')}${bodyweightCard()}
       <p class="empty">Cuando guardes entrenamientos, aquí verás tu progreso en cada ejercicio.</p>`;
   }
 
@@ -701,6 +706,8 @@ function viewProgress() {
       <span class="chev">›</span>
     </a>`;
   return `${header('Progreso', { sub: 'Elige un ejercicio para ver su gráfico' })}
+    ${bodyweightCard()}
+    <h2>Ejercicios</h2>
     <input class="search" type="search" data-bind="progress-search" value="${esc(progressQuery)}"
       placeholder="🔍 Buscar ejercicio…" autocomplete="off" aria-label="Buscar ejercicio">
     ${groups.map(g => `<section class="prog-group"><h2>${esc(g.name)}</h2>${g.items.map(item).join('')}</section>`).join('')}
@@ -725,6 +732,111 @@ function filterProgress() {
   if (none) none.hidden = any;
 }
 
+const rangeButtons = () => `<div class="range" role="group" aria-label="Período">${RANGES.map(([key, label]) =>
+  `<button class="${key === progressRange ? 'on' : ''}" data-action="range" data-r="${key}">${label}</button>`).join('')}</div>`;
+
+// ---------- Peso corporal ----------
+// Un registro por día: { date: 'AAAA-MM-DD', kg }
+const todayKey = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+const bwIso = date => `${date}T12:00:00`;              // mediodía local, para ubicarlo bien en el gráfico
+const bwDate = date => (date === todayKey() ? 'hoy' : fmtDate(bwIso(date)));
+const fmtKg = n => `${fmtNum(round1(n))} kg`;
+const signed = n => `${n > 0 ? '+' : ''}${fmtNum(round1(n))}`;
+
+// Cambio en los últimos `days` días: último registro menos el primero dentro del período
+function bwChange(days) {
+  const list = db.bodyweight, last = list[list.length - 1];
+  if (!last) return null;
+  const since = Date.parse(bwIso(last.date)) - days * 86400000;
+  const first = list.find(e => Date.parse(bwIso(e.date)) >= since);
+  return first && first !== last ? last.kg - first.kg : null;
+}
+
+function bodyweightCard() {
+  const last = db.bodyweight[db.bodyweight.length - 1];
+  const change = bwChange(30);
+  return `<h2>⚖️ Peso corporal</h2>
+    <a class="card" href="#/progreso/peso">
+      <div class="grow">
+        ${last
+          ? `<strong>${fmtKg(last.kg)} · ${bwDate(last.date)}</strong>
+             <span class="muted">${change != null ? `${signed(change)} kg en 30 días` : 'Toca para anotar y ver tu gráfico'}</span>`
+          : `<strong>Anota tu peso</strong><span class="muted">Y mira cómo evoluciona día a día</span>`}
+      </div>
+      <span class="chev">›</span>
+    </a>`;
+}
+
+function viewBodyweight() {
+  const today = db.bodyweight.find(e => e.date === todayKey());
+  const last = db.bodyweight[db.bodyweight.length - 1];
+  const days = RANGES.find(r => r[0] === progressRange)[2];
+  const since = Date.now() - days * 86400000;
+  const points = db.bodyweight
+    .map(e => ({ t: Date.parse(bwIso(e.date)), date: bwIso(e.date), y: e.kg, tip: fmtKg(e.kg) }))
+    .filter(p => p.t >= since);
+  chart = null;
+
+  const form = `<form class="stack card" data-form="bodyweight" novalidate>
+      <label class="field"><span>${today ? 'Peso de hoy (ya anotado, puedes corregirlo)' : 'Peso de hoy'}</span>
+        <div class="add-row" style="margin-top:0">
+          <input name="kg" inputmode="decimal" value="${today ? toField(today.kg) : ''}"
+            placeholder="${last ? toField(last.kg) : 'ej. 75,5'}" autocomplete="off" aria-label="Peso en kg">
+          <span class="unit-label">kg</span>
+          <button class="btn primary">Guardar</button>
+        </div>
+      </label>
+      <p class="form-msg" hidden></p>
+    </form>`;
+
+  let body;
+  if (!points.length) {
+    body = `<p class="empty">${db.bodyweight.length ? 'No hay registros en este período.' : 'Todavía no anotas tu peso. Empieza hoy arriba 👆'}</p>`;
+  } else {
+    const ys = points.map(p => p.y);
+    const change = points.length > 1 ? points[points.length - 1].y - points[0].y : null;
+    body = `<div class="stats">
+        <div class="stat"><span class="muted">Máximo</span><strong>${fmtKg(Math.max(...ys))}</strong></div>
+        <div class="stat"><span class="muted">Mínimo</span><strong>${fmtKg(Math.min(...ys))}</strong></div>
+        ${change != null ? `<div class="stat"><span class="muted">Cambio</span><strong>${signed(change)} kg</strong></div>` : ''}
+      </div>
+      <section class="card chart-card">
+        ${chartSvg(points, 'kg', days, 'Peso corporal por día')}
+        <div class="tip" hidden></div>
+      </section>`;
+  }
+
+  const list = db.bodyweight.slice().reverse().map(e => `
+    <div class="prog-row">
+      <span class="muted">${bwDate(e.date)}</span>
+      <span class="bw-right">${fmtKg(e.kg)}
+        <button class="icon small danger" data-action="del-bw" data-date="${e.date}" aria-label="Borrar registro">✕</button>
+      </span>
+    </div>`).join('');
+
+  return `${header('Peso corporal', { back: true, sub: 'Un registro por día, en kg' })}
+    ${form}
+    ${rangeButtons()}
+    ${body}
+    ${list ? `<h2>Registros</h2><section class="card">${list}</section>` : ''}`;
+}
+
+function saveBodyweight(f) {
+  const kg = num(f.elements.kg.value);
+  if (kg == null || kg < 20 || kg > 400) return formMsg(f, 'Escribe tu peso en kg (ej. 75,5).');
+  const date = todayKey();
+  const entry = db.bodyweight.find(e => e.date === date);
+  if (entry) entry.kg = round1(kg);
+  else db.bodyweight.push({ date, kg: round1(kg) });
+  db.bodyweight.sort((a, b) => (a.date < b.date ? -1 : 1));
+  save();
+  render();
+  formMsg($app.querySelector('[data-form="bodyweight"]'), `✓ Guardado: ${fmtKg(kg)} hoy`, true);
+}
+
 function viewProgressExercise(id) {
   const rows = historyFor(id);
   if (!rows.length) { location.replace('#/progreso'); return ''; }
@@ -733,8 +845,7 @@ function viewProgressExercise(id) {
   const { unit, points } = progressPoints(id, days);
   chart = null;
 
-  const range = `<div class="range" role="group" aria-label="Período">${RANGES.map(([key, label]) =>
-    `<button class="${key === progressRange ? 'on' : ''}" data-action="range" data-r="${key}">${label}</button>`).join('')}</div>`;
+  const range = rangeButtons();
 
   if (!points.length) {
     return `${header(name, { back: true, sub: 'Peso máximo por sesión' })}${range}
@@ -773,9 +884,9 @@ function showChartTip(e) {
   const p = chart.points[k];
   const cross = svg.querySelector('.cross');
   cross.setAttribute('x1', p.x); cross.setAttribute('x2', p.x); cross.setAttribute('visibility', 'visible');
-  svg.querySelectorAll('.dot').forEach(d => d.setAttribute('r', +d.dataset.k === k ? 6 : 4));
+  svg.querySelectorAll('.dot').forEach(d => d.setAttribute('r', +d.dataset.k === k ? 6 : d.dataset.r));
   const tip = svg.parentElement.querySelector('.tip');
-  tip.innerHTML = `<span class="muted">${fmtDate(p.date)}</span><strong>${setText(p.set, p.set.unit)}</strong>`;
+  tip.innerHTML = `<span class="muted">${fmtDate(p.date)}</span><strong>${p.tip}</strong>`;
   tip.hidden = false;
   const left = (p.x / chart.W) * box.width, half = tip.offsetWidth / 2;
   tip.style.left = `${Math.min(Math.max(left, half + 4), box.width - half - 4)}px`;
@@ -788,7 +899,7 @@ $app.addEventListener('pointerleave', e => {
   const svg = $app.querySelector('svg.chart');
   if (!svg) return;
   svg.querySelector('.cross').setAttribute('visibility', 'hidden');
-  svg.querySelectorAll('.dot').forEach(d => d.setAttribute('r', 4));
+  svg.querySelectorAll('.dot').forEach(d => d.setAttribute('r', d.dataset.r));
   svg.parentElement.querySelector('.tip').hidden = true;
 }, true);
 
@@ -831,7 +942,7 @@ function render() {
     case 'editar': html = viewWorkout(); break;
     case 'historial': html = viewHistory(); tab = 'historial'; break;
     case 'progreso':
-      html = arg ? viewProgressExercise(decodeURIComponent(arg)) : viewProgress();
+      html = arg === 'peso' ? viewBodyweight() : arg ? viewProgressExercise(decodeURIComponent(arg)) : viewProgress();
       tab = arg ? null : 'progreso';
       break;
     case 'sesion': html = viewSession(arg); break;
@@ -1038,7 +1149,9 @@ function stable(v) {
   return JSON.stringify(v ?? null);
 }
 const clone = v => JSON.parse(JSON.stringify(v));
-const mainData = () => ({ routines: db.routines, notes: db.notes });
+// El peso corporal solo se incluye si hay registros: así un teléfono con la versión anterior
+// no ve una diferencia y no sobrescribe en la nube los pesos anotados en otro teléfono
+const mainData = () => ({ routines: db.routines, notes: db.notes, ...(db.bodyweight.length ? { bodyweight: db.bodyweight } : {}) });
 const byDate = (a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
 
 function hasUnsynced() {
@@ -1088,11 +1201,12 @@ async function sync() {
 
 // Cambios que llegan desde otro dispositivo. Si aquí hay cambios sin subir, ganan los de aquí.
 function applyRemoteMain(data) {
-  const remote = { routines: data.routines || [], notes: data.notes || {} };
+  const bw = data.bodyweight || [];
+  const remote = { routines: data.routines || [], notes: data.notes || {}, ...(bw.length ? { bodyweight: bw } : {}) };
   const r = stable(remote), local = stable(mainData());
   if (local !== synced.main) return;
   synced.main = r;
-  if (r !== local) { db.routines = remote.routines; db.notes = remote.notes; refresh(); }
+  if (r !== local) { db.routines = remote.routines; db.notes = remote.notes; db.bodyweight = bw; refresh(); }
   persistLocal();
 }
 
@@ -1135,6 +1249,7 @@ async function loadFromCloud() {
   if (main) {
     db.routines = main.routines || [];
     db.notes = main.notes || {};
+    db.bodyweight = main.bodyweight || [];
     synced.main = stable(mainData());
   }
   db.workouts = workouts.sort(byDate);
@@ -1286,6 +1401,18 @@ $app.addEventListener('click', e => {
     }
 
     // Rutina
+    case 'del-bw': {
+      const k = db.bodyweight.findIndex(e => e.date === el.dataset.date);
+      if (k < 0) return;
+      const [removed] = db.bodyweight.splice(k, 1);
+      save(); render();
+      showUndo(`Registro de ${bwDate(removed.date)} borrado`, () => {
+        db.bodyweight.push(removed);
+        db.bodyweight.sort((a, b) => (a.date < b.date ? -1 : 1));
+        save(); render();
+      });
+      break;
+    }
     case 'range':
       progressRange = el.dataset.r;
       render();
@@ -1500,6 +1627,7 @@ $app.addEventListener('submit', e => {
     case 'username': submitUsername(f); return;
     case 'password': submitPassword(f); return;
     case 'import-code': importRoutine(f); return;
+    case 'bodyweight': saveBodyweight(f); return;
   }
   const title = f.elements.title.value.trim();
   if (!title) return;

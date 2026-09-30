@@ -218,7 +218,7 @@ select { width: auto; }
   background: none; border: 0; border-radius: 8px; min-height: 38px; cursor: pointer;
 }
 .range button.on { background: var(--surface2); color: var(--text); }
-.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 10px; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 10px; margin-bottom: 10px; }
 .stat { display: grid; gap: 2px; padding: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); }
 .stat strong { font-size: 22px; font-variant-numeric: tabular-nums; }
 .stat .muted { font-size: 13px; }
@@ -238,7 +238,7 @@ select { width: auto; }
   box-shadow: 0 6px 16px rgba(0, 0, 0, .4); font-size: 13px;
 }
 .tip[hidden] { display: none; }
-.prog-row { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+.prog-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; }
 .prog-row:last-child { border-bottom: 0; }
 
 /* Acceso: login, registro y pantallas de carga */
@@ -305,3 +305,7 @@ select { width: auto; }
 #tabs[hidden] { display: none; }
 #tabs a { flex: 1; text-align: center; padding: 16px 0; color: var(--muted); font-weight: 600; }
 #tabs a.active { color: var(--accent); }
+
+/* Peso corporal */
+.unit-label { align-self: center; color: var(--muted); }
+.bw-right { display: flex; align-items: center; gap: 8px; }
