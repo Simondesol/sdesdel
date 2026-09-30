@@ -262,7 +262,12 @@ function viewWorkout() {
   const editing = !!d.editOf;
   const before = beforeIndex(d);
 
-  const blocks = d.exercises.map((ex, i) => {
+  // Un ejercicio a la vez: d.pos es el ejercicio en pantalla y d.done los que ya pasaste con "Siguiente"
+  const last = d.exercises.length - 1;
+  d.pos = Math.min(Math.max(d.pos || 0, 0), last);
+  d.done = d.done || [];
+
+  const exerciseBlock = (ex, i) => {
     const best = bestSets(ex.exerciseId, before);
     const sets = ex.sets.map((s, j) => `
       <div class="set ${ex.rir ? 'has-rir' : ''}">
@@ -296,11 +301,28 @@ function viewWorkout() {
       </div>
       ${open ? `<div class="hist">${past}</div>` : ''}
     </section>`;
-  }).join('');
+  };
+
+  const i = d.pos, isLast = i === last;
+  // Fila con todos los ejercicios para saltar a cualquiera (✓ = ya lo pasaste)
+  const steps = `<nav class="steps" aria-label="Ejercicios">${d.exercises.map((ex, k) => `
+    <button class="step ${k === i ? 'on' : ''} ${d.done.includes(ex.exerciseId) ? 'done' : ''}" data-action="go-ex" data-i="${k}"
+      ${k === i ? 'aria-current="step"' : ''}>${d.done.includes(ex.exerciseId) ? '✓ ' : ''}${esc(ex.name)}</button>`).join('')}
+  </nav>`;
+  const nav = `<div class="step-nav">
+      <button class="btn" data-action="prev-ex" ${i === 0 ? 'disabled' : ''}>‹ Anterior</button>
+      ${isLast
+        ? (editing ? '<button class="btn primary" data-action="save-edit">Guardar cambios</button>'
+                   : '<button class="btn primary" data-action="finish">Terminar y guardar</button>')
+        : `<button class="btn primary" data-action="next-ex">Siguiente: ${esc(d.exercises[i + 1].name)} ›</button>`}
+    </div>`;
 
   const title = editing ? `Editar · ${d.routineName}` : d.routineName;
-  return `${header(title, { back: true, sub: fmtLongDate(d.start) })}
-    ${blocks}
+  return `${header(title, { back: true, sub: `Ejercicio ${i + 1} de ${last + 1} · ${fmtDate(d.start)}` })}
+    ${steps}
+    ${exerciseBlock(d.exercises[i], i)}
+    ${nav}
+    ${isLast ? `
     <form class="add-row" data-form="extra-ex">
       <input name="title" placeholder="+ Ejercicio extra" autocomplete="off" required>
       ${unitSelect()}
@@ -308,11 +330,9 @@ function viewWorkout() {
     </form>
     <div class="actions">
       ${editing
-        ? `<button class="btn primary block" data-action="save-edit">Guardar cambios</button>
-           <button class="btn ghost block" data-action="back">Cancelar</button>`
-        : `<button class="btn primary block" data-action="finish">Terminar y guardar</button>
-           <button class="btn ghost block danger-text" data-action="discard">Descartar entrenamiento</button>`}
-    </div>
+        ? '<button class="btn ghost block" data-action="back">Cancelar</button>'
+        : '<button class="btn ghost block danger-text" data-action="discard">Descartar entrenamiento</button>'}
+    </div>` : ''}
     ${editing ? '' : `<div id="restbar" class="restbar" hidden>
       <span class="rb-text"></span>
       <button class="icon" data-action="rest-stop" aria-label="Cerrar descanso">✕</button>
@@ -1115,6 +1135,7 @@ function addExtraExercise(name, unit) {
     rir: found ? found.rir : false,
     sets: prefillSets(lastFor(id, before), found && found.rir),
   });
+  d.pos = d.exercises.length - 1;
   save(); render();
   $app.querySelector(`[data-ex="${d.exercises.length - 1}"]`).scrollIntoView({ block: 'center' });
 }
@@ -1506,6 +1527,18 @@ $app.addEventListener('click', e => {
     }
 
     // Entrenamiento (en curso o editando uno guardado)
+    case 'go-ex':
+    case 'prev-ex':
+    case 'next-ex': {
+      const d = cur();
+      if (action === 'next-ex' && !d.done.includes(d.exercises[d.pos].exerciseId)) d.done.push(d.exercises[d.pos].exerciseId);
+      d.pos = action === 'go-ex' ? i : d.pos + (action === 'next-ex' ? 1 : -1);
+      save(); render();
+      window.scrollTo(0, 0);
+      const chip = $app.querySelector('.step.on');
+      if (chip) chip.scrollIntoView({ inline: 'center', block: 'nearest' });
+      break;
+    }
     case 'add-set':
       cur().exercises[i].sets.push({ w: '', r: '', ...(cur().exercises[i].rir ? { rir: '' } : {}) });
       save(); render();

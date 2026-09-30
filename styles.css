@@ -309,3 +309,19 @@ select { width: auto; }
 /* Peso corporal */
 .unit-label { align-self: center; color: var(--muted); }
 .bw-right { display: flex; align-items: center; gap: 8px; }
+
+/* Entrenamiento: un ejercicio a la vez */
+.steps {
+  display: flex; gap: 6px; overflow-x: auto; margin: 0 -16px 10px; padding: 0 16px 4px;
+  scrollbar-width: none;
+}
+.steps::-webkit-scrollbar { display: none; }
+.step {
+  flex: none; font: inherit; font-size: 14px; color: var(--muted);
+  background: var(--surface); border: 1px solid var(--border); border-radius: 999px;
+  min-height: 36px; padding: 0 12px; white-space: nowrap; cursor: pointer;
+}
+.step.done { color: var(--text); }
+.step.on { color: var(--accent); border-color: var(--accent); font-weight: 600; }
+.step-nav { display: grid; grid-template-columns: 1fr 2fr; gap: 8px; margin: 12px 0; }
+.step-nav .btn { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
