@@ -1,28 +1,43 @@
-'use strict';
-
-// ---------- Datos (guardados en el teléfono) ----------
-const KEY = 'sdesdel-v1';
+// ---------- Datos ----------
+// Cada usuario tiene una copia en el teléfono (para usar la app sin internet en el gym)
+// que se sincroniza con su cuenta en la nube. El entrenamiento en curso solo vive en el teléfono.
+const LEGACY_KEY = 'sdesdel-v1';                 // datos de antes de que existieran las cuentas
+const userKey = id => `sdesdel-u-${id}`;
 const $app = document.getElementById('app');
 const $tabs = document.getElementById('tabs');
 
-let db = load();
+const emptyDb = () => ({ routines: [], workouts: [], draft: null, notes: {} });
+const emptySynced = () => ({ main: null, w: {} });
+let db = emptyDb();
+let user = null;                 // { uid, email, username }
+let synced = emptySynced();      // último estado confirmado por la nube (para saber qué falta subir)
+let cloud = null;                // módulo de conexión (cloud.js)
+let status = 'booting';          // booting | signed-out | ready | load-error | fatal
+let pendingUsername = null;      // nombre elegido al registrarse (Firebase lo avisa un poco después)
+let authUser = null;             // último usuario informado por Firebase
+
 let lastUnit = 'kg';
 const openHistory = new Set();   // ejercicios con el historial desplegado
 let editingNote = null;          // ejercicio cuya nota se está editando
 let editBuf = null;              // copia de un entrenamiento guardado que se está editando
 let justFinished = null;         // entrenamiento recién guardado (para mostrar el resumen)
 
-function load() {
+function persistLocal() {
+  if (user) localStorage.setItem(userKey(user.uid), JSON.stringify({ db, synced }));
+}
+function save() { persistLocal(); scheduleSync(); }
+
+// Datos guardados en el teléfono antes de tener cuenta (se suben al iniciar sesión)
+function readLegacy() {
   try {
-    const d = JSON.parse(localStorage.getItem(KEY));
-    if (d && Array.isArray(d.routines) && Array.isArray(d.workouts)) {
-      d.notes = d.notes || {};   // agregado en v2: notas por ejercicio
+    const d = JSON.parse(localStorage.getItem(LEGACY_KEY));
+    if (d && Array.isArray(d.routines) && Array.isArray(d.workouts) && (d.routines.length || d.workouts.length)) {
+      d.notes = d.notes || {};
       return d;
     }
   } catch (e) { /* datos corruptos o vacíos */ }
-  return { routines: [], workouts: [], draft: null, notes: {} };
+  return null;
 }
-function save() { localStorage.setItem(KEY, JSON.stringify(db)); }
 
 // ---------- Utilidades ----------
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -287,13 +302,70 @@ function viewHistory() {
       <span class="chev">›</span>
     </a>`).join('');
   return `${header('Historial')}
-    ${list || '<p class="empty">Aún no hay entrenamientos guardados.</p>'}
-    <h2>Respaldo</h2>
-    <p class="muted hint">Guarda un archivo con todas tus rutinas, notas e historial, o restaura uno anterior (por ejemplo, si cambias de celular).</p>
-    <div class="ex-actions">
-      <button class="btn" data-action="export">Exportar respaldo</button>
-      <label class="btn file-btn">Importar<input type="file" accept=".json,application/json" data-file="import" hidden></label>
-    </div>`;
+    ${list || '<p class="empty">Aún no hay entrenamientos guardados.</p>'}`;
+}
+
+// ---------- Cuenta ----------
+function viewAuth(mode) {
+  const reg = mode === 'registro';
+  return `<div class="auth">
+    <img class="auth-logo" src="icons/icon-192.png" alt="">
+    <h1>Desdel</h1>
+    <p class="muted">Entrena. Anota. Supera.</p>
+    ${readLegacy() ? `<p class="auth-note">Tienes rutinas guardadas en este celular. Al ${reg ? 'crear tu cuenta' : 'iniciar sesión'} se suben a tu cuenta automáticamente.</p>` : ''}
+    <form class="auth-form" data-form="${reg ? 'register' : 'login'}" novalidate>
+      <label class="field"><span>Correo</span>
+        <input name="email" type="email" autocomplete="email" inputmode="email" required>
+      </label>
+      ${reg ? `<label class="field"><span>Nombre de usuario</span>
+        <input name="username" autocomplete="nickname" maxlength="30" required>
+      </label>` : ''}
+      <label class="field"><span>Contraseña${reg ? ' (mínimo 6 caracteres)' : ''}</span>
+        <input name="password" type="password" autocomplete="${reg ? 'new-password' : 'current-password'}" required>
+      </label>
+      <p class="auth-error" hidden></p>
+      <button class="btn primary block">${reg ? 'Crear cuenta' : 'Entrar'}</button>
+    </form>
+    ${reg ? '' : '<button class="btn ghost block" data-action="reset-pass">¿Olvidaste tu contraseña?</button>'}
+    <p class="auth-switch">${reg
+      ? '¿Ya tienes cuenta? <a href="#/login">Inicia sesión</a>'
+      : '¿No tienes cuenta? <a href="#/registro">Crear cuenta</a>'}</p>
+  </div>`;
+}
+
+function syncHtml() {
+  if (!hasUnsynced()) return '<span class="ok">✓ Todo guardado en la nube</span>';
+  return navigator.onLine
+    ? '⏳ Guardando en la nube…'
+    : '⏳ Sin internet: tus cambios se subirán cuando vuelva la conexión.';
+}
+const paintSync = () => { const el = $app.querySelector('[data-sync]'); if (el) el.innerHTML = syncHtml(); };
+
+function viewAccount() {
+  return `${header('Cuenta')}
+    <section class="card">
+      <strong>${esc(user.username || 'Sin nombre de usuario')}</strong>
+      <div class="muted">${esc(user.email)}</div>
+    </section>
+    <section class="card" data-sync>${syncHtml()}</section>
+    <p class="muted hint">Tus rutinas e historial se guardan en tu cuenta. Inicia sesión con el mismo correo en otro teléfono para verlos.</p>
+    <button class="btn ghost block danger-text" data-action="logout" style="margin-top:24px">Cerrar sesión</button>`;
+}
+
+const logoImg = '<img class="auth-logo" src="icons/icon-192.png" alt="">';
+function viewStatus() {
+  if (status === 'booting') return `<div class="auth">${logoImg}<p class="muted">Cargando…</p></div>`;
+  if (status === 'load-error') {
+    return `<div class="auth">${logoImg}
+      <p>No se pudieron descargar tus datos.</p>
+      <p class="muted">La primera vez en este teléfono se necesita internet.</p>
+      <button class="btn primary block" data-action="retry">Reintentar</button>
+      <button class="btn ghost block" data-action="logout">Cerrar sesión</button></div>`;
+  }
+  return `<div class="auth">${logoImg}
+    <p>No se pudo abrir Desdel.</p>
+    <p class="muted">Revisa tu conexión a internet y vuelve a abrir la app.</p>
+    <button class="btn primary block" data-action="reload">Reintentar</button></div>`;
 }
 
 function viewSession(id) {
@@ -357,6 +429,16 @@ function viewExercise(id) {
 // ---------- Render / navegación ----------
 function render() {
   const [screen, arg = ''] = routeParts();
+  const authScreen = screen === 'login' || screen === 'registro';
+
+  // Sin sesión: solo pantallas de acceso. Cargando o con error: pantalla de estado.
+  if (status !== 'ready') {
+    $app.innerHTML = status === 'signed-out' ? viewAuth(screen === 'registro' ? 'registro' : 'login') : viewStatus();
+    $tabs.hidden = true;
+    return;
+  }
+  if (authScreen) { location.replace('#/'); return; }
+
   if (screen !== 'editar') editBuf = null;
   else if (!editBuf || editBuf.editOf !== arg) editBuf = makeEditBuf(arg);
   if (screen !== 'sesion' || arg !== justFinished) justFinished = null;
@@ -369,6 +451,7 @@ function render() {
     case 'historial': html = viewHistory(); tab = 'historial'; break;
     case 'sesion': html = viewSession(arg); break;
     case 'ejercicio': html = viewExercise(decodeURIComponent(arg)); break;
+    case 'cuenta': html = viewAccount(); tab = 'cuenta'; break;
     default: html = viewHome(); tab = 'rutinas';
   }
   $app.innerHTML = html;
@@ -553,38 +636,240 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 
-// ---------- Respaldo ----------
-function exportBackup() {
-  const payload = {
-    app: 'sdesdel',
-    exportedAt: new Date().toISOString(),
-    data: { routines: db.routines, workouts: db.workouts, notes: db.notes },
-  };
-  const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `sdesdel-respaldo-${new Date().toISOString().slice(0, 10)}.json`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+// ---------- Sincronización con la nube ----------
+// Texto estable de un valor (mismas claves en el mismo orden) para comparar versiones
+function stable(v) {
+  if (Array.isArray(v)) return `[${v.map(stable).join(',')}]`;
+  if (v && typeof v === 'object') {
+    return `{${Object.keys(v).sort().filter(k => v[k] !== undefined)
+      .map(k => `${JSON.stringify(k)}:${stable(v[k])}`).join(',')}}`;
+  }
+  return JSON.stringify(v ?? null);
+}
+const clone = v => JSON.parse(JSON.stringify(v));
+const mainData = () => ({ routines: db.routines, notes: db.notes });
+const byDate = (a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+
+function hasUnsynced() {
+  if (!user) return false;
+  if (stable(mainData()) !== synced.main) return true;
+  if (db.workouts.some(w => stable(w) !== synced.w[w.id])) return true;
+  return Object.keys(synced.w).some(id => !db.workouts.some(w => w.id === id));
 }
 
-async function importBackup(file) {
+let syncTimer = null, syncing = false, syncAgain = false;
+function scheduleSync() {
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(sync, 800);
+}
+
+// Sube a la nube lo que cambió desde la última vez. Sin internet, Firebase espera y lo sube al volver.
+async function sync() {
+  if (!user || status !== 'ready') return;
+  if (syncing) { syncAgain = true; return; }
+  syncing = true;
+  const uid = user.uid;
+  paintSync();
   try {
-    const parsed = JSON.parse(await file.text());
-    const data = parsed.data || parsed;
-    if (!Array.isArray(data.routines) || !Array.isArray(data.workouts)) throw new Error('formato');
-    const msg = `Este respaldo tiene ${plural(data.routines.length, 'rutina')} y ${plural(data.workouts.length, 'entrenamiento')}.\n\n` +
-      'Va a REEMPLAZAR todo lo que tienes ahora en la app. ¿Continuar?';
-    if (!confirm(msg)) return;
-    db = { routines: data.routines, workouts: data.workouts, notes: data.notes || {}, draft: null };
-    save();
-    setTimer(null);
+    const m = stable(mainData());
+    if (m !== synced.main) {
+      await cloud.putMain(uid, clone(mainData()));
+      synced.main = m;
+    }
+    for (const w of [...db.workouts]) {
+      const j = stable(w);
+      if (synced.w[w.id] === j) continue;
+      await cloud.putWorkout(uid, clone(w));
+      synced.w[w.id] = j;
+    }
+    for (const id of Object.keys(synced.w)) {
+      if (db.workouts.some(w => w.id === id)) continue;
+      await cloud.removeWorkout(uid, id);
+      delete synced.w[id];
+    }
+  } catch (e) { /* se reintenta en el próximo cambio o al volver internet */ }
+  syncing = false;
+  if (!user || user.uid !== uid) return;     // se cerró sesión mientras subía
+  persistLocal();
+  paintSync();
+  if (syncAgain) { syncAgain = false; sync(); }
+}
+
+// Cambios que llegan desde otro dispositivo. Si aquí hay cambios sin subir, ganan los de aquí.
+function applyRemoteMain(data) {
+  const remote = { routines: data.routines || [], notes: data.notes || {} };
+  const r = stable(remote), local = stable(mainData());
+  if (local !== synced.main) return;
+  synced.main = r;
+  if (r !== local) { db.routines = remote.routines; db.notes = remote.notes; refresh(); }
+  persistLocal();
+}
+
+function applyRemoteWorkouts(changes) {
+  let changed = false;
+  for (const c of changes) {
+    const idx = db.workouts.findIndex(w => w.id === c.id);
+    const localJ = idx >= 0 ? stable(db.workouts[idx]) : undefined;
+    const dirty = localJ !== synced.w[c.id];
+    if (c.type === 'removed') {
+      if (idx >= 0 && !dirty) { db.workouts.splice(idx, 1); changed = true; }
+      if (!dirty || idx < 0) delete synced.w[c.id];
+      continue;
+    }
+    if (dirty && idx >= 0) continue;
+    const j = stable(c.data);
+    if (idx < 0) { db.workouts.push(c.data); changed = true; }
+    else if (localJ !== j) { db.workouts[idx] = c.data; changed = true; }
+    synced.w[c.id] = j;
+  }
+  if (changed) { db.workouts.sort(byDate); refresh(); }
+  persistLocal();
+}
+
+// Redibuja con los datos nuevos, salvo que estés escribiendo en ese momento
+let refreshPending = false;
+function refresh() {
+  if (document.activeElement && document.activeElement.matches('#app input')) { refreshPending = true; return; }
+  render();
+}
+
+// ---------- Sesión ----------
+let stopListening = () => {};
+
+// Primera vez en este teléfono: descarga todo desde la nube
+async function loadFromCloud() {
+  const { main, workouts } = await cloud.fetchAll(user.uid);
+  db = emptyDb();
+  synced = emptySynced();
+  if (main) {
+    db.routines = main.routines || [];
+    db.notes = main.notes || {};
+    synced.main = stable(mainData());
+  }
+  db.workouts = workouts.sort(byDate);
+  for (const w of db.workouts) synced.w[w.id] = stable(w);
+}
+
+// Sube a la cuenta lo que se guardó en este teléfono antes de tener cuenta
+function migrateLegacy(legacy) {
+  const cloudEmpty = !db.routines.length && !db.workouts.length;
+  const merge = cloudEmpty || confirm(
+    `Este celular tiene ${plural(legacy.routines.length, 'rutina')} y ${plural(legacy.workouts.length, 'entrenamiento')} ` +
+    'guardados de antes de tener cuenta.\n\n¿Agregarlos a tu cuenta?');
+  if (merge) {
+    for (const r of legacy.routines) if (!db.routines.some(x => x.id === r.id)) db.routines.push(r);
+    for (const w of legacy.workouts) if (!db.workouts.some(x => x.id === w.id)) db.workouts.push(w);
+    db.workouts.sort(byDate);
+    db.notes = { ...legacy.notes, ...db.notes };
+    if (!db.draft && legacy.draft) db.draft = legacy.draft;
+  }
+  // Se guarda una copia por si acaso y se deja de usar
+  localStorage.setItem(`${LEGACY_KEY}-respaldo`, localStorage.getItem(LEGACY_KEY));
+  localStorage.removeItem(LEGACY_KEY);
+}
+
+async function handleUser(u) {
+  authUser = u;
+  stopListening();
+  stopListening = () => {};
+  if (!u) {
+    user = null;
+    db = emptyDb();
+    synced = emptySynced();
+    status = 'signed-out';
     render();
-    alert('Respaldo restaurado.');
+    return;
+  }
+
+  user = { uid: u.uid, email: u.email, username: u.username || pendingUsername || '' };
+  pendingUsername = null;
+  let cached = null;
+  try { cached = JSON.parse(localStorage.getItem(userKey(u.uid))); } catch (e) { /* sin copia local */ }
+
+  if (cached && cached.db) {
+    db = { ...emptyDb(), ...cached.db };
+    synced = cached.synced || emptySynced();
+  } else {
+    status = 'booting';
+    render();
+    try { await loadFromCloud(); } catch (e) { status = 'load-error'; render(); return; }
+  }
+  if (authUser !== u) return;            // cambió la sesión mientras descargaba
+
+  const legacy = readLegacy();
+  if (legacy) migrateLegacy(legacy);
+
+  status = 'ready';
+  persistLocal();
+  stopListening = cloud.listen(u.uid, applyRemoteMain, applyRemoteWorkouts);
+  sync();
+  render();
+  if (db.draft && db.draft.timer) keepScreenOn(true);
+}
+
+async function logout() {
+  const pending = hasUnsynced();
+  const msg = pending
+    ? 'Hay cambios que todavía no se suben a la nube (sin internet). Si cierras sesión ahora, se pierden.\n\n¿Cerrar sesión igual?'
+    : `¿Cerrar sesión?${db.draft ? ' Se descarta el entrenamiento en curso.' : ''} Tus datos quedan guardados en tu cuenta.`;
+  if (!confirm(msg)) return;
+  keepScreenOn(false);
+  stopListening();
+  if (user) localStorage.removeItem(userKey(user.uid));
+  user = null;
+  await cloud.logout();                  // Firebase avisa y se muestra la pantalla de acceso
+  location.replace('#/');
+}
+
+const AUTH_ERRORS = {
+  'auth/email-already-in-use': 'Ya existe una cuenta con ese correo. Inicia sesión.',
+  'auth/invalid-email': 'El correo no es válido.',
+  'auth/missing-email': 'Escribe tu correo.',
+  'auth/weak-password': 'La contraseña debe tener al menos 6 caracteres.',
+  'auth/missing-password': 'Escribe tu contraseña.',
+  'auth/invalid-credential': 'Correo o contraseña incorrectos.',
+  'auth/wrong-password': 'Correo o contraseña incorrectos.',
+  'auth/user-not-found': 'Correo o contraseña incorrectos.',
+  'auth/too-many-requests': 'Demasiados intentos. Espera unos minutos y vuelve a intentar.',
+  'auth/network-request-failed': 'Sin conexión a internet.',
+};
+const authError = e => AUTH_ERRORS[e && e.code] || 'Algo salió mal. Intenta de nuevo.';
+
+async function submitAuth(f) {
+  const reg = f.dataset.form === 'register';
+  const email = f.elements.email.value.trim();
+  const password = f.elements.password.value;
+  const username = reg ? f.elements.username.value.trim() : '';
+  const $err = f.querySelector('.auth-error'), $btn = f.querySelector('button');
+  const showError = text => { $err.textContent = text; $err.hidden = false; };
+
+  if (!email) return showError('Escribe tu correo.');
+  if (reg && !username) return showError('Escribe un nombre de usuario.');
+  if (!password) return showError('Escribe tu contraseña.');
+
+  $err.hidden = true;
+  $btn.disabled = true;
+  $btn.textContent = reg ? 'Creando cuenta…' : 'Entrando…';
+  try {
+    if (reg) { pendingUsername = username; await cloud.register(email, password, username); }
+    else await cloud.login(email, password);
+    // handleUser se encarga del resto cuando Firebase confirma la sesión
   } catch (e) {
-    alert('No se pudo leer el archivo. Asegúrate de elegir un respaldo exportado desde Desdel.');
+    pendingUsername = null;
+    showError(authError(e));
+    $btn.disabled = false;
+    $btn.textContent = reg ? 'Crear cuenta' : 'Entrar';
+  }
+}
+
+async function resetPassword() {
+  const email = ($app.querySelector('[name="email"]') || {}).value?.trim();
+  if (!email) { alert('Escribe tu correo arriba y vuelve a tocar "¿Olvidaste tu contraseña?".'); return; }
+  try {
+    await cloud.resetPassword(email);
+    alert(`Si existe una cuenta con ${email}, te llegará un correo para crear una contraseña nueva. Revisa también la carpeta de spam.`);
+  } catch (e) {
+    alert(authError(e));
   }
 }
 
@@ -713,8 +998,19 @@ $app.addEventListener('click', e => {
       db.workouts = db.workouts.filter(w => w.id !== id);
       save(); history.back();
       break;
-    case 'export':
-      exportBackup();
+
+    // Cuenta
+    case 'logout':
+      logout();
+      break;
+    case 'reset-pass':
+      resetPassword();
+      break;
+    case 'retry':
+      handleUser(authUser);
+      break;
+    case 'reload':
+      location.reload();
       break;
   }
 });
@@ -743,13 +1039,6 @@ $app.addEventListener('input', e => {
   save();
 });
 
-$app.addEventListener('change', e => {
-  if (e.target.dataset.file === 'import' && e.target.files[0]) {
-    importBackup(e.target.files[0]);
-    e.target.value = '';
-  }
-});
-
 // Redibuja solo la nota (sin tocar el resto, para no perder el toque en otro botón)
 function redrawNote(i) {
   const wrap = $app.querySelector(`[data-note="${i}"]`);
@@ -757,6 +1046,13 @@ function redrawNote(i) {
 }
 
 $app.addEventListener('focusout', e => {
+  // Llegaron datos de otro dispositivo mientras escribías: se muestran al terminar
+  if (refreshPending) setTimeout(() => {
+    if (refreshPending && !(document.activeElement && document.activeElement.matches('#app input'))) {
+      refreshPending = false;
+      render();
+    }
+  }, 300);
   const bind = e.target.dataset.bind;
   if (bind === 'note' && editingNote !== null) {
     editingNote = null;
@@ -774,6 +1070,7 @@ $app.addEventListener('keydown', e => {
 $app.addEventListener('submit', e => {
   e.preventDefault();
   const f = e.target;
+  if (f.dataset.form === 'login' || f.dataset.form === 'register') { submitAuth(f); return; }
   const title = f.elements.title.value.trim();
   if (!title) return;
   if (f.dataset.form === 'new-routine') {
@@ -793,8 +1090,21 @@ $app.addEventListener('submit', e => {
 });
 
 // ---------- Inicio ----------
-render();
-if (db.draft && db.draft.timer) keepScreenOn(true);
+render();   // pantalla de carga
+
+window.addEventListener('online', () => { sync(); paintSync(); });
+window.addEventListener('offline', paintSync);
+
+try {
+  // En el computador de desarrollo se puede probar sin Firebase con ?fake
+  const fake = ['localhost', '127.0.0.1'].includes(location.hostname) && new URLSearchParams(location.search).has('fake');
+  cloud = await import(fake ? './cloud-fake.js' : './cloud.js');
+  cloud.onUser(handleUser);
+} catch (e) {
+  console.error(e);
+  status = 'fatal';
+  render();
+}
 
 if ('serviceWorker' in navigator) {
   // Si llega una versión nueva de la app, recarga una vez para mostrarla (los datos ya están guardados)

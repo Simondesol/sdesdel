@@ -1,0 +1,11 @@
+rules_version = '2';
+
+// Cada usuario solo puede leer y escribir sus propios datos (users/{su uid}/...).
+// Copia de las reglas publicadas en la consola de Firebase → Firestore → Reglas.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{uid}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+  }
+}

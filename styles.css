@@ -200,6 +200,27 @@ select { width: auto; }
 .legend .mark { display: inline-block; width: 18px; text-align: center; }
 .sets { margin-top: 10px; }
 
+/* Acceso: login, registro y pantallas de carga */
+.auth {
+  max-width: 400px; margin: 0 auto;
+  padding: calc(40px + env(safe-area-inset-top)) 0 24px;
+  text-align: center;
+}
+.auth-logo { width: 96px; height: 96px; border-radius: 22px; }
+.auth h1 { margin: 12px 0 2px; font-size: 26px; }
+.auth > .muted { margin: 0 0 20px; }
+.auth-form { display: grid; gap: 14px; text-align: left; margin-top: 8px; }
+.auth-form .btn { margin-top: 4px; }
+.auth-error { margin: 0; color: var(--danger); font-size: 14px; }
+.auth-note {
+  text-align: left; font-size: 14px; margin: 0 0 16px;
+  padding: 10px 12px; border-radius: 10px;
+  border: 1px solid var(--accent); color: var(--text);
+}
+.auth-switch { color: var(--muted); font-size: 15px; margin-top: 20px; }
+.auth-switch a { color: var(--accent); font-weight: 600; }
+.ok { color: var(--accent); font-weight: 600; }
+
 /* Aviso "Serie borrada · Deshacer" */
 .toast {
   position: fixed; left: 12px; right: 12px; z-index: 30;
