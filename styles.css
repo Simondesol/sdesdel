@@ -385,3 +385,11 @@ a.card.hub { display: grid; }
 .water-now .add-row { margin-top: 0; }
 .water-day { display: grid; grid-template-columns: 64px 1fr 52px; align-items: center; gap: 10px; padding: 6px 0; font-size: 14px; font-variant-numeric: tabular-nums; }
 .water-day > span:last-child { text-align: right; }
+
+/* Inicio: tarjetas flotando al centro, con aire a los lados y arriba */
+.hub-wrap {
+  max-width: 420px; margin: 0 auto; padding: 24px 8px 0;
+  min-height: calc(100dvh - 140px - env(safe-area-inset-top));
+  display: flex; flex-direction: column; justify-content: center; gap: 2px;
+}
+.bar .home { display: grid; place-items: center; text-decoration: none; }

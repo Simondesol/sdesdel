@@ -111,9 +111,10 @@ function liveCmp(s, unit, best) {
 const markSpan = c => (c == null ? '' :
   `<span class="mark ${c > 0 ? 'up' : c < 0 ? 'down' : 'eq'}">${c > 0 ? '▲' : c < 0 ? '▼' : '='}</span>`);
 
-function header(title, { back = false, sub = '', right = '' } = {}) {
+function header(title, { back = false, home = false, sub = '', right = '' } = {}) {
   return `<header class="bar">
     ${back ? '<button class="icon" data-action="back" aria-label="Volver">‹</button>' : ''}
+    ${home ? '<a class="icon home" href="#/" aria-label="Volver al inicio">‹</a>' : ''}
     <div class="titles"><h1>${esc(title)}</h1>${sub ? `<div class="sub">${esc(sub)}</div>` : ''}</div>
     ${right}
   </header>`;
@@ -131,6 +132,7 @@ function viewHub() {
   const d = db.draft;
   const ml = waterToday(), goal = waterGoal().ml;
   return `${header('Desdel', { sub: 'Entrena. Anota. Supera.', right: GEAR })}
+    <div class="hub-wrap">
     <a class="card hub" href="#/rutinas">
       <div class="hub-top"><span class="hub-icon">🏋️</span><strong>Entreno</strong><span class="chev">›</span></div>
       <span class="muted">${d ? `Entrenamiento en curso: ${esc(d.routineName)}` : 'Rutinas · Historial · Progreso'}</span>
@@ -150,6 +152,9 @@ function viewHub() {
         <button class="btn" data-action="water-add" data-ml="250">+250 ml</button>
         <button class="btn" data-action="water-add" data-ml="500">+500 ml</button>
       </div>
+    </div>
+
+    ${bodyweightCard()}
     </div>`;
 }
 
@@ -309,7 +314,7 @@ function viewHome() {
       </div>` : ''}
       <button class="btn primary" data-action="start" data-id="${r.id}" ${r.exercises.length ? '' : 'disabled'}>Empezar</button>
     </div>`).join('');
-  return `${header('Rutinas')}
+  return `${header('Rutinas', { home: true })}
     ${resume}
     ${routines || '<p class="empty">Aún no tienes rutinas. Crea la primera abajo.</p>'}
     <form class="add-row" data-form="new-routine">
@@ -507,7 +512,7 @@ function viewHistory() {
     : `${plural(monthWorkouts.length, 'entrenamiento')} en ${new Date(y, m, 1).toLocaleDateString('es', { month: 'long' })}`;
   const isCurrent = y === now.getFullYear() && m === now.getMonth();
 
-  return `${header('Historial')}
+  return `${header('Historial', { home: true })}
     <section class="card cal">
       <div class="cal-head">
         <button class="icon" data-action="hist-month" data-d="-1" aria-label="Mes anterior">‹</button>
@@ -911,7 +916,7 @@ function viewProgress() {
     }
   }
   if (!byId.size) {
-    return `${header('Progreso')}${bodyweightCard()}
+    return `${header('Progreso', { home: true })}
       <p class="empty">Cuando guardes entrenamientos, aquí verás tu progreso en cada ejercicio.</p>`;
   }
 
@@ -932,9 +937,7 @@ function viewProgress() {
       </div>
       <span class="chev">›</span>
     </a>`;
-  return `${header('Progreso', { sub: 'Elige un ejercicio para ver su gráfico' })}
-    ${bodyweightCard()}
-    <h2>Ejercicios</h2>
+  return `${header('Progreso', { home: true, sub: 'Elige un ejercicio para ver su gráfico' })}
     <input class="search" type="search" data-bind="progress-search" value="${esc(progressQuery)}"
       placeholder="🔍 Buscar ejercicio…" autocomplete="off" aria-label="Buscar ejercicio">
     ${groups.map(g => `<section class="prog-group"><h2>${esc(g.name)}</h2>${g.items.map(item).join('')}</section>`).join('')}
@@ -985,15 +988,12 @@ function bwChange(days) {
 function bodyweightCard() {
   const last = db.bodyweight[db.bodyweight.length - 1];
   const change = bwChange(30);
-  return `<h2>⚖️ Peso corporal</h2>
-    <a class="card" href="#/progreso/peso">
-      <div class="grow">
-        ${last
-          ? `<strong>${fmtKg(last.kg)} · ${bwDate(last.date)}</strong>
-             <span class="muted">${change != null ? `${signed(change)} kg en 30 días` : 'Toca para anotar y ver tu gráfico'}</span>`
-          : `<strong>Anota tu peso</strong><span class="muted">Y mira cómo evoluciona día a día</span>`}
-      </div>
-      <span class="chev">›</span>
+  return `<a class="card hub" href="#/peso">
+      <div class="hub-top"><span class="hub-icon">⚖️</span><strong>Peso</strong><span class="chev">›</span></div>
+      ${last
+        ? `<div class="hub-value"><strong>${fmtKg(last.kg)}</strong></div>
+           <span class="muted">${bwDate(last.date)}${change != null ? ` · ${signed(change)} kg en 30 días` : ''}</span>`
+        : '<span class="muted">Anota tu peso y mira cómo evoluciona</span>'}
     </a>`;
 }
 
@@ -1169,7 +1169,7 @@ function render() {
     case 'editar': html = viewWorkout(); break;
     case 'historial': html = viewHistory(); tab = 'historial'; break;
     case 'progreso':
-      html = arg === 'peso' ? viewBodyweight() : arg ? viewProgressExercise(decodeURIComponent(arg)) : viewProgress();
+      html = arg ? viewProgressExercise(decodeURIComponent(arg)) : viewProgress();
       tab = arg ? null : 'progreso';
       break;
     case 'sesion': html = viewSession(arg); break;
@@ -1177,7 +1177,8 @@ function render() {
     case 'cuenta': html = viewAccount(); break;
     case 'agua': html = viewWater(); break;
     case 'rutinas': html = viewHome(); tab = 'rutinas'; break;
-    default: html = viewHub(); tab = 'inicio';
+    case 'peso': html = viewBodyweight(); break;
+    default: html = viewHub();   // Inicio: sin pestañas
   }
   $app.innerHTML = html;
   $tabs.hidden = !tab;
