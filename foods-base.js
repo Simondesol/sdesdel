@@ -293,6 +293,13 @@ const MORE = {
   ],
 };
 for (const [cat, list] of Object.entries(MORE)) (RAW[cat] ||= []).push(...list);
+RAW['Carnes y pescados'].push(
+  ['Carne molida 4% grasa cruda', 125, 21.5, 0, 4],
+  ['Pollo molido crudo', 143, 17.4, 0, 8.1],
+);
+RAW['Verduras'].push(
+  ['Mix de verduras congeladas', 64, 3.3, 13.5, 0.5],
+);
 RAW['Cereales, panes y tubérculos'].push(
   ['Fideos integrales cocidos', 149, 6, 30, 1.7],
   ['Fideos integrales crudos', 348, 14.6, 75, 1.4],
@@ -323,6 +330,13 @@ const ALIASES = [
   ['Arándanos', 'blueberries'],
   ['Proteína whey', 'proteina suero'],
   ['Posta negra', 'vacuno carne'],
+  ['Carne molida', 'vacuno'],
+  ['Pechuga de pollo cruda', 'filetitos filetito'],
+  ['Mix de verduras', 'jardinera surtido'],
+  ['Tortilla de trigo', 'rapiditas wrap'],
+  ['Queso mantecoso', 'gouda gauda chanco laminado lamina'],
+  ['Jurel', 'jurel'],
+  ['Cacao en polvo', 'cacao amargo'],
 ];
 
 // id estable a partir del nombre
