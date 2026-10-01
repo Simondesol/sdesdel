@@ -578,3 +578,23 @@ a.card.hub { display: grid; }
 .water-edit .small-btn { min-height: 36px; padding: 0 10px; font-size: 13px; }
 .streak { color: var(--accent); font-weight: 600; }
 .hub-top .badge { margin-left: 4px; }
+
+/* Peso: % grasa, meta, tendencia y FFMI */
+.bw-inputs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.bw-inputs input { min-width: 0; }
+.goal-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.goal-top strong { color: var(--text); }
+.chart .dot.raw { opacity: .55; }
+.chart .line.trend { stroke-width: 2.5; }
+.chart .goal-line { stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 5 4; }
+.chart-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 2px 10px 8px; font-size: 12px; color: var(--muted); }
+.chart-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.chart-legend i { display: inline-block; }
+.lg-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--chart); opacity: .55; }
+.lg-line { width: 16px; height: 3px; border-radius: 2px; background: var(--chart); }
+.lg-goal { width: 16px; border-top: 2px dashed var(--muted); }
+.ffmi-top { display: flex; align-items: center; gap: 10px; }
+.ffmi-value { font-size: 34px; font-variant-numeric: tabular-nums; }
+.ffmi-levels { display: grid; gap: 2px; }
+.ffmi-row { display: flex; justify-content: space-between; padding: 6px 10px; border-radius: 10px; font-size: 14px; }
+.ffmi-row.on { background: var(--surface2); outline: 1px solid var(--accent); font-weight: 700; }

@@ -11,7 +11,7 @@ const $tabs = document.getElementById('tabs');
 const emptyWater = () => ({ goalMl: null, days: {} });   // days: { 'AAAA-MM-DD': [{ at, ml }] }
 // Nutrición: alimentos (valores por 100 g), dietas con comidas y el registro de comidas marcadas por día
 const emptyNutrition = () => ({ foods: [], diets: [], activeDietId: null, log: {} });
-const emptyDb = () => ({ routines: [], workouts: [], draft: null, notes: {}, bodyweight: [], sleep: [], water: emptyWater(), nutrition: emptyNutrition() });
+const emptyDb = () => ({ routines: [], workouts: [], draft: null, notes: {}, bodyweight: [], body: {}, sleep: [], water: emptyWater(), nutrition: emptyNutrition() });
 const emptySynced = () => ({ main: null, w: {} });
 let db = emptyDb();
 let user = null;                 // { uid, email, username }
@@ -2075,10 +2075,13 @@ function niceTicks(lo, hi) {
   return ticks;
 }
 
-function chartSvg(points, unit, days, label = 'Peso máximo por sesión') {
+// opts.trend: línea de tendencia ({ t, y }); opts.goal: línea de meta; opts.dotsOnly: los registros van como puntos
+function chartSvg(points, unit, days, label = 'Peso máximo por sesión', opts = {}) {
+  const { trend = null, goal = null, dotsOnly = false } = opts;
   const W = 340, H = 200, L = 38, R = 14, T = 20, B = 26;
   const t1 = Math.max(Date.now(), ...points.map(p => p.t)), t0 = t1 - days * 86400000;
-  const ticks = niceTicks(Math.min(...points.map(p => p.y)), Math.max(...points.map(p => p.y)));
+  const ys = [...points.map(p => p.y), ...(trend ? trend.map(p => p.y) : []), ...(goal != null ? [goal] : [])];
+  const ticks = niceTicks(Math.min(...ys), Math.max(...ys));
   const y0 = ticks[0], y1 = ticks[ticks.length - 1];
   const x = t => L + ((t - t0) / (t1 - t0)) * (W - L - R);
   const y = v => H - B - ((v - y0) / (y1 - y0)) * (H - T - B);
@@ -2090,13 +2093,19 @@ function chartSvg(points, unit, days, label = 'Peso máximo por sesión') {
     <text x="${L - 6}" y="${y(v) + 4}" text-anchor="end" class="axis">${fmtNum(v)}</text>`).join('');
   const xLabels = [t0, (t0 + t1) / 2, t1].map((t, k) =>
     `<text x="${x(t)}" y="${H - 6}" text-anchor="${['start', 'middle', 'end'][k]}" class="axis">${dateLabel(t)}</text>`).join('');
-  const line = chart.points.length > 1
+  const line = !dotsOnly && chart.points.length > 1
     ? `<polyline class="line" points="${chart.points.map(p => `${p.x},${p.yPx}`).join(' ')}"/>` : '';
-  // Con muchos puntos solo se dibuja la línea y el último punto (al tocar se marca el elegido)
+  const trendLine = trend && trend.length > 1
+    ? `<polyline class="line trend" points="${trend.map(p => `${x(p.t)},${y(p.y)}`).join(' ')}"/>` : '';
+  const goalLine = goal != null
+    ? `<line class="goal-line" x1="${L}" x2="${W - R}" y1="${y(goal)}" y2="${y(goal)}"/>
+       <text x="${L + 4}" y="${y(goal) - 5}" class="axis">Meta ${fmtNum(goal)}</text>` : '';
+  // Con muchos puntos solo se dibuja la línea y el último punto (al tocar se marca el elegido);
+  // si los registros van como puntos, se ven todos (más chicos cuando son muchos)
   const dense = chart.points.length > 20;
   const dots = chart.points.map((p, k) => {
-    const r = dense && k < chart.points.length - 1 ? 0 : 4;
-    return `<circle class="dot" data-k="${k}" data-r="${r}" cx="${p.x}" cy="${p.yPx}" r="${r}"/>`;
+    const r = dotsOnly ? (dense ? 2.5 : 3.5) : dense && k < chart.points.length - 1 ? 0 : 4;
+    return `<circle class="dot ${dotsOnly ? 'raw' : ''}" data-k="${k}" data-r="${r}" cx="${p.x}" cy="${p.yPx}" r="${r}"/>`;
   }).join('');
   const last = chart.points[chart.points.length - 1];
   const lastLabel = `<text x="${Math.min(last.x, W - R)}" y="${last.yPx - 10}" text-anchor="${last.x > W - 50 ? 'end' : 'middle'}" class="value">${fmtNum(last.y)} ${unit}</text>`;
@@ -2104,7 +2113,7 @@ function chartSvg(points, unit, days, label = 'Peso máximo por sesión') {
   return `<svg viewBox="0 0 ${W} ${H}" class="chart" role="img" aria-label="${label}">
     ${grid}${xLabels}
     <line class="cross" x1="0" x2="0" y1="${T}" y2="${H - B}" visibility="hidden"/>
-    ${line}${dots}${lastLabel}
+    ${goalLine}${line}${dots}${trendLine}${lastLabel}
     <rect class="hit" x="${L}" y="0" width="${W - L - R}" height="${H}"/>
   </svg>`;
 }
@@ -2173,7 +2182,8 @@ const rangeButtons = (ranges, current, scope) => `<div class="range" role="group
   `<button class="${key === current ? 'on' : ''}" data-action="range" data-s="${scope}" data-r="${key}">${label}</button>`).join('')}</div>`;
 
 // ---------- Peso corporal ----------
-// Un registro por día: { date: 'AAAA-MM-DD', kg }
+// Un registro por día: { date: 'AAAA-MM-DD', kg, bf? } (bf = % de grasa, opcional)
+// Mis datos (db.body): { heightCm?, sex? ('h' | 'm'), goal?: { kg, startKg, startDate } }
 const todayKey = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -2182,6 +2192,8 @@ const bwIso = date => `${date}T12:00:00`;              // mediodía local, para 
 const bwDate = date => (date === todayKey() ? 'hoy' : fmtDate(bwIso(date)));
 const fmtKg = n => `${fmtNum(round1(n))} kg`;
 const signed = n => `${n > 0 ? '+' : ''}${fmtNum(round1(n))}`;
+const bwDay = e => Date.parse(bwIso(e.date)) / 86400000;
+const hasBody = b => !!b && Object.keys(b).length > 0;
 
 // Cambio en los últimos `days` días: último registro menos el primero dentro del período
 function bwChange(days) {
@@ -2192,14 +2204,78 @@ function bwChange(days) {
   return first && first !== last ? last.kg - first.kg : null;
 }
 
+// Ritmo en kg por semana: pendiente de la recta que mejor se ajusta a los registros
+// (solo si entre el primero y el último hay al menos `minDays` días)
+function weeklyRate(list, minDays = 7) {
+  if (list.length < 2 || bwDay(list[list.length - 1]) - bwDay(list[0]) < minDays) return null;
+  const xs = list.map(bwDay), ys = list.map(e => e.kg);
+  const mx = xs.reduce((a, v) => a + v, 0) / xs.length, my = ys.reduce((a, v) => a + v, 0) / ys.length;
+  let num = 0, den = 0;
+  xs.forEach((x, k) => { num += (x - mx) * (ys[k] - my); den += (x - mx) ** 2; });
+  return den ? (num / den) * 7 : null;
+}
+const rateLabel = r => (Math.abs(r) < 0.1 ? 'Estancado' : r < 0 ? 'Bajando' : 'Subiendo');
+
+// Tendencia: promedio de los registros de los últimos 7 días en cada fecha (suaviza las subidas y bajadas diarias)
+function bwTrend(list) {
+  return list.map(e => {
+    const d = bwDay(e), win = db.bodyweight.filter(x => bwDay(x) <= d && bwDay(x) > d - 7);
+    return { t: Date.parse(bwIso(e.date)), y: win.reduce((a, x) => a + x.kg, 0) / win.length };
+  });
+}
+
+// Meta de peso (opcional): avance desde el peso que tenías al ponerla y fecha estimada
+function goalInfo() {
+  const g = db.body.goal, last = db.bodyweight[db.bodyweight.length - 1];
+  if (!g || !last) return null;
+  const total = g.startKg - g.kg, done = g.startKg - last.kg;
+  const reached = total >= 0 ? last.kg <= g.kg : last.kg >= g.kg;
+  const pct = reached ? 100 : total === 0 ? 100 : Math.min(100, Math.max(0, (done / total) * 100));
+  const left = Math.abs(last.kg - g.kg);
+  // Pronóstico con el ritmo de las últimas 4 semanas (necesita 2 semanas de registros)
+  const since = bwDay(last) - 28;
+  const rate = weeklyRate(db.bodyweight.filter(e => bwDay(e) >= since), 14);
+  let forecast;
+  if (reached) forecast = '🎉 ¡Llegaste a tu meta!';
+  else if (rate == null) forecast = 'Anota tu peso durante 2 semanas para estimar cuándo llegas.';
+  else if (Math.abs(rate) >= 0.05 && Math.sign(rate) === Math.sign(g.kg - last.kg)) {
+    const when = new Date(Date.now() + (left / Math.abs(rate)) * 7 * 86400000);
+    forecast = `Con tu ritmo actual (${signed(rate)} kg/semana) llegarías aprox. el ${when.toLocaleDateString('es', { day: 'numeric', month: 'long', year: 'numeric' })}.`;
+  } else forecast = `Con tu ritmo actual (${signed(rate)} kg/semana) no te estás acercando a tu meta.`;
+  return { g, last, pct, left, reached, forecast };
+}
+
+// FFMI ajustado por estatura: masa magra ÷ estatura² + 6,1 × (1,8 − estatura)
+const FFMI_LEVELS = ['Bajo el promedio', 'Promedio', 'Sobre el promedio', 'Excelente', 'Superior', 'Cerca del límite natural'];
+const ffmiCuts = sex => (sex === 'm' ? [14, 16, 18, 19, 21] : [18, 20, 22, 23, 25]);
+function ffmiInfo() {
+  const { heightCm, sex } = db.body;
+  const e = db.bodyweight.slice().reverse().find(x => x.bf != null);
+  if (!heightCm || !sex || !e) return null;
+  const m = heightCm / 100, lean = e.kg * (1 - e.bf / 100);
+  const value = Math.round((lean / (m * m) + 6.1 * (1.8 - m)) * 10) / 10;   // con un decimal, igual que se muestra
+  const cuts = ffmiCuts(sex);
+  return { value, lean, e, level: cuts.filter(c => value >= c).length, cuts };
+}
+
+// "tu estatura, tu sexo y tu % de grasa": lo que falta para calcular el FFMI
+function ffmiMissing() {
+  const miss = [];
+  if (!db.body.heightCm) miss.push('tu estatura (en Mis datos)');
+  if (!db.body.sex) miss.push('tu sexo (en Mis datos)');
+  if (!db.bodyweight.some(x => x.bf != null)) miss.push('tu % de grasa (se anota junto a tu peso)');
+  return miss.length > 1 ? `${miss.slice(0, -1).join(', ')} y ${miss[miss.length - 1]}` : miss[0];
+}
+
 function bodyweightCard() {
   const last = db.bodyweight[db.bodyweight.length - 1];
-  const change = bwChange(30);
+  const change = bwChange(30), gi = goalInfo();
   return `<a class="card hub" href="#/peso">
       <div class="hub-top"><span class="hub-icon">⚖️</span><strong>Peso</strong><span class="chev">›</span></div>
       ${last
         ? `<div class="hub-value"><strong>${fmtKg(last.kg)}</strong></div>
-           <span class="muted">${bwDate(last.date)}${change != null ? ` · ${signed(change)} kg en 30 días` : ''}</span>`
+           ${gi ? `${bar(gi.pct, 100)}<span class="muted">${gi.reached ? '🎉 ¡Llegaste a tu meta!' : `${Math.round(gi.pct)}% de tu meta · faltan ${fmtKg(gi.left)}`}</span>`
+             : `<span class="muted">${bwDate(last.date)}${change != null ? ` · ${signed(change)} kg en 30 días` : ''}</span>`}`
         : '<span class="muted">Anota tu peso y mira cómo evoluciona</span>'}
     </a>`;
 }
@@ -2209,66 +2285,153 @@ function viewBodyweight() {
   const last = db.bodyweight[db.bodyweight.length - 1];
   const days = RANGES.find(r => r[0] === bwRange)[2];
   const since = Date.now() - days * 86400000;
-  const points = db.bodyweight
-    .map(e => ({ t: Date.parse(bwIso(e.date)), date: bwIso(e.date), y: e.kg, tip: fmtKg(e.kg) }))
-    .filter(p => p.t >= since);
+  const inRange = db.bodyweight.filter(e => Date.parse(bwIso(e.date)) >= since);
+  const points = inRange.map(e => ({
+    t: Date.parse(bwIso(e.date)), date: bwIso(e.date), y: e.kg,
+    tip: `${fmtKg(e.kg)}${e.bf != null ? ` · ${fmtNum(e.bf)} % grasa` : ''}`,
+  }));
+  const gi = goalInfo();
   chart = null;
 
   const form = `<form class="stack card" data-form="bodyweight" novalidate>
-      <label class="field"><span>${today ? 'Peso de hoy (ya anotado, puedes corregirlo)' : 'Peso de hoy'}</span>
-        <div class="add-row" style="margin-top:0">
-          <input name="kg" inputmode="decimal" value="${today ? toField(today.kg) : ''}"
-            placeholder="${last ? toField(last.kg) : 'ej. 75,5'}" autocomplete="off" aria-label="Peso en kg">
-          <span class="unit-label">kg</span>
-          <button class="btn primary">Guardar</button>
-        </div>
-      </label>
+      ${today ? '<span class="muted small">Hoy ya anotaste tu peso; puedes corregirlo.</span>' : ''}
+      <div class="bw-inputs">
+        <label class="field"><span>Peso de hoy</span>
+          <div class="add-row" style="margin-top:0">
+            <input name="kg" inputmode="decimal" value="${today ? toField(today.kg) : ''}"
+              placeholder="${last ? toField(last.kg) : 'ej. 75,5'}" autocomplete="off" aria-label="Peso en kg">
+            <span class="unit-label">kg</span>
+          </div>
+        </label>
+        <label class="field"><span>% grasa (opcional)</span>
+          <div class="add-row" style="margin-top:0">
+            <input name="bf" inputmode="decimal" value="${today && today.bf != null ? toField(today.bf) : ''}" placeholder="ej. 18" autocomplete="off" aria-label="Porcentaje de grasa">
+            <span class="unit-label">%</span>
+          </div>
+        </label>
+      </div>
+      <button class="btn primary block">Guardar</button>
       <p class="form-msg" hidden></p>
     </form>`;
+
+  const goalCard = gi ? `<section class="card stack goal-card">
+      <div class="goal-top"><span class="muted">Meta: <strong>${fmtKg(gi.g.kg)}</strong></span>
+        <span class="muted">${gi.reached ? '100%' : `${Math.round(gi.pct)}%`}</span></div>
+      ${bar(gi.pct, 100)}
+      <div class="goal-top"><span class="muted small">Inicio: ${fmtKg(gi.g.startKg)} (${bwDate(gi.g.startDate)})</span>
+        <span class="muted small">${gi.reached ? '' : `Faltan ${fmtKg(gi.left)}`}</span></div>
+      <p class="muted small" style="margin:0">${gi.forecast}</p>
+    </section>` : '';
 
   let body;
   if (!points.length) {
     body = `<p class="empty">${db.bodyweight.length ? 'No hay registros en este período.' : 'Todavía no anotas tu peso. Empieza hoy arriba 👆'}</p>`;
   } else {
-    const ys = points.map(p => p.y);
-    const change = points.length > 1 ? points[points.length - 1].y - points[0].y : null;
+    const ys = points.map(pt => pt.y);
+    const change = points.length > 1 ? ys[ys.length - 1] - ys[0] : null;
+    const rate = weeklyRate(inRange);
+    const trend = points.length > 1 ? bwTrend(inRange) : null;
     body = `<div class="stats">
-        <div class="stat"><span class="muted">Máximo</span><strong>${fmtKg(Math.max(...ys))}</strong></div>
-        <div class="stat"><span class="muted">Mínimo</span><strong>${fmtKg(Math.min(...ys))}</strong></div>
-        ${change != null ? `<div class="stat"><span class="muted">Cambio</span><strong>${signed(change)} kg</strong></div>` : ''}
+        <div class="stat"><span class="muted">Cambio</span><strong>${change != null ? `${signed(change)} kg` : '—'}</strong></div>
+        <div class="stat"><span class="muted">Ritmo</span><strong>${rate != null ? `${signed(rate)} kg` : '—'}</strong>
+          <span class="muted">${rate != null ? `por semana · ${rateLabel(rate)}` : 'falta 1 semana'}</span></div>
+        <div class="stat"><span class="muted">Mín – Máx</span><strong>${fmtNum(round1(Math.min(...ys)))}–${fmtNum(round1(Math.max(...ys)))}</strong></div>
       </div>
       <section class="card chart-card">
-        ${chartSvg(points, 'kg', days, 'Peso corporal por día')}
+        ${chartSvg(points, 'kg', days, 'Peso corporal por día', { trend, goal: gi ? gi.g.kg : null, dotsOnly: !!trend })}
         <div class="tip" hidden></div>
+        ${trend || gi ? `<div class="chart-legend">
+          <span><i class="lg-dot"></i>Pesajes</span>
+          ${trend ? '<span><i class="lg-line"></i>Tendencia (7 días)</span>' : ''}
+          ${gi ? '<span><i class="lg-goal"></i>Meta</span>' : ''}
+        </div>` : ''}
       </section>`;
   }
+
+  // FFMI
+  const ff = ffmiInfo();
+  const ffmi = ff ? `<section class="card stack">
+      <div class="ffmi-top"><strong class="ffmi-value">${ff.value.toFixed(1).replace('.', ',')}</strong>
+        <span class="badge on">${FFMI_LEVELS[ff.level]}</span></div>
+      <span class="muted small">Masa magra ${fmtKg(ff.lean)} · ${fmtNum(ff.e.bf)} % grasa (${bwDate(ff.e.date)})</span>
+      <div class="ffmi-levels">${FFMI_LEVELS.map((name, k) => `<div class="ffmi-row ${k === ff.level ? 'on' : ''}">
+        <span>${name}</span><span class="muted">${k === 0 ? `< ${ff.cuts[0]}` : k === FFMI_LEVELS.length - 1 ? `${ff.cuts[k - 1]}+` : `${ff.cuts[k - 1]} – ${ff.cuts[k]}`}</span>
+      </div>`).join('')}</div>
+      <p class="muted small" style="margin:0">Mide cuánta masa magra tienes para tu estatura. A diferencia del IMC, no confunde músculo con grasa.</p>
+    </section>`
+    : `<p class="muted card">Para ver tu FFMI falta ${ffmiMissing()}.</p>`;
+
+  const b = db.body;
+  const myData = `<form class="stack card" data-form="body" novalidate>
+      <label class="field"><span>Estatura</span>
+        <div class="add-row" style="margin-top:0"><input name="height" inputmode="numeric" value="${b.heightCm || ''}" placeholder="ej. 175" autocomplete="off" aria-label="Estatura en cm"><span class="unit-label">cm</span></div>
+      </label>
+      <div class="field"><span>Sexo</span>
+        <div class="per-choice">
+          <label><input type="radio" name="sex" value="h" ${b.sex === 'h' ? 'checked' : ''}> Hombre</label>
+          <label><input type="radio" name="sex" value="m" ${b.sex === 'm' ? 'checked' : ''}> Mujer</label>
+        </div>
+      </div>
+      <label class="field"><span>Peso meta (opcional)</span>
+        <div class="add-row" style="margin-top:0"><input name="goal" inputmode="decimal" value="${b.goal ? toField(b.goal.kg) : ''}" placeholder="Sin meta" autocomplete="off" aria-label="Peso meta en kg"><span class="unit-label">kg</span></div>
+      </label>
+      <p class="form-msg" hidden></p>
+      <button class="btn primary block">Guardar mis datos</button>
+    </form>`;
 
   const list = db.bodyweight.slice().reverse().map(e => `
     <div class="prog-row">
       <span class="muted">${bwDate(e.date)}</span>
-      <span class="bw-right">${fmtKg(e.kg)}
+      <span class="bw-right">${fmtKg(e.kg)}${e.bf != null ? ` <span class="muted">· ${fmtNum(e.bf)} %</span>` : ''}
         <button class="icon small danger" data-action="del-bw" data-date="${e.date}" aria-label="Borrar registro">✕</button>
       </span>
     </div>`).join('');
 
-  return `${header('Peso corporal', { back: true, sub: 'Un registro por día, en kg' })}
+  return `${header('Peso corporal', { back: true, sub: 'Un registro por día' })}
     ${form}
+    ${goalCard}
     ${rangeButtons(RANGES, bwRange, 'bw')}
     ${body}
+    <h2>FFMI · masa libre de grasa</h2>
+    ${ffmi}
+    <h2>Mis datos</h2>
+    ${myData}
     ${list ? `<h2>Registros</h2><section class="card">${list}</section>` : ''}`;
 }
 
 function saveBodyweight(f) {
-  const kg = num(f.elements.kg.value);
+  const kg = num(f.elements.kg.value), bfText = f.elements.bf.value.trim(), bf = num(bfText);
   if (kg == null || kg < 20 || kg > 400) return formMsg(f, 'Escribe tu peso en kg (ej. 75,5).');
+  if (bfText && (bf == null || bf < 3 || bf > 60)) return formMsg(f, 'El % de grasa debe estar entre 3 y 60 (o déjalo vacío).');
   const date = todayKey();
-  const entry = db.bodyweight.find(e => e.date === date);
-  if (entry) entry.kg = round1(kg);
-  else db.bodyweight.push({ date, kg: round1(kg) });
+  let entry = db.bodyweight.find(e => e.date === date);
+  if (!entry) { entry = { date }; db.bodyweight.push(entry); }
+  entry.kg = round1(kg);
+  if (bfText) entry.bf = round1(bf); else delete entry.bf;
   db.bodyweight.sort((a, b) => (a.date < b.date ? -1 : 1));
   save();
   render();
-  formMsg($app.querySelector('[data-form="bodyweight"]'), `✓ Guardado: ${fmtKg(kg)} hoy`, true);
+  formMsg($app.querySelector('[data-form="bodyweight"]'), `✓ Guardado: ${fmtKg(kg)}${bfText ? ` · ${fmtNum(round1(bf))} % grasa` : ''} hoy`, true);
+}
+
+function saveBodyData(f) {
+  const hText = f.elements.height.value.trim(), h = num(hText);
+  const gText = f.elements.goal.value.trim(), g = num(gText);
+  const sex = f.elements.sex.value;
+  if (hText && (h == null || h < 100 || h > 250)) return formMsg(f, 'Escribe tu estatura en cm (ej. 175).');
+  if (gText && (g == null || g < 30 || g > 300)) return formMsg(f, 'Escribe tu peso meta en kg (ej. 80) o déjalo vacío.');
+  const b = db.body;
+  if (hText) b.heightCm = Math.round(h); else delete b.heightCm;
+  if (sex) b.sex = sex;
+  if (!gText) delete b.goal;
+  else if (!b.goal || b.goal.kg !== round1(g)) {
+    // La meta nueva parte desde tu último peso anotado
+    const last = db.bodyweight[db.bodyweight.length - 1];
+    b.goal = { kg: round1(g), startKg: last ? last.kg : round1(g), startDate: last ? last.date : todayKey() };
+  }
+  save();
+  render();
+  formMsg($app.querySelector('[data-form="body"]'), '✓ Datos guardados', true);
 }
 
 // ---------- Sueño ----------
@@ -2753,6 +2916,7 @@ const mainData = () => ({
   routines: db.routines, notes: db.notes,
   ...(db.bodyweight.length ? { bodyweight: db.bodyweight } : {}),
   ...(db.sleep.length ? { sleep: db.sleep } : {}),
+  ...(hasBody(db.body) ? { body: db.body } : {}),
   ...(hasWater(db.water) ? { water: db.water } : {}),
   ...(hasNutrition(db.nutrition) ? { nutrition: db.nutrition } : {}),
 });
@@ -2806,19 +2970,20 @@ async function sync() {
 
 // Cambios que llegan desde otro dispositivo. Si aquí hay cambios sin subir, ganan los de aquí.
 function applyRemoteMain(data) {
-  const bw = data.bodyweight || [], sl = data.sleep || [];
+  const bw = data.bodyweight || [], sl = data.sleep || [], body = data.body || {};
   const water = hasWater(data.water) ? { ...emptyWater(), ...data.water } : emptyWater();
   const remote = {
     routines: data.routines || [], notes: data.notes || {},
     ...(bw.length ? { bodyweight: bw } : {}),
     ...(sl.length ? { sleep: sl } : {}),
+    ...(hasBody(body) ? { body } : {}),
     ...(hasWater(water) ? { water } : {}),
     ...(hasNutrition(data.nutrition) ? { nutrition: data.nutrition } : {}),
   };
   const r = stable(remote), local = stable(mainData());
   if (local !== synced.main) return;
   synced.main = r;
-  if (r !== local) { db.routines = remote.routines; db.notes = remote.notes; db.bodyweight = bw; db.sleep = sl; db.water = water; db.nutrition = hasNutrition(data.nutrition) ? { ...emptyNutrition(), ...data.nutrition } : emptyNutrition(); refresh(); }
+  if (r !== local) { db.routines = remote.routines; db.notes = remote.notes; db.bodyweight = bw; db.sleep = sl; db.body = body; db.water = water; db.nutrition = hasNutrition(data.nutrition) ? { ...emptyNutrition(), ...data.nutrition } : emptyNutrition(); refresh(); }
   persistLocal();
 }
 
@@ -2863,6 +3028,7 @@ async function loadFromCloud() {
     db.notes = main.notes || {};
     db.bodyweight = main.bodyweight || [];
     db.sleep = main.sleep || [];
+    db.body = main.body || {};
     db.water = hasWater(main.water) ? { ...emptyWater(), ...main.water } : emptyWater();
     db.nutrition = hasNutrition(main.nutrition) ? { ...emptyNutrition(), ...main.nutrition } : emptyNutrition();
     synced.main = stable(mainData());
@@ -3588,6 +3754,7 @@ $app.addEventListener('submit', e => {
     case 'import-code': importRoutine(f); return;
     case 'chat-send': sendText(f); return;
     case 'bodyweight': saveBodyweight(f); return;
+    case 'body': saveBodyData(f); return;
     case 'sleep': saveSleep(parseHours(f.elements.h.value), f); return;
     case 'food': saveFood(f); return;
     case 'add-item': {
