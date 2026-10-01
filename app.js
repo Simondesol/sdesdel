@@ -145,6 +145,8 @@ function viewHub() {
 
     ${nutritionCard()}
 
+    ${socialCard()}
+
     <div class="card hub">
       <a class="hub-top" href="#/agua"><span class="hub-icon">💧</span><strong>Agua</strong><span class="chev">›</span></a>
       <a class="hub-value" href="#/agua"><strong>${fmtL(ml)} / ${fmtL(goal)}</strong> L${ml >= goal ? ' · ¡Meta cumplida! 🎉' : ''}</a>
@@ -156,8 +158,6 @@ function viewHub() {
     </div>
 
     ${bodyweightCard()}
-
-    ${socialCard()}
     </div>`;
 }
 
@@ -583,10 +583,16 @@ function historyFor(exerciseId, skipId = null) {
 
 // Series prellenadas con la última vez (peso, reps y RIR si el ejercicio lo usa)
 // Series al empezar: las de la última vez (o una vacía); si el objetivo pide más series, se agregan vacías
-function prefillSets(prev, rir, goalSets = 0) {
+function prefillSets(prev, rir, goalSets = 0, dropset = false) {
   const empty = () => ({ w: '', r: '', ...(rir ? { rir: '' } : {}) });
-  const sets = prev ? prev.ex.sets.map(s => ({ w: toField(s.w), r: toField(s.r), ...(rir ? { rir: toField(s.rir) } : {}) })) : [];
+  const sets = prev ? prev.ex.sets.map(s => ({
+    w: toField(s.w), r: toField(s.r), ...(rir ? { rir: toField(s.rir) } : {}),
+    ...(s.drops && s.drops.length ? { drops: s.drops.map(x => ({ w: toField(x.w), r: toField(x.r) })) } : {}),
+  })) : [];
   while (sets.length < Math.max(1, goalSets || 0)) sets.push(empty());
+  // Dropset: la última serie trae lista una fila para la primera bajada
+  const lastSet = sets[sets.length - 1];
+  if (dropset && !(lastSet.drops && lastSet.drops.length)) lastSet.drops = [{ w: '', r: '' }];
   return sets;
 }
 
@@ -599,6 +605,8 @@ function parseRange(text, maxV) {
   return a === b ? `${a}` : `${a}-${b}`;
 }
 const rangeTop = t => +String(t).split('-').pop();
+// Plan del ejercicio en la rutina: objetivo, dropset y superset con el siguiente
+const planFields = ex => ({ ...goalFields(ex), ...(ex.dropset ? { dropset: true } : {}), ...(ex.ssNext ? { ssNext: true } : {}) });
 const goalFields = ex => ({
   ...(ex.goalSets ? { goalSets: ex.goalSets } : {}),
   ...(ex.goalReps ? { goalReps: ex.goalReps } : {}),
@@ -606,7 +614,8 @@ const goalFields = ex => ({
 });
 
 // Texto de una serie guardada: "40 kg × 10" o "40 kg × 10 · RIR 2"
-const setText = (s, unit) => `${fmtNum(s.w)} ${unit} × ${fmtNum(s.r)}${s.rir != null ? ` · RIR ${fmtNum(s.rir)}` : ''}`;
+const dropsText = s => (s.drops && s.drops.length ? s.drops.map(x => ` ↓ ${fmtNum(x.w)}×${fmtNum(x.r)}`).join('') : '');
+const setText = (s, unit) => `${fmtNum(s.w)} ${unit} × ${fmtNum(s.r)}${s.rir != null ? ` · RIR ${fmtNum(s.rir)}` : ''}${dropsText(s)}`;
 const setsChips = ex => `<div class="sets-list">${ex.sets.map(s => `<span>${setText(s, ex.unit)}</span>`).join('')}</div>`;
 
 const unitSelect = () => `<select name="unit" aria-label="Unidad">
@@ -721,6 +730,7 @@ function viewRoutine() {
           <input data-bind="ex-rest" data-i="${i}" value="${ex.rest ? fmtRest(ex.rest) : ''}" placeholder="m:ss" autocomplete="off" aria-label="Descanso entre series">
         </label>
         <button class="chip toggle ${ex.rir ? 'on' : ''}" data-action="toggle-rir" data-i="${i}" aria-pressed="${!!ex.rir}">RIR ${ex.rir ? '✓' : ''}</button>
+        <button class="chip toggle ${ex.dropset ? 'on' : ''}" data-action="toggle-drop" data-i="${i}" aria-pressed="${!!ex.dropset}">Dropset ${ex.dropset ? '✓' : ''}</button>
       </div>
       <div class="ex-goals" aria-label="Objetivo (opcional)">
         <label>Series<input data-bind="ex-goal-sets" data-i="${i}" inputmode="numeric" value="${ex.goalSets || ''}" placeholder="–" autocomplete="off" aria-label="Series objetivo"></label>
@@ -729,7 +739,8 @@ function viewRoutine() {
           ? `<label>RIR obj.<input data-bind="ex-goal-rir" data-i="${i}" inputmode="decimal" value="${esc(ex.goalRir || '')}" placeholder="–" autocomplete="off" aria-label="RIR objetivo"></label>`
           : '<div class="goal-fixed-wrap"><span>Hasta</span><span class="goal-fixed" title="Activa RIR para poner un RIR objetivo">Fallo</span></div>'}
       </div>
-    </li>`).join('');
+    </li>
+    ${i < last ? `<li class="ss-link"><button class="chip toggle ${ex.ssNext ? 'on' : ''}" data-action="toggle-ss" data-i="${i}" aria-pressed="${!!ex.ssNext}">🔗 ${ex.ssNext ? 'En superset con el siguiente ✓' : 'Hacer superset con el siguiente'}</button></li>` : ''}`).join('');
   return `${header('Editar rutina', { back: true })}
     <label class="field"><span>Nombre de la rutina</span>
       <input data-bind="routine-name" value="${esc(r.name)}" autocomplete="off">
@@ -747,40 +758,66 @@ function viewRoutine() {
     <button class="btn ghost block danger-text" data-action="del-routine">Eliminar rutina</button>`;
 }
 
+// Superset: los ejercicios unidos con el siguiente (ssNext) se hacen juntos, intercalando sus series
+function groupsOf(d) {
+  const groups = [];
+  let g = [];
+  d.exercises.forEach((ex, k) => {
+    g.push(k);
+    if (!ex.ssNext || k === d.exercises.length - 1) { groups.push(g); g = []; }
+  });
+  return groups;
+}
+const groupIndex = (groups, pos) => Math.max(0, groups.findIndex(g => g.includes(pos)));
+const groupName = (d, g) => g.map(k => d.exercises[k].name).join(' + ');
+const letterOf = n => String.fromCharCode(65 + n);   // A, B, C… en un superset
+
 function viewWorkout() {
   const d = cur();
   if (!d) { location.replace(isEditing() ? '#/historial' : '#/rutinas'); return ''; }
   const editing = !!d.editOf;
   const before = beforeIndex(d);
 
-  // Un ejercicio a la vez: d.pos es el ejercicio en pantalla y d.done los que ya pasaste con "Siguiente"
-  const last = d.exercises.length - 1;
-  d.pos = Math.min(Math.max(d.pos || 0, 0), last);
+  // Un bloque a la vez (un ejercicio, o varios si van en superset): d.pos es un ejercicio del bloque en pantalla
+  // y d.done los ejercicios que ya pasaste con "Siguiente"
+  const groups = groupsOf(d);
+  d.pos = Math.min(Math.max(d.pos || 0, 0), d.exercises.length - 1);
   d.done = d.done || [];
+  const gi = groupIndex(groups, d.pos), group = groups[gi], isLast = gi === groups.length - 1;
+  const bests = new Map(group.map(k => [k, bestSets(d.exercises[k].exerciseId, before)]));
 
-  const exerciseBlock = (ex, i) => {
-    const best = bestSets(ex.exerciseId, before);
-    const sets = ex.sets.map((s, j) => `
-      <div class="set ${ex.rir ? 'has-rir' : ''}">
-        <span class="n">${j + 1}</span>
-        <input inputmode="decimal" data-bind="w" data-i="${i}" data-j="${j}" value="${esc(s.w)}" placeholder="peso" aria-label="Peso serie ${j + 1}">
+  // Fila de una serie, con sus bajadas de dropset debajo (label: "1", o "A1" en un superset)
+  const setRow = (ex, i, s, j, label) => {
+    const best = bests.get(i);
+    const drops = (s.drops || []).map((x, k) => `
+      <div class="set drop ${ex.rir ? 'has-rir' : ''}">
+        <span class="n">↓</span>
+        <input inputmode="decimal" data-bind="dw" data-i="${i}" data-j="${j}" data-k="${k}" value="${esc(x.w)}" placeholder="peso" aria-label="Peso bajada ${k + 1} de la serie ${label}">
         <span class="u">${ex.unit}</span>
         <span class="x">×</span>
-        <input inputmode="numeric" data-bind="r" data-i="${i}" data-j="${j}" value="${esc(s.r)}" placeholder="reps" aria-label="Repeticiones serie ${j + 1}">
-        ${ex.rir ? `<input class="rir" inputmode="numeric" data-bind="rir" data-i="${i}" data-j="${j}" value="${esc(s.rir ?? '')}" placeholder="RIR" aria-label="RIR serie ${j + 1}">` : ''}
+        <input inputmode="numeric" data-bind="dr" data-i="${i}" data-j="${j}" data-k="${k}" value="${esc(x.r)}" placeholder="reps" aria-label="Repeticiones bajada ${k + 1} de la serie ${label}">
+        ${ex.rir ? '<span></span>' : ''}
+        <span></span>
+        <button class="icon danger" data-action="del-drop" data-i="${i}" data-j="${j}" data-k="${k}" aria-label="Quitar bajada">✕</button>
+      </div>`).join('');
+    return `
+      <div class="set ${ex.rir ? 'has-rir' : ''}">
+        <span class="n">${label}</span>
+        <input inputmode="decimal" data-bind="w" data-i="${i}" data-j="${j}" value="${esc(s.w)}" placeholder="peso" aria-label="Peso serie ${label}">
+        <span class="u">${ex.unit}</span>
+        <span class="x">×</span>
+        <input inputmode="numeric" data-bind="r" data-i="${i}" data-j="${j}" value="${esc(s.r)}" placeholder="reps" aria-label="Repeticiones serie ${label}">
+        ${ex.rir ? `<input class="rir" inputmode="numeric" data-bind="rir" data-i="${i}" data-j="${j}" value="${esc(s.rir ?? '')}" placeholder="RIR" aria-label="RIR serie ${label}">` : ''}
         <span class="mark-cell" data-mark="${i}-${j}">${markSpan(liveCmp(s, ex.unit, best[j]))}</span>
         <button class="icon danger" data-action="del-set" data-i="${i}" data-j="${j}" aria-label="Borrar serie">✕</button>
       </div>
-      ${best[j] ? `<div class="set-ref">Mejor: ${fmtNum(best[j].w)} ${best[j].unit} × ${fmtNum(best[j].r)}</div>` : ''}`).join('');
-    const open = openHistory.has(ex.exerciseId);
-    const past = open ? historyFor(ex.exerciseId, d.editOf).map(({ w, ex: pex }) => `
-      <div class="hist-item">
-        <div class="muted">${fmtDate(w.date)}</div>
-        ${setsChips(pex)}
-      </div>`).join('') || '<p class="muted">Aún no hay historial de este ejercicio.</p>' : '';
-    const restBtn = !editing && ex.rest
-      ? `<button class="btn ghost" data-action="rest" data-i="${i}" data-rest="${i}">Rest ${fmtRest(ex.rest)}</button>` : '';
-    // Objetivo de la rutina (si tiene) y aviso para subir el peso
+      ${drops}
+      <div class="set-ref"><span>${best[j] ? `Mejor: ${fmtNum(best[j].w)} ${best[j].unit} × ${fmtNum(best[j].r)}` : ''}</span>
+        <button class="drop-add" data-action="add-drop" data-i="${i}" data-j="${j}">↓ drop</button></div>`;
+  };
+
+  // Objetivo de la rutina (si tiene), aviso para subir el peso, nota y "Primera vez"
+  const exInfo = (ex, i) => {
     // Sin RIR activado se va al fallo (se muestra junto al resto del objetivo)
     const goals = [['Series', ex.goalSets], ['Reps', ex.goalReps]].filter(([, v]) => v);
     if (ex.rir && ex.goalRir) goals.push(['RIR', ex.goalRir]);
@@ -788,45 +825,87 @@ function viewWorkout() {
     let hint = '';
     if (!editing && ex.goalReps) {
       const prev = lastFor(ex.exerciseId, before), top = rangeTop(ex.goalReps);
-      const done = prev ? prev.ex.sets.filter(s => s.w != null) : [];
-      if (done.length && done.length >= (ex.goalSets || 1) && done.every(s => (s.r || 0) >= top)) {
+      const done = prev ? prev.ex.sets.filter(x => x.w != null) : [];
+      if (done.length && done.length >= (ex.goalSets || 1) && done.every(x => (x.r || 0) >= top)) {
         hint = `<p class="goal-hint">💡 La última vez llegaste a ${top} reps en todas las series: prueba subir el peso.</p>`;
       }
     }
-    return `<section class="card" data-ex="${i}">
-      <div class="ex-head"><strong>${esc(ex.name)}</strong></div>
-      ${goals.length ? `<div class="goal-chips">${goals.map(([k, v]) => `<span class="goal-chip"><small>${k}</small>${esc(String(v))}</span>`).join('')}</div>` : ''}
+    return `${goals.length ? `<div class="goal-chips">${goals.map(([k, v]) => `<span class="goal-chip"><small>${k}</small>${esc(String(v))}</span>`).join('')}</div>` : ''}
       ${hint}
       ${noteHtml(ex.exerciseId, i)}
-      ${best.length ? '' : '<p class="prev">Primera vez</p>'}
-      <div class="sets">${sets}</div>
+      ${bests.get(i).length ? '' : '<p class="prev">Primera vez</p>'}`;
+  };
+  const historyHtml = ex => historyFor(ex.exerciseId, d.editOf).map(({ w, ex: pex }) => `
+      <div class="hist-item">
+        <div class="muted">${fmtDate(w.date)}</div>
+        ${setsChips(pex)}
+      </div>`).join('') || '<p class="muted">Aún no hay historial de este ejercicio.</p>';
+  const restBtn = i => (!editing && d.exercises[i].rest
+    ? `<button class="btn ghost" data-action="rest" data-i="${i}" data-rest="${i}">Rest ${fmtRest(d.exercises[i].rest)}</button>` : '');
+  const dropBadge = ex => (ex.dropset ? '<span class="badge on">Dropset</span>' : '');
+
+  const exerciseBlock = (ex, i) => {
+    const open = openHistory.has(ex.exerciseId);
+    return `<section class="card" data-ex="${i}">
+      <div class="ex-head"><strong>${esc(ex.name)}</strong>${dropBadge(ex)}</div>
+      ${exInfo(ex, i)}
+      <div class="sets">${ex.sets.map((st, j) => setRow(ex, i, st, j, j + 1)).join('')}</div>
       <div class="ex-actions">
         <button class="btn ghost" data-action="add-set" data-i="${i}">+ serie</button>
-        ${restBtn}
+        ${restBtn(i)}
         <button class="btn ghost ${open ? 'on' : ''}" data-action="toggle-history" data-i="${i}">Historial ${open ? '▴' : '▾'}</button>
       </div>
-      ${open ? `<div class="hist">${past}</div>` : ''}
+      ${open ? `<div class="hist">${historyHtml(ex)}</div>` : ''}
     </section>`;
   };
 
-  const i = d.pos, isLast = i === last;
-  // Fila con todos los ejercicios para saltar a cualquiera (✓ = ya lo pasaste)
-  const steps = `<nav class="steps" aria-label="Ejercicios">${d.exercises.map((ex, k) => `
-    <button class="step ${k === i ? 'on' : ''} ${d.done.includes(ex.exerciseId) ? 'done' : ''}" data-action="go-ex" data-i="${k}"
-      ${k === i ? 'aria-current="step"' : ''}>${d.done.includes(ex.exerciseId) ? '✓ ' : ''}${esc(ex.name)}</button>`).join('')}
+  // Superset: A1, B1, A2, B2… en una sola tarjeta; el Rest es después de cada vuelta
+  const supersetBlock = idx => {
+    const rounds = Math.max(...idx.map(k => d.exercises[k].sets.length));
+    let rows = '';
+    for (let j = 0; j < rounds; j++) {
+      rows += `<div class="ss-round">${idx.map((k, n) => {
+        const ex = d.exercises[k], st = ex.sets[j];
+        return st ? `<div class="ss-name">${letterOf(n)} · ${esc(ex.name)}</div>${setRow(ex, k, st, j, `${letterOf(n)}${j + 1}`)}` : '';
+      }).join('')}</div>`;
+    }
+    const restI = idx.reduce((a, k) => (d.exercises[k].rest > d.exercises[a].rest ? k : a), idx[idx.length - 1]);
+    const open = idx.some(k => openHistory.has(d.exercises[k].exerciseId));
+    return `<section class="card superset" data-ex="${idx[0]}">
+      <div class="ss-tag">🔗 Superset · alterna una serie de cada uno</div>
+      ${idx.map((k, n) => `<div class="ss-ex">
+        <div class="ex-head"><strong>${letterOf(n)} · ${esc(d.exercises[k].name)}</strong>${dropBadge(d.exercises[k])}</div>
+        ${exInfo(d.exercises[k], k)}
+      </div>`).join('')}
+      <div class="sets">${rows}</div>
+      <div class="ex-actions">
+        <button class="btn ghost" data-action="add-round" data-i="${idx[0]}">+ vuelta</button>
+        ${restBtn(restI)}
+        <button class="btn ghost ${open ? 'on' : ''}" data-action="toggle-history" data-i="${idx[0]}" data-group="1">Historial ${open ? '▴' : '▾'}</button>
+      </div>
+      ${open ? idx.map((k, n) => `<div class="hist"><strong>${letterOf(n)} · ${esc(d.exercises[k].name)}</strong>${historyHtml(d.exercises[k])}</div>`).join('') : ''}
+    </section>`;
+  };
+
+  // Fila con todos los bloques para saltar a cualquiera (✓ = ya lo pasaste)
+  const steps = `<nav class="steps" aria-label="Ejercicios">${groups.map((g, k) => {
+    const done = g.every(x => d.done.includes(d.exercises[x].exerciseId));
+    return `<button class="step ${k === gi ? 'on' : ''} ${done ? 'done' : ''}" data-action="go-ex" data-i="${g[0]}"
+      ${k === gi ? 'aria-current="step"' : ''}>${done ? '✓ ' : ''}${g.length > 1 ? '🔗 ' : ''}${esc(groupName(d, g))}</button>`;
+  }).join('')}
   </nav>`;
   const nav = `<div class="step-nav">
-      <button class="btn" data-action="prev-ex" ${i === 0 ? 'disabled' : ''}>‹ Anterior</button>
+      <button class="btn" data-action="prev-ex" ${gi === 0 ? 'disabled' : ''}>‹ Anterior</button>
       ${isLast
         ? (editing ? '<button class="btn primary" data-action="save-edit">Guardar cambios</button>'
                    : '<button class="btn primary" data-action="finish">Terminar y guardar</button>')
-        : `<button class="btn primary" data-action="next-ex">Siguiente: ${esc(d.exercises[i + 1].name)} ›</button>`}
+        : `<button class="btn primary" data-action="next-ex">Siguiente: ${esc(groupName(d, groups[gi + 1]))} ›</button>`}
     </div>`;
 
   const title = editing ? `Editar · ${d.routineName}` : d.routineName;
-  return `${header(title, { back: true, sub: `Ejercicio ${i + 1} de ${last + 1} · ${fmtDate(d.start)}` })}
+  return `${header(title, { back: true, sub: `Ejercicio ${gi + 1} de ${groups.length} · ${fmtDate(d.start)}` })}
     ${steps}
-    ${exerciseBlock(d.exercises[i], i)}
+    ${group.length > 1 ? supersetBlock(group) : exerciseBlock(d.exercises[group[0]], group[0])}
     ${nav}
     ${isLast ? `
     <form class="add-row" data-form="extra-ex">
@@ -841,6 +920,7 @@ function viewWorkout() {
     </div>` : ''}
     ${editing ? '' : `<div id="restbar" class="restbar" hidden>
       <span class="rb-text"></span>
+      <button class="btn rest-plus" data-action="rest-add">+30 s</button>
       <button class="icon" data-action="rest-stop" aria-label="Cerrar descanso">✕</button>
     </div>`}`;
 }
@@ -1074,7 +1154,7 @@ async function shareRoutine(btn) {
   // Solo se comparten los ejercicios: sin pesos, historial ni notas
   await shareWithCode(btn, { routine: routinePayload(r) }, { id: r.id, name: r.name, kind: 'routine' });
 }
-const routinePayload = r => ({ name: r.name, exercises: r.exercises.map(ex => ({ name: ex.name, unit: ex.unit, rest: ex.rest || 0, rir: !!ex.rir, ...goalFields(ex) })) });
+const routinePayload = r => ({ name: r.name, exercises: r.exercises.map(ex => ({ name: ex.name, unit: ex.unit, rest: ex.rest || 0, rir: !!ex.rir, ...planFields(ex) })) });
 
 // Se comparten las comidas con sus cantidades y los alimentos propios que usa (los de la base ya los tiene todo el mundo)
 async function shareDiet(btn) {
@@ -1156,7 +1236,7 @@ function importRoutineData(data) {
       const found = findExercise(ex.name);
       const mine = found && !used.has(found.id) ? found : null;
       if (mine) used.add(mine.id);
-      return { id: mine ? mine.id : uid(), name: mine ? mine.name : ex.name, unit: mine ? mine.unit : ex.unit, rest: ex.rest || 0, rir: !!ex.rir, ...goalFields(ex) };
+      return { id: mine ? mine.id : uid(), name: mine ? mine.name : ex.name, unit: mine ? mine.unit : ex.unit, rest: ex.rest || 0, rir: !!ex.rir, ...planFields(ex) };
     }),
   };
   db.routines.push(routine);
@@ -1298,7 +1378,7 @@ function workoutShareText(w, forChat = false) {
       const c = best[j] ? cmpSet({ ...s, unit: ex.unit }, best[j]) : null;
       if (c > 0) ups++;
       const mark = c == null ? '' : c > 0 ? ' ▲' : c < 0 ? ' ▼' : ' =';
-      return `${fmtNum(s.w)}×${fmtNum(s.r)}${mark}`;
+      return `${fmtNum(s.w)}×${fmtNum(s.r)}${dropsText(s)}${mark}`;
     });
     return `• ${ex.name} (${ex.unit}): ${sets.join(' · ')}`;
   });
@@ -2302,9 +2382,10 @@ function startWorkout(r) {
     routineName: r.name,
     start: new Date().toISOString(),
     timer: null,
-    exercises: r.exercises.map(ex => ({
-      exerciseId: ex.id, name: ex.name, unit: ex.unit, rest: ex.rest || 0, rir: !!ex.rir, ...goalFields(ex),
-      sets: prefillSets(lastFor(ex.id), ex.rir, ex.goalSets),
+    exercises: r.exercises.map((ex, k) => ({
+      exerciseId: ex.id, name: ex.name, unit: ex.unit, rest: ex.rest || 0, rir: !!ex.rir, ...planFields(ex),
+      ...(k === r.exercises.length - 1 ? { ssNext: false } : {}),   // el último no se une con nada
+      sets: prefillSets(lastFor(ex.id), ex.rir, ex.goalSets, ex.dropset),
     })),
   };
   save();
@@ -2319,7 +2400,12 @@ const cleanExercises = d => d.exercises
     unit: ex.unit,
     ...(ex.rir ? { rir: true } : {}),
     sets: ex.sets
-      .map(s => { const set = { w: num(s.w), r: num(s.r) }; const rir = num(s.rir); if (ex.rir && rir != null) set.rir = rir; return set; })
+      .map(s => {
+        const set = { w: num(s.w), r: num(s.r) }; const rir = num(s.rir); if (ex.rir && rir != null) set.rir = rir;
+        const drops = (s.drops || []).map(x => ({ w: num(x.w), r: num(x.r) })).filter(x => x.w != null || x.r != null);
+        if (drops.length) set.drops = drops;   // bajadas del dropset
+        return set;
+      })
       .filter(s => s.w != null || s.r != null),
   }))
   .filter(ex => ex.sets.length);
@@ -2350,7 +2436,10 @@ function makeEditBuf(id) {
     exercises: w.exercises.map(ex => ({
       exerciseId: ex.exerciseId, name: ex.name, unit: ex.unit, rest: 0,
       rir: !!ex.rir,
-      sets: ex.sets.map(s => ({ w: toField(s.w), r: toField(s.r), ...(ex.rir ? { rir: toField(s.rir) } : {}) })),
+      sets: ex.sets.map(s => ({
+        w: toField(s.w), r: toField(s.r), ...(ex.rir ? { rir: toField(s.rir) } : {}),
+        ...(s.drops ? { drops: s.drops.map(x => ({ w: toField(x.w), r: toField(x.r) })) } : {}),
+      })),
     })),
   };
 }
@@ -2748,6 +2837,13 @@ $app.addEventListener('click', e => {
       if (el.dataset.s === 'bw') bwRange = el.dataset.r; else progressRange = el.dataset.r;
       render();
       break;
+    case 'toggle-drop':
+    case 'toggle-ss': {
+      const ex = curRoutine().exercises[i], key = action === 'toggle-drop' ? 'dropset' : 'ssNext';
+      if (ex[key]) delete ex[key]; else ex[key] = true;
+      save(); render();
+      break;
+    }
     case 'toggle-rir': {
       const ex = curRoutine().exercises[i];
       ex.rir = !ex.rir;
@@ -2804,9 +2900,11 @@ $app.addEventListener('click', e => {
     case 'go-ex':
     case 'prev-ex':
     case 'next-ex': {
-      const d = cur();
-      if (action === 'next-ex' && !d.done.includes(d.exercises[d.pos].exerciseId)) d.done.push(d.exercises[d.pos].exerciseId);
-      d.pos = action === 'go-ex' ? i : d.pos + (action === 'next-ex' ? 1 : -1);
+      const d = cur(), groups = groupsOf(d), gi = groupIndex(groups, d.pos);
+      if (action === 'next-ex') {
+        for (const k of groups[gi]) if (!d.done.includes(d.exercises[k].exerciseId)) d.done.push(d.exercises[k].exerciseId);
+      }
+      d.pos = action === 'go-ex' ? i : groups[Math.min(Math.max(gi + (action === 'next-ex' ? 1 : -1), 0), groups.length - 1)][0];
       hideToast();
       save(); render();
       window.scrollTo(0, 0);
@@ -2830,9 +2928,33 @@ $app.addEventListener('click', e => {
       break;
     }
     case 'toggle-history': {
-      const exId = cur().exercises[i].exerciseId;
-      if (!openHistory.delete(exId)) openHistory.add(exId);
+      // En un superset se abren o cierran los historiales de todos sus ejercicios
+      const d = cur(), ids = (el.dataset.group ? groupsOf(d).find(g => g.includes(i)) : [i]).map(k => d.exercises[k].exerciseId);
+      const open = ids.some(x => openHistory.has(x));
+      ids.forEach(x => (open ? openHistory.delete(x) : openHistory.add(x)));
       render();
+      break;
+    }
+    case 'add-round': {
+      // Superset: una serie más para cada ejercicio
+      const d = cur();
+      for (const k of groupsOf(d).find(g => g.includes(i))) d.exercises[k].sets.push({ w: '', r: '', ...(d.exercises[k].rir ? { rir: '' } : {}) });
+      save(); render();
+      break;
+    }
+    case 'add-drop': {
+      const st = cur().exercises[i].sets[j];
+      (st.drops ||= []).push({ w: '', r: '' });
+      save(); render();
+      const input = $app.querySelector(`[data-bind="dw"][data-i="${i}"][data-j="${j}"][data-k="${st.drops.length - 1}"]`);
+      if (input) input.focus();
+      break;
+    }
+    case 'del-drop': {
+      const st = cur().exercises[i].sets[j];
+      st.drops.splice(+el.dataset.k, 1);
+      if (!st.drops.length) delete st.drops;
+      save(); render();
       break;
     }
     case 'edit-note': {
@@ -2852,6 +2974,12 @@ $app.addEventListener('click', e => {
     case 'rest-stop':
       setTimer(null);
       break;
+    case 'rest-add': {
+      // +30 s al descanso en curso (si ya terminó, cuenta 30 s desde ahora)
+      const t = db.draft && db.draft.timer;
+      if (t) setTimer({ ...t, endsAt: Math.max(t.endsAt, Date.now()) + 30000 });
+      break;
+    }
     case 'finish':
       finishWorkout();
       break;
@@ -3159,6 +3287,7 @@ $app.addEventListener('input', e => {
     if (cell) cell.innerHTML = markSpan(liveCmp(ex.sets[j], ex.unit, bestSets(ex.exerciseId, beforeIndex(d))[j]));
   }
   else if (bind === 'rir') cur().exercises[i].sets[j].rir = el.value;
+  else if (bind === 'dw' || bind === 'dr') cur().exercises[i].sets[j].drops[+el.dataset.k][bind === 'dw' ? 'w' : 'r'] = el.value;
   else if (bind === 'note') {
     const exId = cur().exercises[i].exerciseId, text = el.value.trim();
     if (text) db.notes[exId] = text; else delete db.notes[exId];

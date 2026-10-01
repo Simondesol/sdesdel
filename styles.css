@@ -134,7 +134,7 @@ select { width: auto; }
   gap: 6px; align-items: center;
   margin-bottom: 6px;
 }
-.set-ref { margin: -2px 0 8px 24px; font-size: 12px; color: var(--muted); }
+.set-ref { margin: -2px 0 8px 24px; font-size: 12px; color: var(--muted); display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 
 /* ▲ = ▼ comparado con la mejor marca */
 .mark-cell { text-align: center; }
@@ -539,3 +539,24 @@ a.card.hub { display: grid; }
 .avatar.big { width: 72px; height: 72px; font-size: 30px; }
 .pr-val { display: grid; justify-items: end; }
 .prog-row .grow { min-width: 0; }
+
+/* Dropset: bajadas debajo de la serie */
+.drop-add {
+  margin-left: auto; padding: 2px 4px; background: none; border: 0; cursor: pointer;
+  font: inherit; font-size: 12px; font-weight: 600; color: var(--accent);
+}
+.set.drop { margin-left: 12px; }
+.set.drop .n { color: var(--accent); font-weight: 700; }
+.ex-head .badge { margin-left: 8px; }
+/* Superset: series intercaladas A1, B1, A2, B2… */
+.superset .ss-tag { color: var(--accent); font-weight: 700; font-size: 13px; margin-bottom: 8px; }
+.ss-ex + .ss-ex { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+.ss-round { padding-top: 8px; border-top: 1px dashed var(--border); }
+.ss-round:first-child { border-top: 0; padding-top: 0; }
+.ss-name { margin: 0 0 4px 24px; font-size: 12px; color: var(--muted); }
+.superset .set .n { font-size: 12px; font-weight: 700; }
+.ex-edit li.ss-link { display: flex; justify-content: center; padding: 0; margin: -2px 0; }
+.ss-link .chip { font-size: 13px; }
+/* Descanso: +30 s */
+.restbar .rest-plus { flex: none; min-height: 36px; padding: 0 12px; font-size: 14px; color: var(--accent); border-color: var(--accent); }
+.restbar.done .rest-plus { color: var(--accent-ink); border-color: var(--accent-ink); background: transparent; }
