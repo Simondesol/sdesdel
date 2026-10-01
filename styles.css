@@ -417,14 +417,25 @@ a.card.hub { display: grid; }
 }
 .check.on { background: var(--accent); border-color: var(--accent); }
 .food-list .card[hidden] { display: none; }
-.meal-edit { display: grid; gap: 8px; }
+.meal-edit { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
 .meal-title { display: flex; gap: 8px; align-items: center; }
 .meal-title input { font-weight: 600; }
 .item-row { display: flex; align-items: center; gap: 6px; font-size: 14px; }
-.item-row .grow { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.item-row .grow { min-width: 0; line-height: 1.25; overflow-wrap: anywhere; }
 .grams { flex: none !important; width: 64px !important; text-align: center; padding: 0 4px; }
 .item-kcal { flex: none; width: 70px; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
 .meal-edit .add-row { margin-top: 4px; }
 .meal-edit select { flex: 1; min-width: 0; }
 .meal-total { font-size: 14px; color: var(--muted); border-top: 1px solid var(--border); padding-top: 8px; font-variant-numeric: tabular-nums; }
 .meal-total strong { color: var(--text); }
+
+/* Buscador de alimentos */
+.add-item { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; margin-top: 4px; }
+.food-results { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; }
+.food-results:empty { display: none; }
+.food-pick {
+  display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+  font: inherit; font-size: 14px; color: var(--text); cursor: pointer;
+  background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; min-height: 40px;
+}
+.food-pick .grow { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

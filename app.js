@@ -1,3 +1,5 @@
+import { BASE_FOODS } from './foods-base.js';
+
 // ---------- Datos ----------
 // Cada usuario tiene una copia en el teléfono (para usar la app sin internet en el gym)
 // que se sincroniza con su cuenta en la nube. El entrenamiento en curso solo vive en el teléfono.
@@ -163,7 +165,22 @@ const N = () => db.nutrition;
 const ZERO = { kcal: 0, p: 0, c: 0, f: 0 };
 const fmtKcal = n => Math.round(n).toLocaleString('es-CL');
 const fmtG = n => fmtNum(round1(n));
-const foodById = id => N().foods.find(f => f.id === id);
+const BASE_BY_ID = new Map(BASE_FOODS.map(f => [f.id, f]));
+const foodById = id => N().foods.find(f => f.id === id) || BASE_BY_ID.get(id);
+// Busca por palabras (sin importar tildes ni mayúsculas): tus alimentos primero, después la base
+function searchFoods(query, limit = 8) {
+  const words = normText(query.trim()).split(/\s+/).filter(Boolean);
+  if (!words.length) return [];
+  // Cada palabra buscada debe coincidir con el comienzo de alguna palabra del nombre ("pollo" no encuentra "repollo")
+  const match = f => { const parts = normText(f.name).split(/[^a-z0-9%]+/); return words.every(w => parts.some(x => x.startsWith(w))); };
+  const mine = N().foods.filter(match).sort((a, b) => a.name.localeCompare(b.name, 'es'));
+  const myNames = new Set(N().foods.map(f => normText(f.name)));
+  const base = BASE_FOODS.filter(f => match(f) && !myNames.has(normText(f.name)));
+  return [...mine, ...base].slice(0, limit);
+}
+const foodResultBtn = (f, action, extra = '') => `<button type="button" class="food-pick" data-action="${action}" data-id="${f.id}" ${extra}>
+  <span class="grow">${esc(f.name)}${f.base ? '' : ' <span class="badge on">Mío</span>'}</span>
+  <span class="muted small">${fmtKcal(f.kcal)} kcal · P ${fmtG(f.p)}</span></button>`;
 const dietById = id => N().diets.find(d => d.id === id);
 const sumM = list => list.reduce((a, m) => ({ kcal: a.kcal + m.kcal, p: a.p + m.p, c: a.c + m.c, f: a.f + m.f }), { ...ZERO });
 function itemMacros(it) {
@@ -244,24 +261,38 @@ function viewFoods() {
     </a>`).join('');
   return `${header('Nutrición', { home: true })}${nutriTabs('alimentos')}
     <a class="btn primary block center" href="#/alimento/nuevo" style="margin:0 0 12px">+ Nuevo alimento</a>
-    ${foods.length > 5 ? `<input class="search" type="search" data-bind="food-search" value="${esc(foodQuery)}" placeholder="🔍 Buscar alimento…" autocomplete="off" aria-label="Buscar alimento">` : ''}
-    <div class="food-list">${list || '<p class="empty">Agrega los alimentos que comes con su información nutricional por cada 100 g (está en la etiqueta del envase).</p>'}</div>`;
+    <input class="search" type="search" data-bind="food-search" value="${esc(foodQuery)}" placeholder="🔍 Buscar en mis alimentos y en la base…" autocomplete="off" aria-label="Buscar alimento">
+    <div class="food-list">${list || '<p class="empty">Todavía no agregas alimentos propios. Al armar tu dieta puedes usar los de la base de Desdel, o crear los tuyos con su etiqueta.</p>'}</div>
+    <div class="base-results"></div>
+    <p class="muted hint">Desdel incluye ${BASE_FOODS.length} alimentos comunes con valores aproximados por 100 g. Búscalos arriba; si quieres ajustar uno, tócalo y guárdalo como tuyo.</p>`;
 }
 
 function filterFoods() {
   const q = normText(foodQuery.trim());
   $app.querySelectorAll('.food-list [data-search]').forEach(a => { a.hidden = q && !a.dataset.search.includes(q); });
+  const box = $app.querySelector('.base-results');
+  if (!box) return;
+  const base = q ? searchFoods(foodQuery, 30).filter(f => f.base) : [];
+  box.innerHTML = base.length
+    ? `<h2>De la base de Desdel (aprox.)</h2>${base.map(f => `<a class="card" href="#/alimento/nuevo/${encodeURIComponent(f.id)}">
+        <div class="grow"><strong>${esc(f.name)}</strong>
+          <span class="muted small">${fmtKcal(f.kcal)} kcal · P ${fmtG(f.p)} · C ${fmtG(f.c)} · G ${fmtG(f.f)} <span class="per">por 100 g</span></span></div>
+        <span class="chev">›</span></a>`).join('')}`
+    : '';
 }
 
-function viewFoodForm(id) {
-  const food = id === 'nuevo' ? null : foodById(id);
+function viewFoodForm(id, fromId) {
+  const food = id === 'nuevo' ? null : N().foods.find(f => f.id === id);
   if (id !== 'nuevo' && !food) { location.replace('#/nutricion/alimentos'); return ''; }
-  const v = k => (food ? toField(food[k]) : '');
+  const from = !food && fromId ? BASE_BY_ID.get(decodeURIComponent(fromId)) : null;   // copia desde la base
+  const src = food || from;
+  const v = k => (src ? toField(src[k]) : '');
   const field = (name, label, unit) => `<label class="field"><span>${label}</span>
       <div class="add-row" style="margin-top:0"><input name="${name}" inputmode="decimal" value="${v(name)}" autocomplete="off"><span class="unit-label">${unit}</span></div></label>`;
   return `${header(food ? 'Editar alimento' : 'Nuevo alimento', { back: true, sub: 'Valores por cada 100 g' })}
     <form class="stack card" data-form="food" data-id="${food ? food.id : ''}" novalidate>
-      <label class="field"><span>Nombre</span><input name="name" value="${food ? esc(food.name) : ''}" placeholder="Ej. Carne molida 10% grasa" autocomplete="off"></label>
+      ${from ? '<p class="muted small" style="margin:0">Copiado de la base de Desdel (valores aproximados). Ajústalo con tu etiqueta y guárdalo.</p>' : ''}
+      <label class="field"><span>Nombre</span><input name="name" value="${src ? esc(src.name) : ''}" placeholder="Ej. Carne molida 10% grasa" autocomplete="off"></label>
       ${field('p', 'Proteínas', 'g')}
       ${field('c', 'Carbohidratos', 'g')}
       ${field('f', 'Grasas', 'g')}
@@ -307,8 +338,6 @@ function viewDiets() {
 function viewDietEditor(id) {
   const diet = dietById(id);
   if (!diet) { location.replace('#/nutricion/dietas'); return ''; }
-  const foods = N().foods.slice().sort((a, b) => a.name.localeCompare(b.name, 'es'));
-  const options = foods.map(f => `<option value="${f.id}">${esc(f.name)}</option>`).join('');
   const total = dietMacros(diet);
   const meals = diet.meals.map((meal, mi) => {
     const m = mealMacros(meal);
@@ -328,10 +357,13 @@ function viewDietEditor(id) {
         <button class="icon small danger" data-action="meal-del" data-m="${mi}" aria-label="Eliminar comida">✕</button>
       </div>
       ${items || '<p class="muted small" style="margin:6px 0">Agrega alimentos a esta comida.</p>'}
-      <form class="add-row" data-form="add-item" data-m="${mi}" novalidate>
-        <select name="food" aria-label="Alimento">${foods.length ? `<option value="">Elegir alimento…</option>${options}` : '<option value="">No tienes alimentos</option>'}</select>
-        <input name="g" inputmode="decimal" placeholder="g" class="grams" aria-label="Gramos">
-        <button class="btn">+</button>
+      <form class="add-item" data-form="add-item" data-m="${mi}" novalidate>
+        <div class="add-row" style="margin-top:0">
+          <input name="q" data-bind="food-q" data-m="${mi}" placeholder="🔍 Buscar alimento…" autocomplete="off" aria-label="Buscar alimento">
+          <input name="g" inputmode="decimal" placeholder="g" class="grams" aria-label="Gramos">
+          <button class="btn">+</button>
+        </div>
+        <div class="food-results" data-results="${mi}"></div>
       </form>
       <div class="meal-total" data-meal-total="${mi}"><strong>${fmtKcal(m.kcal)} kcal</strong> · ${macroLine(m)}</div>
     </section>`;
@@ -1395,7 +1427,7 @@ function render() {
     case 'rutinas': html = viewHome(); tab = 'rutinas'; break;
     case 'peso': html = viewBodyweight(); break;
     case 'nutricion': html = viewNutrition(arg); break;
-    case 'alimento': html = viewFoodForm(arg); break;
+    case 'alimento': html = viewFoodForm(arg, routeParts()[2]); break;
     case 'dieta': html = viewDietEditor(arg); break;
     default: html = viewHub();   // Inicio: sin pestañas
   }
@@ -2011,6 +2043,14 @@ $app.addEventListener('click', e => {
       histDay = el.dataset.date && el.dataset.date !== histDay ? el.dataset.date : null;   // tocar de nuevo = todo el mes
       render();
       break;
+    case 'pick-food': {
+      const form = el.closest('form'), food = foodById(id);
+      form.dataset.food = id;
+      form.elements.q.value = food.name;
+      form.querySelector('.food-results').innerHTML = '';
+      form.elements.g.focus();
+      break;
+    }
     case 'nutri-use': {
       const log = N().log[todayKey()];
       N().activeDietId = id;
@@ -2142,6 +2182,15 @@ $app.addEventListener('input', e => {
   if (!bind) return;
   if (bind === 'progress-search') { progressQuery = el.value; filterProgress(); return; }
   if (bind === 'food-search') { foodQuery = el.value; filterFoods(); return; }
+  if (bind === 'food-q') {
+    const form = el.closest('form');
+    delete form.dataset.food;                                   // se cambió el texto: hay que volver a elegir
+    const res = searchFoods(el.value);
+    form.querySelector('.food-results').innerHTML = el.value.trim()
+      ? (res.map(f => foodResultBtn(f, 'pick-food')).join('') || '<p class="muted small">No hay coincidencias. Puedes crearlo en Mis alimentos.</p>')
+      : '';
+    return;
+  }
   if (bind === 'diet-name' || bind === 'meal-name' || bind === 'item-g') {
     const diet = dietById(routeParts()[1]), m = +el.dataset.m;
     if (!diet) return;
@@ -2213,8 +2262,10 @@ $app.addEventListener('submit', e => {
     case 'food': saveFood(f); return;
     case 'add-item': {
       const diet = dietById(routeParts()[1]), m = +f.dataset.m;
-      const foodId = f.elements.food.value, g = num(f.elements.g.value);
-      if (!foodId) { alert('Elige un alimento.'); return; }
+      const typed = normText(f.elements.q.value.trim());
+      const exact = typed && [...N().foods, ...BASE_FOODS].find(x => normText(x.name) === typed);
+      const foodId = f.dataset.food || (exact && exact.id), g = num(f.elements.g.value);
+      if (!foodId) { alert('Busca el alimento y elígelo de la lista.'); f.elements.q.focus(); return; }
       if (g == null || g <= 0 || g > 5000) { alert('Escribe los gramos (ej. 120).'); f.elements.g.focus(); return; }
       diet.meals[m].items.push({ foodId, g: round1(g) });
       save(); render();
