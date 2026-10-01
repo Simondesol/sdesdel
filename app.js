@@ -1504,6 +1504,7 @@ function render() {
   $tabs.hidden = !tab;
   $tabs.querySelectorAll('a').forEach(a => a.classList.toggle('active', a.dataset.tab === tab));
   if (tab === 'progreso' && progressQuery) filterProgress();
+  if (screen === 'nutricion' && arg === 'alimentos' && foodQuery) filterFoods();   // al volver, mantiene la búsqueda aplicada
   paintTimer();
 }
 
