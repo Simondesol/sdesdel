@@ -393,3 +393,38 @@ a.card.hub { display: grid; }
   display: flex; flex-direction: column; justify-content: center; gap: 2px;
 }
 .bar .home { display: grid; place-items: center; text-decoration: none; }
+
+/* Nutrición */
+.range a {
+  flex: 1; display: grid; place-items: center; text-align: center;
+  font-size: 14px; font-weight: 600; color: var(--muted); border-radius: 8px; min-height: 38px;
+}
+.range a.on { background: var(--surface2); color: var(--text); }
+.small { font-size: 13px; }
+.per { opacity: .7; }
+.badge.on { color: var(--accent); border-color: var(--accent); }
+.nutri-sum { display: grid; gap: 10px; }
+.nutri-sum .big { font-size: 26px; }
+.macros { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; font-size: 13px; color: var(--muted); }
+.macros strong { color: var(--text); font-size: 16px; font-variant-numeric: tabular-nums; }
+.meal { display: flex; align-items: flex-start; gap: 12px; }
+.meal.eaten { border-color: var(--accent); }
+.meal-head { display: flex; justify-content: space-between; gap: 8px; font-variant-numeric: tabular-nums; }
+.check {
+  flex: none; width: 34px; height: 34px; border-radius: 50%; cursor: pointer;
+  font: inherit; font-weight: 700; color: var(--accent-ink);
+  background: transparent; border: 2px solid var(--border);
+}
+.check.on { background: var(--accent); border-color: var(--accent); }
+.food-list .card[hidden] { display: none; }
+.meal-edit { display: grid; gap: 8px; }
+.meal-title { display: flex; gap: 8px; align-items: center; }
+.meal-title input { font-weight: 600; }
+.item-row { display: flex; align-items: center; gap: 6px; font-size: 14px; }
+.item-row .grow { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.grams { flex: none !important; width: 64px !important; text-align: center; padding: 0 4px; }
+.item-kcal { flex: none; width: 70px; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+.meal-edit .add-row { margin-top: 4px; }
+.meal-edit select { flex: 1; min-width: 0; }
+.meal-total { font-size: 14px; color: var(--muted); border-top: 1px solid var(--border); padding-top: 8px; font-variant-numeric: tabular-nums; }
+.meal-total strong { color: var(--text); }

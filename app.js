@@ -7,7 +7,9 @@ const $app = document.getElementById('app');
 const $tabs = document.getElementById('tabs');
 
 const emptyWater = () => ({ goalMl: null, days: {} });   // days: { 'AAAA-MM-DD': [{ at, ml }] }
-const emptyDb = () => ({ routines: [], workouts: [], draft: null, notes: {}, bodyweight: [], water: emptyWater() });
+// Nutrición: alimentos (valores por 100 g), dietas con comidas y el registro de comidas marcadas por día
+const emptyNutrition = () => ({ foods: [], diets: [], activeDietId: null, log: {} });
+const emptyDb = () => ({ routines: [], workouts: [], draft: null, notes: {}, bodyweight: [], water: emptyWater(), nutrition: emptyNutrition() });
 const emptySynced = () => ({ main: null, w: {} });
 let db = emptyDb();
 let user = null;                 // { uid, email, username }
@@ -138,11 +140,7 @@ function viewHub() {
       <span class="muted">${d ? `Entrenamiento en curso: ${esc(d.routineName)}` : 'Rutinas · Historial · Progreso'}</span>
     </a>
 
-    <div class="card hub soon" aria-disabled="true">
-      <div class="hub-top"><span class="hub-icon">🍽️</span><strong>Nutrición</strong><span class="badge">Próximamente</span></div>
-      <div class="hub-value"><strong>— / 2.000</strong> kcal</div>
-      ${bar(0, 2000)}
-    </div>
+    ${nutritionCard()}
 
     <div class="card hub">
       <a class="hub-top" href="#/agua"><span class="hub-icon">💧</span><strong>Agua</strong><span class="chev">›</span></a>
@@ -156,6 +154,224 @@ function viewHub() {
 
     ${bodyweightCard()}
     </div>`;
+}
+
+// ---------- Nutrición ----------
+// Alimentos: valores por 100 g. Dietas: comidas con alimentos y gramos; los totales se calculan solos.
+// Cada día se marcan ✓ las comidas de la dieta que te comiste; la meta del día es el total de la dieta.
+const N = () => db.nutrition;
+const ZERO = { kcal: 0, p: 0, c: 0, f: 0 };
+const fmtKcal = n => Math.round(n).toLocaleString('es-CL');
+const fmtG = n => fmtNum(round1(n));
+const foodById = id => N().foods.find(f => f.id === id);
+const dietById = id => N().diets.find(d => d.id === id);
+const sumM = list => list.reduce((a, m) => ({ kcal: a.kcal + m.kcal, p: a.p + m.p, c: a.c + m.c, f: a.f + m.f }), { ...ZERO });
+function itemMacros(it) {
+  const food = foodById(it.foodId);
+  if (!food) return { ...ZERO };
+  const k = (it.g || 0) / 100;
+  return { kcal: food.kcal * k, p: food.p * k, c: food.c * k, f: food.f * k };
+}
+const mealMacros = meal => sumM(meal.items.map(itemMacros));
+const dietMacros = diet => sumM(diet.meals.map(mealMacros));
+const macroLine = m => `P ${fmtG(m.p)} g · C ${fmtG(m.c)} g · G ${fmtG(m.f)} g`;
+
+// Hoy: qué dieta se usa y qué comidas están marcadas
+function todayNutrition() {
+  const log = N().log[todayKey()];
+  const diet = dietById(log && log.dietId) || dietById(N().activeDietId) || N().diets[0] || null;
+  // Cada dieta recuerda sus comidas marcadas del día, aunque cambies de una a otra
+  const done = !diet || !log ? [] : (log.byDiet && log.byDiet[diet.id]) || (log.dietId === diet.id ? log.done || [] : []);
+  const eaten = diet ? sumM(diet.meals.filter(m => done.includes(m.id)).map(mealMacros)) : { ...ZERO };
+  return { diet, done, eaten, goal: diet ? dietMacros(diet) : { ...ZERO } };
+}
+
+// Guarda el registro de hoy (y borra los de hace más de 90 días para no acumular)
+function setTodayLog(dietId, done) {
+  const prev = N().log[todayKey()] || {};
+  N().log[todayKey()] = { dietId, done, byDiet: { ...(prev.byDiet || {}), [dietId]: done } };
+  const limit = new Date(Date.now() - 90 * 86400000);
+  const min = `${limit.getFullYear()}-${String(limit.getMonth() + 1).padStart(2, '0')}-${String(limit.getDate()).padStart(2, '0')}`;
+  for (const k of Object.keys(N().log)) if (k < min) delete N().log[k];
+}
+
+const nutriTabs = active => `<div class="range" role="tablist">${[['', 'Hoy'], ['alimentos', 'Mis alimentos'], ['dietas', 'Mis dietas']]
+  .map(([k, label]) => `<a class="${k === active ? 'on' : ''}" href="#/nutricion${k ? `/${k}` : ''}" role="tab">${label}</a>`).join('')}</div>`;
+
+function viewNutrition(section) {
+  if (section === 'alimentos') return viewFoods();
+  if (section === 'dietas') return viewDiets();
+  const { diet, done, eaten, goal } = todayNutrition();
+  const head = `${header('Nutrición', { home: true })}${nutriTabs('')}`;
+  if (!diet) {
+    return `${head}<p class="empty">Todavía no tienes dietas.<br>Primero agrega tus alimentos en <a href="#/nutricion/alimentos">Mis alimentos</a> y luego crea tu dieta en <a href="#/nutricion/dietas">Mis dietas</a>.</p>`;
+  }
+  const chooser = N().diets.length > 1 ? `<div class="steps">${N().diets.map(d => `
+      <button class="step ${d.id === diet.id ? 'on' : ''}" data-action="nutri-use" data-id="${d.id}">${esc(d.name)}</button>`).join('')}</div>` : '';
+  const meals = diet.meals.map(meal => {
+    const m = mealMacros(meal), ok = done.includes(meal.id);
+    return `<section class="card meal ${ok ? 'eaten' : ''}">
+      <button class="check ${ok ? 'on' : ''}" data-action="nutri-done" data-id="${meal.id}" aria-pressed="${ok}" aria-label="Marcar ${esc(meal.name)}">${ok ? '✓' : ''}</button>
+      <div class="grow">
+        <div class="meal-head"><strong>${esc(meal.name)}</strong><span>${fmtKcal(m.kcal)} kcal</span></div>
+        <div class="muted small">${macroLine(m)}</div>
+        <div class="muted small">${meal.items.map(it => `${fmtNum(it.g)} g ${esc((foodById(it.foodId) || { name: '(borrado)' }).name)}`).join(' · ') || 'Sin alimentos'}</div>
+      </div>
+    </section>`;
+  }).join('');
+  return `${head}${chooser}
+    <section class="card nutri-sum">
+      <div class="water-big"><strong>${fmtKcal(eaten.kcal)}</strong> / ${fmtKcal(goal.kcal)} kcal</div>
+      ${bar(eaten.kcal, goal.kcal)}
+      <div class="macros">
+        <span>Proteína<br><strong>${fmtG(eaten.p)}</strong> / ${fmtG(goal.p)} g</span>
+        <span>Carbos<br><strong>${fmtG(eaten.c)}</strong> / ${fmtG(goal.c)} g</span>
+        <span>Grasas<br><strong>${fmtG(eaten.f)}</strong> / ${fmtG(goal.f)} g</span>
+      </div>
+    </section>
+    <h2>${esc(diet.name)} · toca ✓ cuando comas</h2>
+    ${meals || '<p class="empty">Esta dieta no tiene comidas.</p>'}`;
+}
+
+let foodQuery = '';
+function viewFoods() {
+  const foods = N().foods.slice().sort((a, b) => a.name.localeCompare(b.name, 'es'));
+  const list = foods.map(f => `
+    <a class="card" href="#/alimento/${f.id}" data-search="${esc(normText(f.name))}">
+      <div class="grow"><strong>${esc(f.name)}</strong>
+        <span class="muted small">${fmtKcal(f.kcal)} kcal · P ${fmtG(f.p)} · C ${fmtG(f.c)} · G ${fmtG(f.f)} <span class="per">por 100 g</span></span>
+      </div><span class="chev">›</span>
+    </a>`).join('');
+  return `${header('Nutrición', { home: true })}${nutriTabs('alimentos')}
+    <a class="btn primary block center" href="#/alimento/nuevo" style="margin:0 0 12px">+ Nuevo alimento</a>
+    ${foods.length > 5 ? `<input class="search" type="search" data-bind="food-search" value="${esc(foodQuery)}" placeholder="🔍 Buscar alimento…" autocomplete="off" aria-label="Buscar alimento">` : ''}
+    <div class="food-list">${list || '<p class="empty">Agrega los alimentos que comes con su información nutricional por cada 100 g (está en la etiqueta del envase).</p>'}</div>`;
+}
+
+function filterFoods() {
+  const q = normText(foodQuery.trim());
+  $app.querySelectorAll('.food-list [data-search]').forEach(a => { a.hidden = q && !a.dataset.search.includes(q); });
+}
+
+function viewFoodForm(id) {
+  const food = id === 'nuevo' ? null : foodById(id);
+  if (id !== 'nuevo' && !food) { location.replace('#/nutricion/alimentos'); return ''; }
+  const v = k => (food ? toField(food[k]) : '');
+  const field = (name, label, unit) => `<label class="field"><span>${label}</span>
+      <div class="add-row" style="margin-top:0"><input name="${name}" inputmode="decimal" value="${v(name)}" autocomplete="off"><span class="unit-label">${unit}</span></div></label>`;
+  return `${header(food ? 'Editar alimento' : 'Nuevo alimento', { back: true, sub: 'Valores por cada 100 g' })}
+    <form class="stack card" data-form="food" data-id="${food ? food.id : ''}" novalidate>
+      <label class="field"><span>Nombre</span><input name="name" value="${food ? esc(food.name) : ''}" placeholder="Ej. Carne molida 10% grasa" autocomplete="off"></label>
+      ${field('p', 'Proteínas', 'g')}
+      ${field('c', 'Carbohidratos', 'g')}
+      ${field('f', 'Grasas', 'g')}
+      ${field('kcal', 'Calorías (si lo dejas vacío se calcula con los macros)', 'kcal')}
+      <p class="form-msg" hidden></p>
+      <button class="btn primary block">Guardar alimento</button>
+    </form>
+    ${food ? '<button class="btn ghost block danger-text" data-action="food-del" style="margin-top:16px">Eliminar alimento</button>' : ''}`;
+}
+
+function saveFood(f) {
+  const name = f.elements.name.value.trim();
+  const val = k => num(f.elements[k].value);
+  const p = val('p'), c = val('c'), fat = val('f');
+  if (!name) return formMsg(f, 'Escribe el nombre del alimento.');
+  if ([p, c, fat].some(x => x == null || x < 0 || x > 100)) return formMsg(f, 'Escribe proteínas, carbohidratos y grasas en gramos por 100 g (entre 0 y 100).');
+  let kcal = val('kcal');
+  if (kcal == null) kcal = Math.round(p * 4 + c * 4 + fat * 9);       // 4 kcal por g de proteína y carbo, 9 por g de grasa
+  if (kcal < 0 || kcal > 1000) return formMsg(f, 'Las calorías por 100 g deben estar entre 0 y 1000.');
+  const data = { name, kcal: round1(kcal), p: round1(p), c: round1(c), f: round1(fat) };
+  const existing = f.dataset.id && foodById(f.dataset.id);
+  if (existing) Object.assign(existing, data);
+  else N().foods.push({ id: uid(), ...data });
+  save();
+  history.back();
+}
+
+function viewDiets() {
+  const active = todayNutrition().diet;
+  const list = N().diets.map(d => {
+    const m = dietMacros(d);
+    return `<a class="card" href="#/dieta/${d.id}">
+      <div class="grow"><strong>${esc(d.name)}${active && active.id === d.id ? ' <span class="badge on">Hoy</span>' : ''}</strong>
+        <span class="muted small">${plural(d.meals.length, 'comida')} · ${fmtKcal(m.kcal)} kcal · ${macroLine(m)}</span></div>
+      <span class="chev">›</span>
+    </a>`;
+  }).join('');
+  return `${header('Nutrición', { home: true })}${nutriTabs('dietas')}
+    <button class="btn primary block" data-action="diet-new" style="margin:0 0 12px">+ Crear dieta</button>
+    ${list || `<p class="empty">${N().foods.length ? 'Crea tu primera dieta.' : 'Primero agrega tus alimentos en <a href="#/nutricion/alimentos">Mis alimentos</a>.'}</p>`}`;
+}
+
+function viewDietEditor(id) {
+  const diet = dietById(id);
+  if (!diet) { location.replace('#/nutricion/dietas'); return ''; }
+  const foods = N().foods.slice().sort((a, b) => a.name.localeCompare(b.name, 'es'));
+  const options = foods.map(f => `<option value="${f.id}">${esc(f.name)}</option>`).join('');
+  const total = dietMacros(diet);
+  const meals = diet.meals.map((meal, mi) => {
+    const m = mealMacros(meal);
+    const items = meal.items.map((it, ii) => {
+      const food = foodById(it.foodId), im = itemMacros(it);
+      return `<div class="item-row">
+        <span class="grow">${esc(food ? food.name : '(alimento borrado)')}</span>
+        <input class="grams" inputmode="decimal" data-bind="item-g" data-m="${mi}" data-i="${ii}" value="${toField(it.g)}" aria-label="Gramos">
+        <span class="unit-label">g</span>
+        <span class="item-kcal" data-item-kcal="${mi}-${ii}">${fmtKcal(im.kcal)} kcal</span>
+        <button class="icon small danger" data-action="item-del" data-m="${mi}" data-i="${ii}" aria-label="Quitar">✕</button>
+      </div>`;
+    }).join('');
+    return `<section class="card meal-edit">
+      <div class="meal-title">
+        <input class="grow" data-bind="meal-name" data-m="${mi}" value="${esc(meal.name)}" aria-label="Nombre de la comida">
+        <button class="icon small danger" data-action="meal-del" data-m="${mi}" aria-label="Eliminar comida">✕</button>
+      </div>
+      ${items || '<p class="muted small" style="margin:6px 0">Agrega alimentos a esta comida.</p>'}
+      <form class="add-row" data-form="add-item" data-m="${mi}" novalidate>
+        <select name="food" aria-label="Alimento">${foods.length ? `<option value="">Elegir alimento…</option>${options}` : '<option value="">No tienes alimentos</option>'}</select>
+        <input name="g" inputmode="decimal" placeholder="g" class="grams" aria-label="Gramos">
+        <button class="btn">+</button>
+      </form>
+      <div class="meal-total" data-meal-total="${mi}"><strong>${fmtKcal(m.kcal)} kcal</strong> · ${macroLine(m)}</div>
+    </section>`;
+  }).join('');
+  return `${header('Editar dieta', { back: true })}
+    <label class="field"><span>Nombre de la dieta</span><input data-bind="diet-name" value="${esc(diet.name)}" autocomplete="off"></label>
+    <section class="card nutri-sum" style="margin-top:12px">
+      <div class="muted small">Total de la dieta</div>
+      <div data-diet-total><strong class="big">${fmtKcal(total.kcal)} kcal</strong><div class="muted small">${macroLine(total)}</div></div>
+    </section>
+    ${meals}
+    <button class="btn block" data-action="meal-add">+ Agregar comida ${diet.meals.length + 1}</button>
+    <p class="muted hint">¿Falta un alimento? <a href="#/alimento/nuevo">Créalo aquí</a> y vuelve.</p>
+    <button class="btn primary block" data-action="diet-done" style="margin-top:20px">Terminar dieta</button>
+    <button class="btn ghost block danger-text" data-action="diet-del">Eliminar dieta</button>`;
+}
+
+// Actualiza los totales mientras cambias gramos (sin redibujar, para no cerrar el teclado)
+function paintDietTotals(diet) {
+  diet.meals.forEach((meal, mi) => {
+    meal.items.forEach((it, ii) => {
+      const el = $app.querySelector(`[data-item-kcal="${mi}-${ii}"]`);
+      if (el) el.textContent = `${fmtKcal(itemMacros(it).kcal)} kcal`;
+    });
+    const m = mealMacros(meal), el = $app.querySelector(`[data-meal-total="${mi}"]`);
+    if (el) el.innerHTML = `<strong>${fmtKcal(m.kcal)} kcal</strong> · ${macroLine(m)}`;
+  });
+  const t = dietMacros(diet), el = $app.querySelector('[data-diet-total]');
+  if (el) el.innerHTML = `<strong class="big">${fmtKcal(t.kcal)} kcal</strong><div class="muted small">${macroLine(t)}</div>`;
+}
+
+
+function nutritionCard() {
+  const t = todayNutrition();
+  return `<a class="card hub" href="#/nutricion">
+    <div class="hub-top"><span class="hub-icon">🍽️</span><strong>Nutrición</strong><span class="chev">›</span></div>
+    ${t.diet
+      ? `<div class="hub-value"><strong>${fmtKcal(t.eaten.kcal)} / ${fmtKcal(t.goal.kcal)}</strong> kcal</div>${bar(t.eaten.kcal, t.goal.kcal)}`
+      : '<span class="muted">Crea tus alimentos y tu dieta</span>'}
+  </a>`;
 }
 
 // ---------- Agua ----------
@@ -1178,6 +1394,9 @@ function render() {
     case 'agua': html = viewWater(); break;
     case 'rutinas': html = viewHome(); tab = 'rutinas'; break;
     case 'peso': html = viewBodyweight(); break;
+    case 'nutricion': html = viewNutrition(arg); break;
+    case 'alimento': html = viewFoodForm(arg); break;
+    case 'dieta': html = viewDietEditor(arg); break;
     default: html = viewHub();   // Inicio: sin pestañas
   }
   $app.innerHTML = html;
@@ -1387,7 +1606,9 @@ const mainData = () => ({
   routines: db.routines, notes: db.notes,
   ...(db.bodyweight.length ? { bodyweight: db.bodyweight } : {}),
   ...(hasWater(db.water) ? { water: db.water } : {}),
+  ...(hasNutrition(db.nutrition) ? { nutrition: db.nutrition } : {}),
 });
+function hasNutrition(n) { return !!n && ((n.foods || []).length > 0 || (n.diets || []).length > 0); }
 const byDate = (a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
 
 function hasUnsynced() {
@@ -1443,11 +1664,12 @@ function applyRemoteMain(data) {
     routines: data.routines || [], notes: data.notes || {},
     ...(bw.length ? { bodyweight: bw } : {}),
     ...(hasWater(water) ? { water } : {}),
+    ...(hasNutrition(data.nutrition) ? { nutrition: data.nutrition } : {}),
   };
   const r = stable(remote), local = stable(mainData());
   if (local !== synced.main) return;
   synced.main = r;
-  if (r !== local) { db.routines = remote.routines; db.notes = remote.notes; db.bodyweight = bw; db.water = water; refresh(); }
+  if (r !== local) { db.routines = remote.routines; db.notes = remote.notes; db.bodyweight = bw; db.water = water; db.nutrition = hasNutrition(data.nutrition) ? { ...emptyNutrition(), ...data.nutrition } : emptyNutrition(); refresh(); }
   persistLocal();
 }
 
@@ -1492,6 +1714,7 @@ async function loadFromCloud() {
     db.notes = main.notes || {};
     db.bodyweight = main.bodyweight || [];
     db.water = hasWater(main.water) ? { ...emptyWater(), ...main.water } : emptyWater();
+    db.nutrition = hasNutrition(main.nutrition) ? { ...emptyNutrition(), ...main.nutrition } : emptyNutrition();
     synced.main = stable(mainData());
   }
   db.workouts = workouts.sort(byDate);
@@ -1788,6 +2011,67 @@ $app.addEventListener('click', e => {
       histDay = el.dataset.date && el.dataset.date !== histDay ? el.dataset.date : null;   // tocar de nuevo = todo el mes
       render();
       break;
+    case 'nutri-use': {
+      const log = N().log[todayKey()];
+      N().activeDietId = id;
+      setTodayLog(id, (log && log.byDiet && log.byDiet[id]) || []);
+      save(); render();
+      break;
+    }
+    case 'nutri-done': {
+      const t = todayNutrition();
+      const done = t.done.includes(id) ? t.done.filter(x => x !== id) : [...t.done, id];
+      setTodayLog(t.diet.id, done);
+      save(); render();
+      break;
+    }
+    case 'food-del': {
+      const food = foodById(routeParts()[1]);
+      const uses = N().diets.filter(d => d.meals.some(m => m.items.some(it => it.foodId === food.id)));
+      if (!confirm(uses.length
+        ? `"${food.name}" está en ${plural(uses.length, 'dieta')} (${uses.map(d => d.name).join(', ')}). Si lo eliminas, se quitará de ellas. ¿Eliminar?`
+        : `¿Eliminar "${food.name}"?`)) return;
+      for (const d of N().diets) for (const m of d.meals) m.items = m.items.filter(it => it.foodId !== food.id);
+      N().foods = N().foods.filter(f => f !== food);
+      save(); history.back();
+      break;
+    }
+    case 'diet-new': {
+      const diet = { id: uid(), name: `Dieta ${N().diets.length + 1}`, meals: [{ id: uid(), name: 'Comida 1', items: [] }] };
+      N().diets.push(diet);
+      if (!N().activeDietId) N().activeDietId = diet.id;
+      save();
+      go('#/dieta/' + diet.id);
+      break;
+    }
+    case 'meal-add': {
+      const diet = dietById(routeParts()[1]);
+      diet.meals.push({ id: uid(), name: `Comida ${diet.meals.length + 1}`, items: [] });
+      save(); render();
+      break;
+    }
+    case 'meal-del': {
+      const diet = dietById(routeParts()[1]), meal = diet.meals[+el.dataset.m];
+      if (meal.items.length && !confirm(`¿Eliminar "${meal.name}" con sus alimentos?`)) return;
+      diet.meals.splice(+el.dataset.m, 1);
+      save(); render();
+      break;
+    }
+    case 'item-del':
+      dietById(routeParts()[1]).meals[+el.dataset.m].items.splice(i, 1);
+      save(); render();
+      break;
+    case 'diet-done':
+      location.replace('#/nutricion/dietas');
+      break;
+    case 'diet-del': {
+      const diet = dietById(routeParts()[1]);
+      if (!confirm(`¿Eliminar la dieta "${diet.name}"?`)) return;
+      N().diets = N().diets.filter(d => d !== diet);
+      if (N().activeDietId === diet.id) N().activeDietId = N().diets[0] ? N().diets[0].id : null;
+      save(); location.replace('#/nutricion/dietas');
+      break;
+    }
     case 'water-add':
       addWater(Number(el.dataset.ml));
       break;
@@ -1857,6 +2141,16 @@ $app.addEventListener('input', e => {
   const el = e.target, bind = el.dataset.bind;
   if (!bind) return;
   if (bind === 'progress-search') { progressQuery = el.value; filterProgress(); return; }
+  if (bind === 'food-search') { foodQuery = el.value; filterFoods(); return; }
+  if (bind === 'diet-name' || bind === 'meal-name' || bind === 'item-g') {
+    const diet = dietById(routeParts()[1]), m = +el.dataset.m;
+    if (!diet) return;
+    if (bind === 'diet-name') diet.name = el.value;
+    else if (bind === 'meal-name') diet.meals[m].name = el.value;
+    else { const g = num(el.value); if (g != null && g >= 0) { diet.meals[m].items[+el.dataset.i].g = g; paintDietTotals(diet); } }
+    save();
+    return;
+  }
   const i = +el.dataset.i, j = +el.dataset.j;
   if (bind === 'routine-name') curRoutine().name = el.value;
   else if (bind === 'ex-name') curRoutine().exercises[i].name = el.value;
@@ -1916,6 +2210,16 @@ $app.addEventListener('submit', e => {
     case 'password': submitPassword(f); return;
     case 'import-code': importRoutine(f); return;
     case 'bodyweight': saveBodyweight(f); return;
+    case 'food': saveFood(f); return;
+    case 'add-item': {
+      const diet = dietById(routeParts()[1]), m = +f.dataset.m;
+      const foodId = f.elements.food.value, g = num(f.elements.g.value);
+      if (!foodId) { alert('Elige un alimento.'); return; }
+      if (g == null || g <= 0 || g > 5000) { alert('Escribe los gramos (ej. 120).'); f.elements.g.focus(); return; }
+      diet.meals[m].items.push({ foodId, g: round1(g) });
+      save(); render();
+      return;
+    }
     case 'water-custom': {
       const ml = Math.round(num(f.elements.ml.value) || 0);
       if (ml < 10 || ml > 5000) return formMsgOr(f, 'Escribe una cantidad en ml (ej. 330).');
