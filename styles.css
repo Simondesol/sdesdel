@@ -580,7 +580,10 @@ a.card.hub { display: grid; }
 .hub-top .badge { margin-left: 4px; }
 
 /* Peso: % grasa, meta, tendencia y FFMI */
-.bw-inputs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.bw-inputs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.bw-inputs .add-row { gap: 4px; }
+.bw-inputs input { padding: 0 6px; text-align: center; }
+.reg-optional { display: grid; gap: 12px; }
 .bw-inputs input { min-width: 0; }
 .goal-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
 .goal-top strong { color: var(--text); }

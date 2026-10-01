@@ -19,6 +19,7 @@ let synced = emptySynced();      // último estado confirmado por la nube (para 
 let cloud = null;                // módulo de conexión (cloud.js)
 let status = 'booting';          // booting | signed-out | ready | load-error | fatal
 let pendingUsername = null;      // nombre elegido al registrarse (Firebase lo avisa un poco después)
+let pendingBody = null;          // estatura y sexo elegidos al registrarse (se guardan al entrar)
 let authUser = null;             // último usuario informado por Firebase
 
 let lastUnit = 'kg';
@@ -1066,9 +1067,21 @@ function viewAuth(mode) {
       ${reg ? `<label class="field"><span>Nombre de usuario</span>
         <input name="username" autocomplete="nickname" maxlength="30" required>
       </label>` : ''}
+      ${reg ? `<div class="reg-optional">
+        <label class="field"><span>Estatura (opcional)</span>
+          <div class="add-row" style="margin-top:0"><input name="height" inputmode="numeric" placeholder="ej. 175" autocomplete="off" aria-label="Estatura en cm"><span class="unit-label">cm</span></div>
+        </label>
+        <div class="field"><span>Sexo (opcional)</span>
+          <div class="per-choice">
+            <label><input type="radio" name="sex" value="h"> Hombre</label>
+            <label><input type="radio" name="sex" value="m"> Mujer</label>
+          </div>
+        </div>
+      </div>` : ''}
       <label class="field"><span>Contraseña${reg ? ' (mínimo 6 caracteres)' : ''}</span>
         <input name="password" type="password" autocomplete="${reg ? 'new-password' : 'current-password'}" required>
       </label>
+      ${reg ? '<p class="muted small" style="margin:0">La estatura y el sexo se usan para calcular tu FFMI. Puedes cambiarlos después en ⚙️ Cuenta.</p>' : ''}
       <p class="auth-error" hidden></p>
       <button class="btn primary block">${reg ? 'Crear cuenta' : 'Entrar'}</button>
     </form>
@@ -1095,6 +1108,9 @@ function viewAccount() {
     </section>
     <section class="card" data-sync>${syncHtml()}</section>
     <p class="muted hint">Tus rutinas e historial se guardan en tu cuenta. Inicia sesión con el mismo correo en otro teléfono para verlos.</p>
+
+    <h2>Mis datos</h2>
+    ${bodyDataForm()}
 
     <h2>Nombre de usuario</h2>
     <form class="stack" data-form="username" novalidate>
@@ -2227,7 +2243,7 @@ function bwTrend(list) {
 // Meta de peso (opcional): avance desde el peso que tenías al ponerla y fecha estimada
 function goalInfo() {
   const g = db.body.goal, last = db.bodyweight[db.bodyweight.length - 1];
-  if (!g || !last) return null;
+  if (!g || !last || g.startKg == null) return null;
   const total = g.startKg - g.kg, done = g.startKg - last.kg;
   const reached = total >= 0 ? last.kg <= g.kg : last.kg >= g.kg;
   const pct = reached ? 100 : total === 0 ? 100 : Math.min(100, Math.max(0, (done / total) * 100));
@@ -2261,10 +2277,11 @@ function ffmiInfo() {
 // "tu estatura, tu sexo y tu % de grasa": lo que falta para calcular el FFMI
 function ffmiMissing() {
   const miss = [];
-  if (!db.body.heightCm) miss.push('tu estatura (en Mis datos)');
-  if (!db.body.sex) miss.push('tu sexo (en Mis datos)');
-  if (!db.bodyweight.some(x => x.bf != null)) miss.push('tu % de grasa (se anota junto a tu peso)');
-  return miss.length > 1 ? `${miss.slice(0, -1).join(', ')} y ${miss[miss.length - 1]}` : miss[0];
+  if (!db.body.heightCm) miss.push('tu estatura');
+  if (!db.body.sex) miss.push('tu sexo');
+  if (!db.bodyweight.some(x => x.bf != null)) miss.push('tu % de grasa (se anota arriba, junto a tu peso)');
+  const list = miss.length > 1 ? `${miss.slice(0, -1).join(', ')} y ${miss[miss.length - 1]}` : miss[0];
+  return `${list}.${!db.body.heightCm || !db.body.sex ? ' La estatura y el sexo se ponen en <a href="#/cuenta">⚙️ Cuenta → Mis datos</a>' : ''}`;
 }
 
 function bodyweightCard() {
@@ -2303,10 +2320,16 @@ function viewBodyweight() {
             <span class="unit-label">kg</span>
           </div>
         </label>
-        <label class="field"><span>% grasa (opcional)</span>
+        <label class="field"><span>% grasa</span>
           <div class="add-row" style="margin-top:0">
-            <input name="bf" inputmode="decimal" value="${today && today.bf != null ? toField(today.bf) : ''}" placeholder="ej. 18" autocomplete="off" aria-label="Porcentaje de grasa">
+            <input name="bf" inputmode="decimal" value="${today && today.bf != null ? toField(today.bf) : ''}" placeholder="opcional" autocomplete="off" aria-label="Porcentaje de grasa (opcional)">
             <span class="unit-label">%</span>
+          </div>
+        </label>
+        <label class="field"><span>Meta</span>
+          <div class="add-row" style="margin-top:0">
+            <input name="goal" inputmode="decimal" value="${db.body.goal ? toField(db.body.goal.kg) : ''}" placeholder="opcional" autocomplete="off" aria-label="Peso meta en kg (opcional)">
+            <span class="unit-label">kg</span>
           </div>
         </label>
       </div>
@@ -2359,25 +2382,7 @@ function viewBodyweight() {
       </div>`).join('')}</div>
       <p class="muted small" style="margin:0">Mide cuánta masa magra tienes para tu estatura. A diferencia del IMC, no confunde músculo con grasa.</p>
     </section>`
-    : `<p class="muted card">Para ver tu FFMI falta ${ffmiMissing()}.</p>`;
-
-  const b = db.body;
-  const myData = `<form class="stack card" data-form="body" novalidate>
-      <label class="field"><span>Estatura</span>
-        <div class="add-row" style="margin-top:0"><input name="height" inputmode="numeric" value="${b.heightCm || ''}" placeholder="ej. 175" autocomplete="off" aria-label="Estatura en cm"><span class="unit-label">cm</span></div>
-      </label>
-      <div class="field"><span>Sexo</span>
-        <div class="per-choice">
-          <label><input type="radio" name="sex" value="h" ${b.sex === 'h' ? 'checked' : ''}> Hombre</label>
-          <label><input type="radio" name="sex" value="m" ${b.sex === 'm' ? 'checked' : ''}> Mujer</label>
-        </div>
-      </div>
-      <label class="field"><span>Peso meta (opcional)</span>
-        <div class="add-row" style="margin-top:0"><input name="goal" inputmode="decimal" value="${b.goal ? toField(b.goal.kg) : ''}" placeholder="Sin meta" autocomplete="off" aria-label="Peso meta en kg"><span class="unit-label">kg</span></div>
-      </label>
-      <p class="form-msg" hidden></p>
-      <button class="btn primary block">Guardar mis datos</button>
-    </form>`;
+    : `<p class="muted card">Para ver tu FFMI falta ${ffmiMissing()}</p>`;
 
   const list = db.bodyweight.slice().reverse().map(e => `
     <div class="prog-row">
@@ -2394,41 +2399,69 @@ function viewBodyweight() {
     ${body}
     <h2>FFMI · masa libre de grasa</h2>
     ${ffmi}
-    <h2>Mis datos</h2>
-    ${myData}
     ${list ? `<h2>Registros</h2><section class="card">${list}</section>` : ''}`;
 }
 
 function saveBodyweight(f) {
-  const kg = num(f.elements.kg.value), bfText = f.elements.bf.value.trim(), bf = num(bfText);
-  if (kg == null || kg < 20 || kg > 400) return formMsg(f, 'Escribe tu peso en kg (ej. 75,5).');
+  const kgText = f.elements.kg.value.trim(), kg = num(kgText);
+  const bfText = f.elements.bf.value.trim(), bf = num(bfText);
+  const gText = f.elements.goal.value.trim(), g = num(gText);
+  const goalChanged = gText ? !db.body.goal || db.body.goal.kg !== round1(g) : !!db.body.goal;
+  if (!kgText && !goalChanged) return formMsg(f, 'Escribe tu peso en kg (ej. 75,5).');
+  if (kgText && (kg == null || kg < 20 || kg > 400)) return formMsg(f, 'Escribe tu peso en kg (ej. 75,5).');
   if (bfText && (bf == null || bf < 3 || bf > 60)) return formMsg(f, 'El % de grasa debe estar entre 3 y 60 (o déjalo vacío).');
-  const date = todayKey();
-  let entry = db.bodyweight.find(e => e.date === date);
-  if (!entry) { entry = { date }; db.bodyweight.push(entry); }
-  entry.kg = round1(kg);
-  if (bfText) entry.bf = round1(bf); else delete entry.bf;
-  db.bodyweight.sort((a, b) => (a.date < b.date ? -1 : 1));
+  if (gText && (g == null || g < 30 || g > 300)) return formMsg(f, 'Escribe tu peso meta en kg (ej. 80) o déjalo vacío.');
+  const msg = [];
+  if (kgText) {
+    const date = todayKey();
+    let entry = db.bodyweight.find(e => e.date === date);
+    if (!entry) { entry = { date }; db.bodyweight.push(entry); }
+    entry.kg = round1(kg);
+    if (bfText) entry.bf = round1(bf); else delete entry.bf;
+    db.bodyweight.sort((a, b) => (a.date < b.date ? -1 : 1));
+    msg.push(`${fmtKg(kg)}${bfText ? ` · ${fmtNum(round1(bf))} % grasa` : ''} hoy`);
+    // Meta puesta antes de anotar tu primer peso: empieza a contar desde hoy
+    if (db.body.goal && db.body.goal.startKg == null) Object.assign(db.body.goal, { startKg: round1(kg), startDate: todayKey() });
+  }
+  if (goalChanged) {
+    if (!gText) { delete db.body.goal; msg.push('meta quitada'); }
+    else {
+      // La meta nueva parte desde tu último peso anotado
+      const last = db.bodyweight[db.bodyweight.length - 1];
+      db.body.goal = { kg: round1(g), startKg: last ? last.kg : null, startDate: last ? last.date : todayKey() };
+      msg.push(`meta ${fmtKg(g)}`);
+    }
+  }
   save();
   render();
-  formMsg($app.querySelector('[data-form="bodyweight"]'), `✓ Guardado: ${fmtKg(kg)}${bfText ? ` · ${fmtNum(round1(bf))} % grasa` : ''} hoy`, true);
+  formMsg($app.querySelector('[data-form="bodyweight"]'), `✓ Guardado: ${msg.join(' · ')}`, true);
+}
+
+// Mis datos (en Cuenta): estatura y sexo, para el FFMI
+function bodyDataForm() {
+  const b = db.body;
+  return `<form class="stack card" data-form="body" novalidate>
+      <label class="field"><span>Estatura</span>
+        <div class="add-row" style="margin-top:0"><input name="height" inputmode="numeric" value="${b.heightCm || ''}" placeholder="ej. 175" autocomplete="off" aria-label="Estatura en cm"><span class="unit-label">cm</span></div>
+      </label>
+      <div class="field"><span>Sexo</span>
+        <div class="per-choice">
+          <label><input type="radio" name="sex" value="h" ${b.sex === 'h' ? 'checked' : ''}> Hombre</label>
+          <label><input type="radio" name="sex" value="m" ${b.sex === 'm' ? 'checked' : ''}> Mujer</label>
+        </div>
+      </div>
+      <p class="muted small" style="margin:0">Se usan para calcular tu FFMI en Peso.</p>
+      <p class="form-msg" hidden></p>
+      <button class="btn block">Guardar mis datos</button>
+    </form>`;
 }
 
 function saveBodyData(f) {
   const hText = f.elements.height.value.trim(), h = num(hText);
-  const gText = f.elements.goal.value.trim(), g = num(gText);
   const sex = f.elements.sex.value;
   if (hText && (h == null || h < 100 || h > 250)) return formMsg(f, 'Escribe tu estatura en cm (ej. 175).');
-  if (gText && (g == null || g < 30 || g > 300)) return formMsg(f, 'Escribe tu peso meta en kg (ej. 80) o déjalo vacío.');
-  const b = db.body;
-  if (hText) b.heightCm = Math.round(h); else delete b.heightCm;
-  if (sex) b.sex = sex;
-  if (!gText) delete b.goal;
-  else if (!b.goal || b.goal.kg !== round1(g)) {
-    // La meta nueva parte desde tu último peso anotado
-    const last = db.bodyweight[db.bodyweight.length - 1];
-    b.goal = { kg: round1(g), startKg: last ? last.kg : round1(g), startDate: last ? last.date : todayKey() };
-  }
+  if (hText) db.body.heightCm = Math.round(h); else delete db.body.heightCm;
+  if (sex) db.body.sex = sex;
   save();
   render();
   formMsg($app.querySelector('[data-form="body"]'), '✓ Datos guardados', true);
@@ -3086,6 +3119,9 @@ async function handleUser(u) {
 
   const legacy = readLegacy();
   if (legacy) migrateLegacy(legacy);
+  // Estatura y sexo que pusiste al crear la cuenta
+  if (pendingBody && Object.keys(pendingBody).length) db.body = { ...pendingBody, ...db.body };
+  pendingBody = null;
 
   status = 'ready';
   persistLocal();
@@ -3137,16 +3173,23 @@ async function submitAuth(f) {
   if (!email) return showError('Escribe tu correo.');
   if (reg && !username) return showError('Escribe un nombre de usuario.');
   if (!password) return showError('Escribe tu contraseña.');
+  const hText = reg ? f.elements.height.value.trim() : '', h = num(hText), sex = reg ? f.elements.sex.value : '';
+  if (hText && (h == null || h < 100 || h > 250)) return showError('Escribe tu estatura en cm (ej. 175) o déjala vacía.');
 
   $err.hidden = true;
   $btn.disabled = true;
   $btn.textContent = reg ? 'Creando cuenta…' : 'Entrando…';
   try {
-    if (reg) { pendingUsername = username; await cloud.register(email, password, username); }
+    if (reg) {
+      pendingUsername = username;
+      pendingBody = { ...(hText ? { heightCm: Math.round(h) } : {}), ...(sex ? { sex } : {}) };
+      await cloud.register(email, password, username);
+    }
     else await cloud.login(email, password);
     // handleUser se encarga del resto cuando Firebase confirma la sesión
   } catch (e) {
     pendingUsername = null;
+    pendingBody = null;
     showError(authError(e));
     $btn.disabled = false;
     $btn.textContent = reg ? 'Crear cuenta' : 'Entrar';
