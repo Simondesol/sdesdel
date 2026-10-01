@@ -158,7 +158,7 @@ function viewHub() {
       <a class="hub-value" href="#/agua"><strong>${fmtL(ml)} / ${fmtL(goal)}</strong> L${ml >= goal ? ' · ¡Meta cumplida! 🎉' : ''}</a>
       ${bar(ml, goal)}
       <div class="ex-actions">
-        ${waterQuick().map(q => `<button class="btn" data-action="water-add" data-ml="${q.ml}">${quickIcon(q.ml)} ${q.ml} ml</button>`).join('')}
+        ${waterQuick().map(q => `<button class="btn" data-action="water-add" data-ml="${q.ml}">+${q.ml} ml</button>`).join('')}
       </div>
     </div>
 
@@ -501,10 +501,9 @@ function waterGoal() {
   return last ? { ml: Math.round((last.kg * 35) / 100) * 100, auto: true, kg: last.kg } : { ml: 2500, auto: true };
 }
 
-// Botones rápidos (los eliges tú, ej. "Vaso 200 ml" y "Botella 750 ml"); hasta 4
+// Botones rápidos con los ml que elijas (ej. tu vaso de 200 ml y tu botella de 750 ml); hasta 4
 const DEFAULT_QUICK = [{ name: 'Vaso', ml: 250 }, { name: 'Botella', ml: 500 }];
 const waterQuick = () => (db.water.quick && db.water.quick.length ? db.water.quick : DEFAULT_QUICK);
-const quickIcon = ml => (ml >= 500 ? '🧴' : '🥛');
 function ensureQuick() {
   if (!db.water.quick || !db.water.quick.length) db.water.quick = DEFAULT_QUICK.map(q => ({ ...q }));
   return db.water.quick;
@@ -513,8 +512,8 @@ function ensureQuick() {
 function setQuick(el) {
   const q = ensureQuick()[+el.dataset.k];
   if (!q) return;
-  if (el.dataset.bind === 'wq-name') q.name = el.value.trim();
-  else { const ml = Math.round(num(el.value) || 0); if (ml >= 10 && ml <= 5000) q.ml = ml; }
+  const ml = Math.round(num(el.value) || 0);
+  if (ml >= 10 && ml <= 5000) q.ml = ml;
 }
 let waterEditing = null;   // registro de hoy que estás corrigiendo (posición en la lista)
 
@@ -578,7 +577,7 @@ function viewWater() {
       <div class="muted">${ml >= g.ml ? '¡Meta cumplida! 🎉' : `Te faltan ${fmtL(g.ml - ml)} L`}</div>
       ${streak ? `<div class="streak">🔥 ${streak === 1 ? '1 día cumpliendo tu meta' : `${streak} días seguidos cumpliendo tu meta`}</div>` : ''}
       <div class="ex-actions water-btns">
-        ${quick.map(q => `<button class="btn primary" data-action="water-add" data-ml="${q.ml}">${quickIcon(q.ml)} ${esc(q.name || 'Agua')}<small>+${q.ml} ml</small></button>`).join('')}
+        ${quick.map(q => `<button class="btn primary" data-action="water-add" data-ml="${q.ml}">+${q.ml} ml</button>`).join('')}
       </div>
       <form class="add-row" data-form="water-custom" novalidate>
         <input name="ml" inputmode="numeric" placeholder="Otra cantidad (ml)" autocomplete="off" aria-label="Cantidad en ml">
@@ -593,10 +592,10 @@ function viewWater() {
 
     <h2>Botones rápidos</h2>
     <section class="card stack">
-      <p class="muted small" style="margin:0">Pon el nombre y los ml de tu vaso, botella o shaker para anotar de un toque.</p>
+      <p class="muted small" style="margin:0">Pon los ml de tu vaso, botella o shaker para anotar de un toque.</p>
       ${quick.map((q, k) => `<div class="add-row quick-row" style="margin-top:0">
-        <input data-bind="wq-name" data-k="${k}" value="${esc(q.name)}" placeholder="Nombre (ej. Vaso)" autocomplete="off" aria-label="Nombre del botón">
-        <input class="grams" data-bind="wq-ml" data-k="${k}" inputmode="numeric" value="${q.ml}" autocomplete="off" aria-label="Cantidad en ml">
+        <span class="grow muted">Botón ${k + 1}</span>
+        <input class="grams" data-bind="wq-ml" data-k="${k}" inputmode="numeric" value="${q.ml}" autocomplete="off" aria-label="Cantidad en ml del botón ${k + 1}">
         <span class="unit-label">ml</span>
         <button class="icon small danger" data-action="wq-del" data-k="${k}" ${quick.length <= 1 ? 'disabled' : ''} aria-label="Quitar botón">✕</button>
       </div>`).join('')}
@@ -2434,7 +2433,7 @@ function viewProgressExercise(id) {
       ${chartSvg(points, unit, days, sub)}
       <div class="tip" hidden></div>
     </section>
-    <p class="muted hint">Es una estimación del peso máximo que podrías levantar, calculada con la 1ª serie. Ej: 100 kg × 8 con RIR 2 ≈ 133 kg</p>
+    <p class="muted hint">Es una estimación del peso máximo que podrías levantar, calculada con la 1ª serie.<br>Ej: 100 kg × 8 con RIR 2 ≈ 133 kg</p>
     <h2>Sesiones</h2>
     <section class="card">${table}</section>`;
 }
@@ -3355,8 +3354,8 @@ $app.addEventListener('click', e => {
       if (quick.length >= 4) return;
       quick.push({ name: '', ml: 330 });
       save(); render();
-      const input = $app.querySelector(`[data-bind="wq-name"][data-k="${quick.length - 1}"]`);
-      if (input) input.focus();
+      const input = $app.querySelector(`[data-bind="wq-ml"][data-k="${quick.length - 1}"]`);
+      if (input) { input.focus(); input.select(); }
       break;
     }
     case 'wq-del': {
@@ -3513,7 +3512,7 @@ $app.addEventListener('input', e => {
     return;
   }
   const i = +el.dataset.i, j = +el.dataset.j;
-  if (bind === 'wq-name' || bind === 'wq-ml') setQuick(el);
+  if (bind === 'wq-ml') setQuick(el);
   else if (bind === 'routine-name') curRoutine().name = el.value;
   else if (bind === 'ex-name') curRoutine().exercises[i].name = el.value;
   else if (bind === 'ex-rest') {
@@ -3564,7 +3563,7 @@ $app.addEventListener('focusout', e => {
   } else if (bind === 'ex-rest') {
     const ex = curRoutine() && curRoutine().exercises[+e.target.dataset.i];
     if (ex) e.target.value = ex.rest ? fmtRest(ex.rest) : '';   // muestra el tiempo como m:ss
-  } else if (bind === 'wq-name' || bind === 'wq-ml') {
+  } else if (bind === 'wq-ml') {
     refresh();   // al salir del cuadro se ven los botones rápidos actualizados
   } else if (bind && bind.startsWith('ex-goal-')) {
     // Muestra el objetivo guardado ("8 10" queda "8-10"; si no era válido vuelve a lo anterior)
