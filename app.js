@@ -192,17 +192,14 @@ function searchFoods(query, limit = 8) {
 }
 const foodResultBtn = (f, action, extra = '') => `<button type="button" class="food-pick" data-action="${action}" data-id="${f.id}" ${extra}>
   <span class="grow">${esc(f.name)}${f.base ? '' : ' <span class="badge on">Mío</span>'}</span>
-  <span class="muted small">${fmtKcal(f.kcal)} kcal${isUnit(f) ? ` c/${esc(f.unitName || 'unidad')}` : ''} · P ${fmtG(f.p)}</span></button>`;
+  <span class="muted small">${fmtKcal(f.kcal)} kcal${isUnit(f) ? ' c/u' : ''} · P ${fmtG(f.p)}</span></button>`;
 const dietById = id => N().diets.find(d => d.id === id);
 const sumM = list => list.reduce((a, m) => ({ kcal: a.kcal + m.kcal, p: a.p + m.p, c: a.c + m.c, f: a.f + m.f }), { ...ZERO });
 // Alimentos por unidad (1 huevo, 1 rebanada...) o por 100 g
 const isUnit = f => !!f && f.per === 'unit';
-const unitPlural = (name, n) => (n === 1 ? name : /[aeiouáéíóú]$/i.test(name) ? `${name}s` : `${name}es`);
-const amountText = (food, n) => (isUnit(food) ? `${fmtNum(n)} ${unitPlural(food.unitName || 'unidad', n)}` : `${fmtNum(n)} g`);
-const perText = f => (isUnit(f) ? `por 1 ${f.unitName || 'unidad'}` : 'por 100 g');
-// "120 g Carne molida", "2 rebanadas Pan integral" o solo "2 huevos" si la unidad ya es el nombre
-const itemText = (food, n) => (isUnit(food) && normText(food.name).startsWith(normText(food.unitName || '-'))
-  ? amountText(food, n) : `${amountText(food, n)} ${esc(food.name)}`);
+const perText = f => (isUnit(f) ? 'por unidad' : 'por 100 g');
+// "120 g Carne molida" o "2 × Huevo"
+const itemText = (food, n) => (isUnit(food) ? `${fmtNum(n)} × ${esc(food.name)}` : `${fmtNum(n)} g ${esc(food.name)}`);
 function itemMacros(it) {
   const food = foodById(it.foodId);
   if (!food) return { ...ZERO };
@@ -324,8 +321,6 @@ function viewFoodForm(id, fromId) {
           <label><input type="radio" name="per" value="unit" ${unit ? 'checked' : ''}> Por unidad</label>
         </div>
       </div>
-      <label class="field unit-name"><span>¿Cómo se llama la unidad? (ej. huevo, rebanada, lámina)</span>
-        <input name="unitName" value="${unit ? esc(src.unitName || '') : ''}" placeholder="unidad" autocomplete="off"></label>
       <p class="muted small per-hint" style="margin:0">Escribe los macros de <strong class="when-100">100 g</strong><strong class="when-unit">1 unidad</strong> del alimento.</p>
       ${field('p', 'Proteínas', 'g')}
       ${field('c', 'Carbohidratos', 'g')}
@@ -350,7 +345,7 @@ function saveFood(f) {
   if (kcal == null) kcal = Math.round(p * 4 + c * 4 + fat * 9);       // 4 kcal por g de proteína y carbo, 9 por g de grasa
   if (kcal < 0 || kcal > (unit ? 3000 : 1000)) return formMsg(f, unit ? 'Revisa las calorías de 1 unidad.' : 'Las calorías por 100 g deben estar entre 0 y 1000.');
   const data = { name, kcal: round1(kcal), p: round1(p), c: round1(c), f: round1(fat) };
-  if (unit) { data.per = 'unit'; data.unitName = f.elements.unitName.value.trim().toLowerCase() || 'unidad'; }
+  if (unit) data.per = 'unit';
   const existing = f.dataset.id && N().foods.find(x => x.id === f.dataset.id);
   if (existing) {
     const changed = isUnit(existing) !== unit;

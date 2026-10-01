@@ -448,7 +448,6 @@ a.card.hub { display: grid; }
 }
 .per-choice label:has(input:checked) { border-color: var(--accent); color: var(--accent); }
 .per-choice input { width: auto; min-height: 0; accent-color: var(--accent); }
-.food-form .unit-name, .food-form .when-unit { display: none; }
-.food-form:has(input[value="unit"]:checked) .unit-name { display: block; }
+.food-form .when-unit { display: none; }
 .food-form:has(input[value="unit"]:checked) .when-unit { display: inline; }
 .food-form:has(input[value="unit"]:checked) .when-100 { display: none; }
