@@ -506,3 +506,15 @@ a.card.hub { display: grid; }
 .msg.mine { cursor: pointer; }
 .msg.selected { outline: 2px solid var(--danger); outline-offset: 2px; }
 .chat-msgs .msg-del { align-self: flex-end; margin: 0; }
+
+/* Objetivo por ejercicio (opcional): series, reps, RIR */
+.ex-goals { flex: 1 1 100%; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.ex-goals label { display: grid; gap: 4px; color: var(--muted); font-size: 13px; }
+.ex-goals input { width: 100%; min-width: 0; text-align: center; padding: 0 6px; }
+.goal-chips { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 8px; margin: 8px 0 4px; }
+.goal-chip {
+  display: grid; justify-items: center; gap: 2px; padding: 8px 4px;
+  background: var(--surface2); border: 1px solid var(--border); border-radius: 12px; font-weight: 700;
+}
+.goal-chip small { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.goal-hint { margin: 6px 0; color: var(--accent); font-size: 14px; }

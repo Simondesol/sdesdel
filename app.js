@@ -581,9 +581,28 @@ function historyFor(exerciseId, skipId = null) {
 }
 
 // Series prellenadas con la última vez (peso, reps y RIR si el ejercicio lo usa)
-const prefillSets = (prev, rir) => (prev
-  ? prev.ex.sets.map(s => ({ w: toField(s.w), r: toField(s.r), ...(rir ? { rir: toField(s.rir) } : {}) }))
-  : [{ w: '', r: '', ...(rir ? { rir: '' } : {}) }]);
+// Series al empezar: las de la última vez (o una vacía); si el objetivo pide más series, se agregan vacías
+function prefillSets(prev, rir, goalSets = 0) {
+  const empty = () => ({ w: '', r: '', ...(rir ? { rir: '' } : {}) });
+  const sets = prev ? prev.ex.sets.map(s => ({ w: toField(s.w), r: toField(s.r), ...(rir ? { rir: toField(s.rir) } : {}) })) : [];
+  while (sets.length < Math.max(1, goalSets || 0)) sets.push(empty());
+  return sets;
+}
+
+// Objetivo opcional por ejercicio: series, rango de reps ("8-10") y RIR objetivo ("2" o "1-2")
+function parseRange(text, maxV) {
+  const m = String(text).trim().match(/^(\d{1,3})(?:\s*(?:-|–|a|,|\.|\/|\s)\s*(\d{1,3}))?$/i);
+  if (!m) return null;
+  const a = +m[1], b = m[2] != null ? +m[2] : a;
+  if (b > maxV || b < a) return null;
+  return a === b ? `${a}` : `${a}-${b}`;
+}
+const rangeTop = t => +String(t).split('-').pop();
+const goalFields = ex => ({
+  ...(ex.goalSets ? { goalSets: ex.goalSets } : {}),
+  ...(ex.goalReps ? { goalReps: ex.goalReps } : {}),
+  ...(ex.goalRir ? { goalRir: ex.goalRir } : {}),
+});
 
 // Texto de una serie guardada: "40 kg × 10" o "40 kg × 10 · RIR 2"
 const setText = (s, unit) => `${fmtNum(s.w)} ${unit} × ${fmtNum(s.r)}${s.rir != null ? ` · RIR ${fmtNum(s.rir)}` : ''}`;
@@ -702,6 +721,11 @@ function viewRoutine() {
         </label>
         <button class="chip toggle ${ex.rir ? 'on' : ''}" data-action="toggle-rir" data-i="${i}" aria-pressed="${!!ex.rir}">RIR ${ex.rir ? '✓' : ''}</button>
       </div>
+      <div class="ex-goals" aria-label="Objetivo (opcional)">
+        <label>Series<input data-bind="ex-goal-sets" data-i="${i}" inputmode="numeric" value="${ex.goalSets || ''}" placeholder="–" autocomplete="off" aria-label="Series objetivo"></label>
+        <label>Reps<input data-bind="ex-goal-reps" data-i="${i}" inputmode="decimal" value="${esc(ex.goalReps || '')}" placeholder="8-10" autocomplete="off" aria-label="Rango de repeticiones objetivo"></label>
+        <label>RIR obj.<input data-bind="ex-goal-rir" data-i="${i}" inputmode="decimal" value="${esc(ex.goalRir || '')}" placeholder="–" autocomplete="off" aria-label="RIR objetivo"></label>
+      </div>
     </li>`).join('');
   return `${header('Editar rutina', { back: true })}
     <label class="field"><span>Nombre de la rutina</span>
@@ -714,7 +738,7 @@ function viewRoutine() {
       ${unitSelect()}
       <button class="btn">Agregar</button>
     </form>
-    ${shareBox(r.id, 'Tu amigo toca el link y la rutina se le agrega sola (o ingresa el código en Rutinas → "Importar rutina con código"). Solo se comparten los ejercicios y el Rest, no tus pesos ni tu historial.')
+    ${shareBox(r.id, 'Tu amigo toca el link y la rutina se le agrega sola (o ingresa el código en Rutinas → "Importar rutina con código"). Solo se comparten los ejercicios, el Rest y los objetivos, no tus pesos ni tu historial.')
       || '<button class="btn block" data-action="share-routine" style="margin-top:32px">Compartir rutina</button>'}
     <button class="btn block" data-action="dup-routine">Duplicar rutina</button>
     <button class="btn ghost block danger-text" data-action="del-routine">Eliminar rutina</button>`;
@@ -753,8 +777,20 @@ function viewWorkout() {
       </div>`).join('') || '<p class="muted">Aún no hay historial de este ejercicio.</p>' : '';
     const restBtn = !editing && ex.rest
       ? `<button class="btn ghost" data-action="rest" data-i="${i}" data-rest="${i}">Rest ${fmtRest(ex.rest)}</button>` : '';
+    // Objetivo de la rutina (si tiene) y aviso para subir el peso
+    const goals = [['Series', ex.goalSets], ['Reps', ex.goalReps], ['RIR', ex.goalRir]].filter(([, v]) => v);
+    let hint = '';
+    if (!editing && ex.goalReps) {
+      const prev = lastFor(ex.exerciseId, before), top = rangeTop(ex.goalReps);
+      const done = prev ? prev.ex.sets.filter(s => s.w != null) : [];
+      if (done.length && done.length >= (ex.goalSets || 1) && done.every(s => (s.r || 0) >= top)) {
+        hint = `<p class="goal-hint">💡 La última vez llegaste a ${top} reps en todas las series: prueba subir el peso.</p>`;
+      }
+    }
     return `<section class="card" data-ex="${i}">
       <div class="ex-head"><strong>${esc(ex.name)}</strong></div>
+      ${goals.length ? `<div class="goal-chips">${goals.map(([k, v]) => `<span class="goal-chip"><small>${k}</small>${esc(String(v))}</span>`).join('')}</div>` : ''}
+      ${hint}
       ${noteHtml(ex.exerciseId, i)}
       ${best.length ? '' : '<p class="prev">Primera vez</p>'}
       <div class="sets">${sets}</div>
@@ -1032,7 +1068,7 @@ async function shareRoutine(btn) {
   // Solo se comparten los ejercicios: sin pesos, historial ni notas
   await shareWithCode(btn, { routine: routinePayload(r) }, { id: r.id, name: r.name, kind: 'routine' });
 }
-const routinePayload = r => ({ name: r.name, exercises: r.exercises.map(ex => ({ name: ex.name, unit: ex.unit, rest: ex.rest || 0, rir: !!ex.rir })) });
+const routinePayload = r => ({ name: r.name, exercises: r.exercises.map(ex => ({ name: ex.name, unit: ex.unit, rest: ex.rest || 0, rir: !!ex.rir, ...goalFields(ex) })) });
 
 // Se comparten las comidas con sus cantidades y los alimentos propios que usa (los de la base ya los tiene todo el mundo)
 async function shareDiet(btn) {
@@ -1114,7 +1150,7 @@ function importRoutineData(data) {
       const found = findExercise(ex.name);
       const mine = found && !used.has(found.id) ? found : null;
       if (mine) used.add(mine.id);
-      return { id: mine ? mine.id : uid(), name: mine ? mine.name : ex.name, unit: mine ? mine.unit : ex.unit, rest: ex.rest || 0, rir: !!ex.rir };
+      return { id: mine ? mine.id : uid(), name: mine ? mine.name : ex.name, unit: mine ? mine.unit : ex.unit, rest: ex.rest || 0, rir: !!ex.rir, ...goalFields(ex) };
     }),
   };
   db.routines.push(routine);
@@ -2053,8 +2089,8 @@ function startWorkout(r) {
     start: new Date().toISOString(),
     timer: null,
     exercises: r.exercises.map(ex => ({
-      exerciseId: ex.id, name: ex.name, unit: ex.unit, rest: ex.rest || 0, rir: !!ex.rir,
-      sets: prefillSets(lastFor(ex.id), ex.rir),
+      exerciseId: ex.id, name: ex.name, unit: ex.unit, rest: ex.rest || 0, rir: !!ex.rir, ...goalFields(ex),
+      sets: prefillSets(lastFor(ex.id), ex.rir, ex.goalSets),
     })),
   };
   save();
@@ -2884,6 +2920,14 @@ $app.addEventListener('input', e => {
     const sec = parseRest(el.value);
     if (sec !== null) curRoutine().exercises[i].rest = sec;
   }
+  else if (bind === 'ex-goal-sets' || bind === 'ex-goal-reps' || bind === 'ex-goal-rir') {
+    // Vacío = sin objetivo; si lo escrito no es válido se mantiene lo anterior
+    const ex = curRoutine().exercises[i], text = el.value.trim();
+    const key = { 'ex-goal-sets': 'goalSets', 'ex-goal-reps': 'goalReps', 'ex-goal-rir': 'goalRir' }[bind];
+    if (!text) delete ex[key];
+    else if (key === 'goalSets') { const n = parseInt(text, 10); if (n >= 1 && n <= 20 && String(n) === text) ex.goalSets = n; }
+    else { const v = parseRange(text, key === 'goalReps' ? 100 : 10); if (v) ex[key] = v; }
+  }
   else if (bind === 'w' || bind === 'r') {
     const d = cur(), ex = d.exercises[i];
     ex.sets[j][bind] = el.value;
@@ -2919,11 +2963,16 @@ $app.addEventListener('focusout', e => {
   } else if (bind === 'ex-rest') {
     const ex = curRoutine() && curRoutine().exercises[+e.target.dataset.i];
     if (ex) e.target.value = ex.rest ? fmtRest(ex.rest) : '';   // muestra el tiempo como m:ss
+  } else if (bind && bind.startsWith('ex-goal-')) {
+    // Muestra el objetivo guardado ("8 10" queda "8-10"; si no era válido vuelve a lo anterior)
+    const ex = curRoutine() && curRoutine().exercises[+e.target.dataset.i];
+    if (ex) e.target.value = { 'ex-goal-sets': ex.goalSets, 'ex-goal-reps': ex.goalReps, 'ex-goal-rir': ex.goalRir }[bind] || '';
   }
 });
 
 $app.addEventListener('keydown', e => {
-  if (e.key === 'Enter' && (e.target.dataset.bind === 'note' || e.target.dataset.bind === 'ex-rest')) e.target.blur();
+  const bind = e.target.dataset.bind || '';
+  if (e.key === 'Enter' && (bind === 'note' || bind === 'ex-rest' || bind.startsWith('ex-goal-'))) e.target.blur();
 });
 
 $app.addEventListener('submit', e => {
