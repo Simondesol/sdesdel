@@ -2386,7 +2386,7 @@ function viewProgressExercise(id) {
       ${chartSvg(points, unit, days, sub)}
       <div class="tip" hidden></div>
     </section>
-    <p class="muted hint">Es una estimación del peso máximo que podrías levantar 1 vez, calculada con la 1ª serie de cada día (fórmula de Epley con RIR: peso × (1 + (reps + RIR) ÷ 30); sin RIR anotado se cuenta como al fallo). Ej: 100 kg × 8 con RIR 2 ≈ 133 kg.</p>
+    <p class="muted hint">Es una estimación del peso máximo que podrías levantar, calculada con la 1ª serie. Ej: 100 kg × 8 con RIR 2 ≈ 133 kg</p>
     <h2>Sesiones</h2>
     <section class="card">${table}</section>`;
 }
