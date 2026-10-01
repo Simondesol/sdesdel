@@ -525,3 +525,8 @@ a.card.hub { display: grid; }
 }
 .goal-chip small { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 .goal-hint { margin: 6px 0; color: var(--accent); font-size: 14px; }
+.goal-fixed-wrap { display: grid; gap: 4px; color: var(--muted); font-size: 13px; }
+.goal-fixed {
+  display: grid; place-items: center; min-height: 44px; border-radius: 10px;
+  border: 1px dashed var(--border); color: var(--text); font-size: 15px; font-weight: 600;
+}

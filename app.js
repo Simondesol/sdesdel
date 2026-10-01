@@ -724,7 +724,9 @@ function viewRoutine() {
       <div class="ex-goals" aria-label="Objetivo (opcional)">
         <label>Series<input data-bind="ex-goal-sets" data-i="${i}" inputmode="numeric" value="${ex.goalSets || ''}" placeholder="–" autocomplete="off" aria-label="Series objetivo"></label>
         <label>Reps<input data-bind="ex-goal-reps" data-i="${i}" inputmode="decimal" value="${esc(ex.goalReps || '')}" placeholder="8-10" autocomplete="off" aria-label="Rango de repeticiones objetivo"></label>
-        <label>RIR obj.<input data-bind="ex-goal-rir" data-i="${i}" inputmode="decimal" value="${esc(ex.goalRir || '')}" placeholder="–" autocomplete="off" aria-label="RIR objetivo"></label>
+        ${ex.rir   // con RIR activado se escribe el RIR objetivo; sin RIR, la serie va al fallo
+          ? `<label>RIR obj.<input data-bind="ex-goal-rir" data-i="${i}" inputmode="decimal" value="${esc(ex.goalRir || '')}" placeholder="–" autocomplete="off" aria-label="RIR objetivo"></label>`
+          : '<div class="goal-fixed-wrap"><span>Hasta</span><span class="goal-fixed" title="Activa RIR para poner un RIR objetivo">Fallo</span></div>'}
       </div>
     </li>`).join('');
   return `${header('Editar rutina', { back: true })}
@@ -778,7 +780,10 @@ function viewWorkout() {
     const restBtn = !editing && ex.rest
       ? `<button class="btn ghost" data-action="rest" data-i="${i}" data-rest="${i}">Rest ${fmtRest(ex.rest)}</button>` : '';
     // Objetivo de la rutina (si tiene) y aviso para subir el peso
-    const goals = [['Series', ex.goalSets], ['Reps', ex.goalReps], ['RIR', ex.goalRir]].filter(([, v]) => v);
+    // Sin RIR activado se va al fallo (se muestra junto al resto del objetivo)
+    const goals = [['Series', ex.goalSets], ['Reps', ex.goalReps]].filter(([, v]) => v);
+    if (ex.rir && ex.goalRir) goals.push(['RIR', ex.goalRir]);
+    else if (!ex.rir && goals.length) goals.push(['Hasta', 'Fallo']);
     let hint = '';
     if (!editing && ex.goalReps) {
       const prev = lastFor(ex.exerciseId, before), top = rangeTop(ex.goalReps);
