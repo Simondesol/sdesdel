@@ -8,6 +8,8 @@ const RAW = {
     ['Trutro de pollo sin piel cocido', 209, 26, 0, 10.9],
     ['Pechuga de pavo cocida', 135, 30, 0, 1],
     ['Carne molida 5% grasa cruda', 137, 21.4, 0, 5],
+    ['Carne molida 7% grasa cruda', 152, 20.7, 0, 7],
+    ['Carne molida 7% grasa cocida', 198, 28, 0, 9.5],
     ['Carne molida 10% grasa cruda', 176, 20, 0, 10],
     ['Carne molida 15% grasa cruda', 215, 18.6, 0, 15],
     ['Carne molida 20% grasa cruda', 254, 17.2, 0, 20],
