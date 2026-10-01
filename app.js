@@ -1093,7 +1093,7 @@ function viewAuth(mode) {
 }
 
 function syncHtml() {
-  if (!hasUnsynced()) return '<span class="ok">✓ Todo guardado en la nube</span>';
+  if (!hasUnsynced()) return '<span class="ok">Todo guardado en la nube</span>';
   return navigator.onLine
     ? '⏳ Guardando en la nube…'
     : '⏳ Sin internet: tus cambios se subirán cuando vuelva la conexión.';
@@ -1182,7 +1182,7 @@ async function saveProfileData(f) {
     }
   }
   render();
-  formMsg($app.querySelector('[data-form="profile"]'), '✓ Datos guardados', true);
+  formMsg($app.querySelector('[data-form="profile"]'), 'Datos guardados', true);
 }
 
 async function submitPassword(f) {
@@ -1193,7 +1193,7 @@ async function submitPassword(f) {
   try {
     await busy(f.querySelector('button'), 'Cambiando…', () => withTimeout(cloud.changePassword(current, next)));
     f.reset();
-    formMsg(f, '✓ Contraseña cambiada. Úsala la próxima vez que inicies sesión.', true);
+    formMsg(f, 'Contraseña cambiada. Úsala la próxima vez que inicies sesión.', true);
   } catch (e) {
     formMsg(f, e && (e.code === 'auth/invalid-credential' || e.code === 'auth/wrong-password')
       ? 'La contraseña actual no es correcta.' : authError(e));
@@ -1490,7 +1490,7 @@ async function shareWorkout(btn, id) {
   // Computador sin menú de compartir: se copia el texto
   try {
     await navigator.clipboard.writeText(text);
-    btn.textContent = '✓ Copiado, pégalo en WhatsApp';
+    btn.textContent = 'Copiado, pégalo en WhatsApp';
   } catch (e) {
     window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
   }
@@ -2450,7 +2450,7 @@ function saveBodyweight(f) {
   }
   save();
   render();
-  formMsg($app.querySelector('[data-form="bodyweight"]'), `✓ Guardado: ${msg.join(' · ')}`, true);
+  formMsg($app.querySelector('[data-form="bodyweight"]'), `Guardado: ${msg.join(' · ')}`, true);
 }
 
 
@@ -2515,7 +2515,7 @@ function saveSleep(h, f) {
   save();
   render();
   const form = $app.querySelector('.sleep-today[data-form="sleep"]');
-  if (form) formMsg(form, `✓ Guardado: ${fmtH(h)} anoche`, true);
+  if (form) formMsg(form, `Guardado: ${fmtH(h)} anoche`, true);
 }
 
 function sleepCard() {
@@ -3580,7 +3580,7 @@ $app.addEventListener('click', e => {
       break;
     case 'copy-code':
       navigator.clipboard.writeText(shareLink(shareResult.code))
-        .then(() => { el.textContent = '✓ Link copiado'; }, () => alert(`Link: ${shareLink(shareResult.code)}`));
+        .then(() => { el.textContent = 'Link copiado'; }, () => alert(`Link: ${shareLink(shareResult.code)}`));
       break;
     case 'share-diet':
       shareDiet(el);
@@ -3605,7 +3605,7 @@ $app.addEventListener('click', e => {
     }
     case 'copy-invite':
       navigator.clipboard.writeText(inviteLink(inviteCode()))
-        .then(() => { el.textContent = '✓ Link copiado'; }, () => alert(`Link: ${inviteLink(inviteCode())}`));
+        .then(() => { el.textContent = 'Link copiado'; }, () => alert(`Link: ${inviteLink(inviteCode())}`));
       break;
     case 'attach':
       attach = attach ? null : 'menu';
@@ -3671,7 +3671,7 @@ $app.addEventListener('click', e => {
       break;
     case 'handoff-copy':
       navigator.clipboard.writeText(fmtCode(handoffCode))
-        .then(() => { el.textContent = '✓ Código copiado. Ahora abre Desdel'; }, () => alert(`Código: ${fmtCode(handoffCode)}`));
+        .then(() => { el.textContent = 'Código copiado. Ahora abre Desdel'; }, () => alert(`Código: ${fmtCode(handoffCode)}`));
       break;
     case 'handoff-here':
       // Sigue el camino normal: inicia sesión aquí y se importa
@@ -3818,7 +3818,7 @@ $app.addEventListener('submit', e => {
       if (liters == null || liters < 0.5 || liters > 10) return formMsg(f, 'Escribe tu meta en litros (ej. 3 o 2,5).');
       db.water.goalMl = Math.round(liters * 1000);
       save(); render();
-      formMsg($app.querySelector('[data-form="water-goal"]'), `✓ Meta guardada: ${fmtL(db.water.goalMl)} L`, true);
+      formMsg($app.querySelector('[data-form="water-goal"]'), `Meta guardada: ${fmtL(db.water.goalMl)} L`, true);
       return;
     }
   }
