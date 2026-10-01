@@ -301,6 +301,7 @@ RAW['Verduras'].push(
   ['Mix de verduras congeladas', 64, 3.3, 13.5, 0.5],
 );
 RAW['Cereales, panes y tubérculos'].push(
+  ['Pan italiano', 271, 8.8, 50, 3.5],
   ['Fideos integrales cocidos', 149, 6, 30, 1.7],
   ['Fideos integrales crudos', 348, 14.6, 75, 1.4],
 );
