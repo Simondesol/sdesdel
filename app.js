@@ -22,6 +22,10 @@ let pendingUsername = null;      // nombre elegido al registrarse (Firebase lo a
 let authUser = null;             // último usuario informado por Firebase
 
 let lastUnit = 'kg';
+// Unidades de peso; "placas" es para máquinas con los números borrados (se anota cuántas placas)
+const UNITS = ['kg', 'lb', 'placas'];
+const unitShort = u => (u === 'placas' ? 'pl.' : u);
+const unitKind = u => (u === 'placas' ? 'placas' : 'peso');
 const openHistory = new Set();   // ejercicios con el historial desplegado
 let editingNote = null;          // ejercicio cuya nota se está editando
 let editBuf = null;              // copia de un entrenamiento guardado que se está editando
@@ -91,11 +95,12 @@ function cmpSet(a, b) {
 }
 
 // Mejor serie de cada posición (serie 1, serie 2...) en los entrenamientos anteriores a `before`
-function bestSets(exerciseId, before = db.workouts.length) {
+// unit: solo compara con sesiones de la misma clase (placas con placas; kg y lb entre sí)
+function bestSets(exerciseId, before = db.workouts.length, unit = null) {
   const best = [];
   for (let k = 0; k < before; k++) {
     const ex = db.workouts[k].exercises.find(e => e.exerciseId === exerciseId);
-    if (!ex) continue;
+    if (!ex || (unit && unitKind(ex.unit) !== unitKind(unit))) continue;
     ex.sets.forEach((s, j) => {
       const c = { w: s.w, r: s.r, unit: ex.unit };
       if (!best[j] || cmpSet(c, best[j]) > 0) best[j] = c;
@@ -621,6 +626,7 @@ const setsChips = ex => `<div class="sets-list">${ex.sets.map(s => `<span>${setT
 const unitSelect = () => `<select name="unit" aria-label="Unidad">
   <option ${lastUnit === 'kg' ? 'selected' : ''}>kg</option>
   <option ${lastUnit === 'lb' ? 'selected' : ''}>lb</option>
+  <option ${lastUnit === 'placas' ? 'selected' : ''}>placas</option>
 </select>`;
 
 function noteHtml(exerciseId, i) {
@@ -784,7 +790,7 @@ function viewWorkout() {
   d.pos = Math.min(Math.max(d.pos || 0, 0), d.exercises.length - 1);
   d.done = d.done || [];
   const gi = groupIndex(groups, d.pos), group = groups[gi], isLast = gi === groups.length - 1;
-  const bests = new Map(group.map(k => [k, bestSets(d.exercises[k].exerciseId, before)]));
+  const bests = new Map(group.map(k => [k, bestSets(d.exercises[k].exerciseId, before, d.exercises[k].unit)]));
 
   // "↓ drop" solo en ejercicios marcados como Dropset en la rutina (o que ya tienen bajadas, al editar uno guardado)
   const canDrop = ex => ex.dropset || ex.sets.some(st => st.drops && st.drops.length);
@@ -794,8 +800,8 @@ function viewWorkout() {
     const drops = (s.drops || []).map((x, k) => `
       <div class="set drop ${ex.rir ? 'has-rir' : ''}">
         <span class="n">↓</span>
-        <input inputmode="decimal" data-bind="dw" data-i="${i}" data-j="${j}" data-k="${k}" value="${esc(x.w)}" placeholder="peso" aria-label="Peso bajada ${k + 1} de la serie ${label}">
-        <span class="u">${ex.unit}</span>
+        <input inputmode="decimal" data-bind="dw" data-i="${i}" data-j="${j}" data-k="${k}" value="${esc(x.w)}" placeholder="${ex.unit === 'placas' ? 'placas' : 'peso'}" aria-label="Peso bajada ${k + 1} de la serie ${label}">
+        <span class="u">${unitShort(ex.unit)}</span>
         <span class="x">×</span>
         <input inputmode="numeric" data-bind="dr" data-i="${i}" data-j="${j}" data-k="${k}" value="${esc(x.r)}" placeholder="reps" aria-label="Repeticiones bajada ${k + 1} de la serie ${label}">
         ${ex.rir ? '<span></span>' : ''}
@@ -805,8 +811,8 @@ function viewWorkout() {
     return `
       <div class="set ${ex.rir ? 'has-rir' : ''}">
         <span class="n">${label}</span>
-        <input inputmode="decimal" data-bind="w" data-i="${i}" data-j="${j}" value="${esc(s.w)}" placeholder="peso" aria-label="Peso serie ${label}">
-        <span class="u">${ex.unit}</span>
+        <input inputmode="decimal" data-bind="w" data-i="${i}" data-j="${j}" value="${esc(s.w)}" placeholder="${ex.unit === 'placas' ? 'placas' : 'peso'}" aria-label="${ex.unit === 'placas' ? 'Placas' : 'Peso'} serie ${label}">
+        <span class="u">${unitShort(ex.unit)}</span>
         <span class="x">×</span>
         <input inputmode="numeric" data-bind="r" data-i="${i}" data-j="${j}" value="${esc(s.r)}" placeholder="reps" aria-label="Repeticiones serie ${label}">
         ${ex.rir ? `<input class="rir" inputmode="numeric" data-bind="rir" data-i="${i}" data-j="${j}" value="${esc(s.rir ?? '')}" placeholder="RIR" aria-label="RIR serie ${label}">` : ''}
@@ -1329,7 +1335,7 @@ function viewSession(id) {
 
   // Cada serie comparada con la mejor serie de esa posición en los entrenamientos anteriores
   const blocks = w.exercises.map(ex => {
-    const best = bestSets(ex.exerciseId, k);
+    const best = bestSets(ex.exerciseId, k, ex.unit);
     const count = { up: 0, eq: 0, down: 0 };
     const chips = ex.sets.map((s, j) => {
       const c = best[j] ? cmpSet({ ...s, unit: ex.unit }, best[j]) : null;
@@ -1375,7 +1381,7 @@ function workoutShareText(w, forChat = false) {
   const k = db.workouts.indexOf(w);
   let ups = 0;
   const lines = w.exercises.map(ex => {
-    const best = bestSets(ex.exerciseId, k);
+    const best = bestSets(ex.exerciseId, k, ex.unit);
     const sets = ex.sets.map((s, j) => {
       const c = best[j] ? cmpSet({ ...s, unit: ex.unit }, best[j]) : null;
       if (c > 0) ups++;
@@ -1792,7 +1798,7 @@ function newPRs(w) {
     for (const o of db.workouts) {
       if (o === w) continue;
       const oe = o.exercises.find(e => e.exerciseId === ex.exerciseId);
-      if (oe) prev = Math.max(prev, firstE1rm(oe));
+      if (oe && unitKind(oe.unit) === unitKind(ex.unit)) prev = Math.max(prev, firstE1rm(oe));
     }
     if (prev > 0 && cur > prev + 0.01) {
       const s = ex.sets.find(x => x.w != null);
@@ -1865,7 +1871,7 @@ function myProfile() {
       const st = ex.sets.find(x => x.w != null);
       if (!st) continue;
       const e = epley(st.w, st.r || 1), kg = toKg(e, ex.unit), cur = best.get(ex.exerciseId);
-      if (!cur || kg > cur.kg) best.set(ex.exerciseId, { kg, name: ex.name, v: round1(e), unit: ex.unit, set: `${fmtNum(st.w)} ${ex.unit} × ${fmtNum(st.r || 1)}`, date: w.date });
+      if (!cur || kg > cur.kg || unitKind(cur.unit) !== unitKind(ex.unit)) best.set(ex.exerciseId, { kg, name: ex.name, v: round1(e), unit: ex.unit, set: `${fmtNum(st.w)} ${ex.unit} × ${fmtNum(st.r || 1)}`, date: w.date });
     }
   }
   const prs = [...best.values()].sort((a, b) => b.kg - a.kg).slice(0, 15).map(({ kg, ...pr }) => pr);
@@ -1979,7 +1985,8 @@ let progressRange = '3m';   // período del gráfico de ejercicios
 let bwRange = '3m';         // período del gráfico de peso corporal
 let chart = null;   // puntos del gráfico en pantalla (para el tooltip)
 
-const convertWeight = (w, from, to) => (from === to ? w : from === 'lb' ? w * 0.45359237 : w / 0.45359237);
+// Placas no se pueden pasar a kg: se dejan tal cual
+const convertWeight = (w, from, to) => (from === to || from === 'placas' || to === 'placas' ? w : from === 'lb' ? w * 0.45359237 : w / 0.45359237);
 const round1 = n => Math.round(n * 10) / 10;
 
 // Récord estimado (1RM) con la fórmula de Epley: peso × (1 + reps / 30). Con 1 rep es el mismo peso.
@@ -1994,7 +2001,7 @@ function progressPoints(exerciseId, days) {
   const points = [];
   for (const { w, ex } of rows) {
     const t = Date.parse(w.date);
-    if (t < since) continue;
+    if (t < since || unitKind(ex.unit) !== unitKind(unit)) continue;   // placas no se mezclan con kg
     const s = ex.sets.find(x => x.w != null);
     if (!s) continue;
     const set = { w: s.w, r: s.r, rir: s.rir, unit: ex.unit };
@@ -2855,7 +2862,7 @@ $app.addEventListener('click', e => {
     }
     case 'toggle-unit': {
       const ex = curRoutine().exercises[i];
-      ex.unit = ex.unit === 'kg' ? 'lb' : 'kg';
+      ex.unit = UNITS[(UNITS.indexOf(ex.unit) + 1) % UNITS.length];   // kg → lb → placas → kg
       save(); render();
       break;
     }
@@ -3287,7 +3294,7 @@ $app.addEventListener('input', e => {
     const d = cur(), ex = d.exercises[i];
     ex.sets[j][bind] = el.value;
     const cell = $app.querySelector(`[data-mark="${i}-${j}"]`);
-    if (cell) cell.innerHTML = markSpan(liveCmp(ex.sets[j], ex.unit, bestSets(ex.exerciseId, beforeIndex(d))[j]));
+    if (cell) cell.innerHTML = markSpan(liveCmp(ex.sets[j], ex.unit, bestSets(ex.exerciseId, beforeIndex(d), ex.unit)[j]));
   }
   else if (bind === 'rir') cur().exercises[i].sets[j].rir = el.value;
   else if (bind === 'dw' || bind === 'dr') cur().exercises[i].sets[j].drops[+el.dataset.k][bind === 'dw' ? 'w' : 'r'] = el.value;
