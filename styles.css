@@ -617,3 +617,15 @@ input.readonly { color: var(--muted); background: transparent; }
 .extra-macros { display: grid; grid-template-columns: 1.3fr repeat(3, 1fr); gap: 6px; }
 .extra-macros input { min-width: 0; width: 100%; text-align: center; padding: 0 4px; }
 .extra-macros .field span { font-size: 12px; }
+
+/* Calorías objetivo: desglose, ritmo "otro" y pasos */
+.breakdown { display: grid; gap: 0; }
+.bd-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.bd-row:last-child { border-bottom: 0; }
+.bd-val { flex: none; font-variant-numeric: tabular-nums; font-weight: 600; }
+.bd-total strong, .bd-total .bd-val { color: var(--accent); font-size: 17px; }
+.pace-other { margin-top: 10px; align-items: center; }
+.pace-other input { flex: 1; min-width: 0; text-align: center; }
+.pace-other input.on { border-color: var(--accent); }
+.steps-form { margin-top: 8px; }
+.steps-form input { flex: 1; min-width: 0; text-align: center; }

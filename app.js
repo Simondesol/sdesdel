@@ -506,9 +506,27 @@ const ACTIVITY = [
   ['alt', 'Alto', 'Ejercicio 6 a 7 días por semana', 1.725],
   ['muy', 'Muy alto', 'Entrenas fuerte a diario o tu trabajo es físico', 1.9],
 ];
-const PACES = [-0.75, -0.5, -0.25, 0, 0.25, 0.5];
+// Ritmo en kg al mes (1 kg al mes ≈ 7.700 ÷ 30,4 ≈ 253 kcal al día)
+const MONTH_PACES = [-4, -3, -2, -1, 0, 0.5, 1, 1.5, 2];
+const KCAL_PER_KG = 7700, DAYS_PER_MONTH = 30.4;
 const paceLabel = v => (v === 0 ? 'Mantener' : `${v < 0 ? 'Bajar' : 'Subir'} ${fmtNum(Math.abs(v))} kg`);
+// Antes el ritmo era por semana: se pasa a kg al mes
+const paceMonth = b => b.paceMonth ?? (b.pace != null ? round1((b.pace * DAYS_PER_MONTH) / 7) : 0);
 const round10 = n => Math.round(n / 10) * 10;
+const fmt1 = n => fmtNum(round1(n));
+
+// Entrenamientos de las últimas 4 semanas (o desde tu primer entrenamiento, si es más reciente)
+function trainingLoad() {
+  const now = Date.now(), since = now - 28 * 86400000;
+  const recent = db.workouts.filter(w => Date.parse(w.date) >= since);
+  const first = db.workouts.length ? Date.parse(db.workouts[0].date) : now;
+  const days = Math.min(28, Math.max(7, (now - Math.max(first, since)) / 86400000));
+  // Duración real de cada uno (si no tiene o es muy corta, se cuenta 1 hora; como máximo 3 horas)
+  const hours = recent.map(w => (w.durationSec >= 600 ? Math.min(w.durationSec, 10800) / 3600 : 1));
+  const perWeek = (recent.length / days) * 7;
+  const avgH = hours.length ? hours.reduce((a, h) => a + h, 0) / hours.length : 0;
+  return { perWeek, avgH };
+}
 
 function calorieTarget() {
   const b = db.body, last = db.bodyweight[db.bodyweight.length - 1];
@@ -524,14 +542,40 @@ function calorieTarget() {
     }
     return { missing };
   }
-  const act = ACTIVITY.find(a => a[0] === b.activity) || ACTIVITY[2];
-  const pace = b.pace ?? 0;
-  const bmr = bfEntry
-    ? 370 + 21.6 * last.kg * (1 - bfEntry.bf / 100)
-    : 10 * last.kg + 6.25 * b.heightCm - 5 * age + (b.sex === 'h' ? 5 : -161);
-  const tdee = bmr * act[3];
-  const target = round10(tdee + (pace * 7700) / 7);
-  return { bmr: round10(bmr), tdee: round10(tdee), target, pace, act, katch: !!bfEntry, kg: last.kg, low: target < bmr };
+  const kg = last.kg, steps = [];   // steps: líneas del desglose
+  let bmr;
+  if (bfEntry) {
+    const lean = kg * (1 - bfEntry.bf / 100);
+    bmr = 370 + 21.6 * lean;
+    steps.push(['Metabolismo basal (Katch-McArdle)', `370 + 21,6 × ${fmt1(lean)} kg de masa magra`, `${fmtKcal(bmr)} kcal`]);
+  } else {
+    bmr = 10 * kg + 6.25 * b.heightCm - 5 * age + (b.sex === 'h' ? 5 : -161);
+    steps.push(['Metabolismo basal (Mifflin-St Jeor)',
+      `10 × ${fmt1(kg)} kg + 6,25 × ${b.heightCm} cm − 5 × ${age} años ${b.sex === 'h' ? '+ 5' : '− 161'}`, `${fmtKcal(bmr)} kcal`]);
+  }
+  let tdee;
+  const auto = b.activity === 'auto';
+  if (auto) {
+    // Automático: vida diaria (× 1,2) + pasos sobre 3.000 + entrenamientos guardados
+    const base = bmr * 1.2;
+    steps.push(['Vida diaria', `${fmtKcal(bmr)} × 1,2`, `${fmtKcal(base)} kcal`]);
+    const st = b.steps || 0, stepKcal = (Math.max(0, st - 3000) / 1000) * 0.375 * kg;
+    steps.push(['Pasos', st ? `(${fmtKcal(st)} − 3.000) ÷ 1.000 × 0,375 × ${fmt1(kg)} kg` : 'Anota tus pasos promedio abajo', `+${fmtKcal(stepKcal)} kcal`]);
+    const tl = trainingLoad(), trainKcal = (tl.perWeek * tl.avgH * 5 * kg) / 7;
+    steps.push(['Entrenamientos', tl.perWeek
+      ? `${fmt1(tl.perWeek)} por semana × ${fmt1(tl.avgH)} h × 5 × ${fmt1(kg)} kg ÷ 7`
+      : 'Sin entrenamientos en las últimas 4 semanas', `+${fmtKcal(trainKcal)} kcal`]);
+    tdee = base + stepKcal + trainKcal;
+  } else {
+    const act = ACTIVITY.find(a => a[0] === b.activity) || ACTIVITY[2];
+    tdee = bmr * act[3];
+    steps.push([`Actividad (${act[1]})`, `${fmtKcal(bmr)} × ${fmtNum(act[3])}`, `${fmtKcal(tdee)} kcal`]);
+  }
+  if (auto) steps.push(['Gasto del día', '', `${fmtKcal(tdee)} kcal`]);
+  const pm = paceMonth(b), adj = (pm * KCAL_PER_KG) / DAYS_PER_MONTH;
+  if (pm) steps.push(['Ritmo', `${pm > 0 ? '+' : '−'}${fmtNum(Math.abs(pm))} kg al mes × 7.700 ÷ 30,4`, `${adj > 0 ? '+' : '−'}${fmtKcal(Math.abs(adj))} kcal`]);
+  const target = round10(tdee + adj);
+  return { bmr: round10(bmr), tdee: round10(tdee), target, pace: pm, kg, katch: !!bfEntry, low: target < bmr, steps };
 }
 
 // "Objetivo calculado: 2.250 kcal · tu dieta +150"
@@ -544,29 +588,52 @@ function targetLine(dietKcal) {
 }
 
 function viewTarget() {
-  const ct = calorieTarget(), b = db.body;
+  const ct = calorieTarget(), b = db.body, pm = paceMonth(b), custom = !MONTH_PACES.includes(pm);
+  const activity = b.activity || 'mod';
   const result = ct.missing
     ? `<p class="muted card">Para calcularlo falta ${ct.missing.map(([t, href]) => `<a href="${href}">${t}</a>`).join(', ').replace(/, ([^,]*)$/, ' y $1')}.
         <br><span class="small">Si anotas tu % de grasa en Peso, basta con tu peso.</span></p>`
     : `<section class="card stack target-card">
         <div class="water-big"><strong>${fmtKcal(ct.target)}</strong> kcal al día</div>
-        <span class="muted">${ct.pace === 0 ? 'Para mantener tu peso' : `Para ${paceLabel(ct.pace).toLowerCase()} por semana`}</span>
+        <span class="muted">${ct.pace === 0 ? 'Para mantener tu peso' : `Para ${paceLabel(ct.pace).toLowerCase()} al mes`}</span>
         ${ct.low ? '<p class="goal-hint" style="color:var(--danger)">Ojo: queda bajo tu metabolismo basal. Mejor elige un ritmo más lento.</p>' : ''}
-        <div class="prog-row"><span class="muted">Gastas aprox.</span><span>${fmtKcal(ct.tdee)} kcal al día</span></div>
-        <div class="prog-row"><span class="muted">Metabolismo basal</span><span>${fmtKcal(ct.bmr)} kcal</span></div>
         <div class="prog-row"><span class="muted">Proteína sugerida</span><span>${Math.round(ct.kg * 1.6)}–${Math.round(ct.kg * 2.2)} g al día</span></div>
+      </section>
+      <h2>Cómo se calcula</h2>
+      <section class="card breakdown">
+        ${ct.steps.map(([name, formula, value]) => `<div class="bd-row">
+          <div><strong>${name}</strong>${formula ? `<div class="muted small">${formula}</div>` : ''}</div>
+          <span class="bd-val">${value}</span>
+        </div>`).join('')}
+        <div class="bd-row bd-total"><strong>Objetivo</strong><span class="bd-val">${fmtKcal(ct.target)} kcal</span></div>
       </section>`;
+
+  const tl = trainingLoad();
   return `${header('Calorías objetivo', { back: true, sub: 'Referencia para armar tu dieta' })}
     ${result}
-    <h2>¿Qué quieres? (por semana)</h2>
-    <div class="pace-chips">${PACES.map(v => `<button class="chip toggle ${v === (b.pace ?? 0) ? 'on' : ''}" data-action="set-pace" data-v="${v}">${paceLabel(v)}</button>`).join('')}</div>
+    <h2>¿Qué quieres? (por mes)</h2>
+    <div class="pace-chips">${MONTH_PACES.map(v => `<button class="chip toggle ${!custom && v === pm ? 'on' : ''}" data-action="set-pace" data-v="${v}">${paceLabel(v)}</button>`).join('')}</div>
+    <form class="add-row pace-other" data-form="pace-other" novalidate>
+      <span class="muted">Otro</span>
+      <input name="v" inputmode="decimal" value="${custom ? toField(pm) : ''}" placeholder="ej. 0,8 o -1,5" autocomplete="off" aria-label="Kilos al mes (negativo para bajar)" class="${custom ? 'on' : ''}">
+      <span class="unit-label">kg al mes</span>
+      <button class="btn">Usar</button>
+    </form>
     <h2>Nivel de actividad</h2>
-    <div class="stack">${ACTIVITY.map(([k, name, desc]) => `<button class="card choice ${k === (b.activity || 'mod') ? 'on' : ''}" data-action="set-activity" data-v="${k}">
-      <strong>${name}</strong><span class="muted small">${desc}</span></button>`).join('')}</div>
-    <p class="muted hint">${ct.katch
-      ? 'Se calcula con tu masa magra (peso y % de grasa), la fórmula de Katch-McArdle.'
-      : 'Se calcula con tu peso, estatura, edad y sexo (Mifflin-St Jeor). Si anotas tu % de grasa en Peso, se usa tu masa magra, que es más preciso.'}
-      Cada kg equivale a unas 7.700 kcal. Es una estimación: ajústala según cómo cambie tu peso.</p>`;
+    <div class="stack">
+      <div class="card choice ${activity === 'auto' ? 'on' : ''}" data-action="set-activity" data-v="auto" role="button" tabindex="0">
+        <strong>Automático</strong><span class="muted small">Con tus pasos promedio y tus entrenamientos guardados (${fmt1(tl.perWeek)} por semana en las últimas 4 semanas)</span>
+        ${activity === 'auto' ? `<form class="add-row steps-form" data-form="steps" novalidate>
+          <input name="steps" inputmode="numeric" value="${b.steps || ''}" placeholder="ej. 8000" autocomplete="off" aria-label="Pasos promedio al día">
+          <span class="unit-label">pasos al día</span>
+          <button class="btn">Guardar</button>
+        </form>
+        <span class="muted small">Míralo en el contador de pasos de tu celular (promedio de la semana). Se anota una sola vez; cámbialo si tu rutina cambia.</span>` : ''}
+      </div>
+      ${ACTIVITY.map(([k, name, desc]) => `<button class="card choice ${k === activity ? 'on' : ''}" data-action="set-activity" data-v="${k}">
+        <strong>${name}</strong><span class="muted small">${desc}</span></button>`).join('')}
+    </div>
+    <p class="muted hint">Cada kg equivale a unas 7.700 kcal. Es una estimación: ajústala según cómo cambie tu peso.</p>`;
 }
 
 // ---------- Extras fuera de la dieta ----------
@@ -3660,12 +3727,15 @@ $app.addEventListener('click', e => {
       break;
     }
     case 'set-pace':
-      db.body.pace = Number(el.dataset.v);
+      db.body.paceMonth = Number(el.dataset.v);
+      delete db.body.pace;
       save(); render();
       break;
     case 'set-activity':
+      if (e.target.closest('form')) return;   // tocar dentro del formulario de pasos no cambia el nivel
       db.body.activity = el.dataset.v;
       save(); render();
+      if (el.dataset.v === 'auto' && !db.body.steps) { const input = $app.querySelector('[data-form="steps"] input'); if (input) input.focus(); }
       break;
     case 'meal-add': {
       const diet = dietById(routeParts()[1]);
@@ -3976,6 +4046,21 @@ $app.addEventListener('submit', e => {
       const diet = dietById(routeParts()[1]), m = +f.dataset.m, item = readFoodForm(f);
       if (!item) return;
       diet.meals[m].items.push(item);
+      save(); render();
+      return;
+    }
+    case 'pace-other': {
+      const v = num(f.elements.v.value);
+      if (v == null || v < -6 || v > 4) { alert('Escribe los kg al mes entre -6 y 4 (negativo para bajar, ej. -1,5).'); return; }
+      db.body.paceMonth = round1(v);
+      delete db.body.pace;
+      save(); render();
+      return;
+    }
+    case 'steps': {
+      const t = f.elements.steps.value.trim(), v = num(t);
+      if (t && (v == null || v < 0 || v > 60000)) { alert('Escribe tus pasos promedio al día (ej. 8000).'); return; }
+      if (t) db.body.steps = Math.round(v); else delete db.body.steps;
       save(); render();
       return;
     }
