@@ -242,14 +242,17 @@ function todayNutrition() {
   const diet = dietById(log && log.dietId) || dietById(N().activeDietId) || N().diets[0] || null;
   // Cada dieta recuerda sus comidas marcadas del día, aunque cambies de una a otra
   const done = !diet || !log ? [] : (log.byDiet && log.byDiet[diet.id]) || (log.dietId === diet.id ? log.done || [] : []);
-  const eaten = diet ? sumM(diet.meals.filter(m => done.includes(m.id)).map(mealMacros)) : { ...ZERO };
+  const eaten = sumM([
+    ...(diet ? diet.meals.filter(m => done.includes(m.id)).map(mealMacros) : []),
+    ...todayExtras().map(extraMacros),   // lo que comiste fuera de la dieta
+  ]);
   return { diet, done, eaten, goal: diet ? dietMacros(diet) : { ...ZERO } };
 }
 
 // Guarda el registro de hoy (y borra los de hace más de 90 días para no acumular)
 function setTodayLog(dietId, done) {
   const prev = N().log[todayKey()] || {};
-  N().log[todayKey()] = { dietId, done, byDiet: { ...(prev.byDiet || {}), [dietId]: done } };
+  N().log[todayKey()] = { ...prev, dietId, done, byDiet: { ...(prev.byDiet || {}), [dietId]: done } };   // conserva los extras
   const limit = new Date(Date.now() - 90 * 86400000);
   const min = `${limit.getFullYear()}-${String(limit.getMonth() + 1).padStart(2, '0')}-${String(limit.getDate()).padStart(2, '0')}`;
   for (const k of Object.keys(N().log)) if (k < min) delete N().log[k];
@@ -288,9 +291,11 @@ function viewNutrition(section) {
         <span>Carbos<br><strong>${fmtG(eaten.c)}</strong> / ${fmtG(goal.c)} g</span>
         <span>Grasas<br><strong>${fmtG(eaten.f)}</strong> / ${fmtG(goal.f)} g</span>
       </div>
+      ${targetLine(goal.kcal)}
     </section>
     <h2>${esc(diet.name)} · toca ✓ cuando comas</h2>
-    ${meals || '<p class="empty">Esta dieta no tiene comidas.</p>'}`;
+    ${meals || '<p class="empty">Esta dieta no tiene comidas.</p>'}
+    ${extrasSection()}`;
 }
 
 let foodQuery = '';
@@ -444,6 +449,7 @@ function viewDietEditor(id) {
     <section class="card nutri-sum" style="margin-top:12px">
       <div class="muted small">Total de la dieta</div>
       <div data-diet-total><strong class="big">${fmtKcal(total.kcal)} kcal</strong><div class="muted small">${macroLine(total)}</div></div>
+      ${targetLine(total.kcal)}
     </section>
     ${meals}
     <button class="btn block" data-action="meal-add">+ Agregar comida ${diet.meals.length + 1}</button>
@@ -488,6 +494,155 @@ function nutritionCard() {
       ? `<div class="hub-value"><strong>${fmtKcal(t.eaten.kcal)} / ${fmtKcal(t.goal.kcal)}</strong> calorías</div>${bar(t.eaten.kcal, t.goal.kcal)}`
       : '<span class="muted">Crea tus alimentos y tu dieta</span>'}
   </a>`;
+}
+
+// ---------- Calorías objetivo (referencia) ----------
+// Metabolismo basal: Katch-McArdle si tienes % de grasa (usa tu masa magra); si no, Mifflin-St Jeor (peso, estatura, edad, sexo).
+// Gasto del día = basal × actividad. Objetivo = gasto ± 7.700 kcal por kg al ritmo que elijas.
+const ACTIVITY = [
+  ['sed', 'Sedentario', 'Poco o nada de ejercicio', 1.2],
+  ['lig', 'Ligero', 'Ejercicio 1 a 3 días por semana', 1.375],
+  ['mod', 'Moderado', 'Ejercicio 3 a 5 días por semana', 1.55],
+  ['alt', 'Alto', 'Ejercicio 6 a 7 días por semana', 1.725],
+  ['muy', 'Muy alto', 'Entrenas fuerte a diario o tu trabajo es físico', 1.9],
+];
+const PACES = [-0.75, -0.5, -0.25, 0, 0.25, 0.5];
+const paceLabel = v => (v === 0 ? 'Mantener' : `${v < 0 ? 'Bajar' : 'Subir'} ${fmtNum(Math.abs(v))} kg`);
+const round10 = n => Math.round(n / 10) * 10;
+
+function calorieTarget() {
+  const b = db.body, last = db.bodyweight[db.bodyweight.length - 1];
+  const bfEntry = db.bodyweight.slice().reverse().find(x => x.bf != null);
+  const age = b.birthYear ? new Date().getFullYear() - b.birthYear : null;
+  if (!last || (!bfEntry && (!b.heightCm || !b.sex || !age))) {
+    const missing = [];
+    if (!last) missing.push(['tu peso', '#/peso']);
+    if (!bfEntry) {
+      if (!b.heightCm) missing.push(['tu estatura', '#/cuenta']);
+      if (!b.sex) missing.push(['tu sexo', '#/cuenta']);
+      if (!age) missing.push(['tu año de nacimiento', '#/cuenta']);
+    }
+    return { missing };
+  }
+  const act = ACTIVITY.find(a => a[0] === b.activity) || ACTIVITY[2];
+  const pace = b.pace ?? 0;
+  const bmr = bfEntry
+    ? 370 + 21.6 * last.kg * (1 - bfEntry.bf / 100)
+    : 10 * last.kg + 6.25 * b.heightCm - 5 * age + (b.sex === 'h' ? 5 : -161);
+  const tdee = bmr * act[3];
+  const target = round10(tdee + (pace * 7700) / 7);
+  return { bmr: round10(bmr), tdee: round10(tdee), target, pace, act, katch: !!bfEntry, kg: last.kg, low: target < bmr };
+}
+
+// "Objetivo calculado: 2.250 kcal · tu dieta +150"
+function targetLine(dietKcal) {
+  const ct = calorieTarget();
+  if (!ct.target) return '<a class="target-line" href="#/objetivo">Calcula tus calorías objetivo ›</a>';
+  const diff = Math.round(dietKcal - ct.target);
+  const cmp = Math.abs(diff) < 50 ? 'tu dieta calza' : `tu dieta ${diff > 0 ? '+' : '−'}${fmtKcal(Math.abs(diff))}`;
+  return `<a class="target-line" href="#/objetivo">Objetivo calculado: <strong>${fmtKcal(ct.target)} kcal</strong> · ${cmp} ›</a>`;
+}
+
+function viewTarget() {
+  const ct = calorieTarget(), b = db.body;
+  const result = ct.missing
+    ? `<p class="muted card">Para calcularlo falta ${ct.missing.map(([t, href]) => `<a href="${href}">${t}</a>`).join(', ').replace(/, ([^,]*)$/, ' y $1')}.
+        <br><span class="small">Si anotas tu % de grasa en Peso, basta con tu peso.</span></p>`
+    : `<section class="card stack target-card">
+        <div class="water-big"><strong>${fmtKcal(ct.target)}</strong> kcal al día</div>
+        <span class="muted">${ct.pace === 0 ? 'Para mantener tu peso' : `Para ${paceLabel(ct.pace).toLowerCase()} por semana`}</span>
+        ${ct.low ? '<p class="goal-hint" style="color:var(--danger)">Ojo: queda bajo tu metabolismo basal. Mejor elige un ritmo más lento.</p>' : ''}
+        <div class="prog-row"><span class="muted">Gastas aprox.</span><span>${fmtKcal(ct.tdee)} kcal al día</span></div>
+        <div class="prog-row"><span class="muted">Metabolismo basal</span><span>${fmtKcal(ct.bmr)} kcal</span></div>
+        <div class="prog-row"><span class="muted">Proteína sugerida</span><span>${Math.round(ct.kg * 1.6)}–${Math.round(ct.kg * 2.2)} g al día</span></div>
+      </section>`;
+  return `${header('Calorías objetivo', { back: true, sub: 'Referencia para armar tu dieta' })}
+    ${result}
+    <h2>¿Qué quieres? (por semana)</h2>
+    <div class="pace-chips">${PACES.map(v => `<button class="chip toggle ${v === (b.pace ?? 0) ? 'on' : ''}" data-action="set-pace" data-v="${v}">${paceLabel(v)}</button>`).join('')}</div>
+    <h2>Nivel de actividad</h2>
+    <div class="stack">${ACTIVITY.map(([k, name, desc]) => `<button class="card choice ${k === (b.activity || 'mod') ? 'on' : ''}" data-action="set-activity" data-v="${k}">
+      <strong>${name}</strong><span class="muted small">${desc}</span></button>`).join('')}</div>
+    <p class="muted hint">${ct.katch
+      ? 'Se calcula con tu masa magra (peso y % de grasa), la fórmula de Katch-McArdle.'
+      : 'Se calcula con tu peso, estatura, edad y sexo (Mifflin-St Jeor). Si anotas tu % de grasa en Peso, se usa tu masa magra, que es más preciso.'}
+      Cada kg equivale a unas 7.700 kcal. Es una estimación: ajústala según cómo cambie tu peso.</p>`;
+}
+
+// ---------- Extras fuera de la dieta ----------
+// Se guardan en el registro del día: { id, foodId, g | n } (alimento) o { id, name, kcal, p, c, f } (a mano)
+let extraMode = null;   // null | 'food' | 'manual'
+const todayExtras = () => (N().log[todayKey()] || {}).extras || [];
+function extraMacros(x) {
+  return x.foodId ? itemMacros(x) : { kcal: x.kcal || 0, p: x.p || 0, c: x.c || 0, f: x.f || 0 };
+}
+function extraText(x) {
+  if (!x.foodId) return esc(x.name);
+  const fd = foodById(x.foodId);
+  return fd ? itemText(fd, x) : '(alimento borrado)';
+}
+function addExtra(item) {
+  const day = (N().log[todayKey()] ||= { dietId: null, done: [] });
+  (day.extras ||= []).push({ id: uid(), ...item });
+  extraMode = null;
+  save();
+  render();
+}
+
+function extrasSection() {
+  const list = todayExtras().map(x => {
+    const m = extraMacros(x);
+    return `<div class="prog-row">
+      <span class="grow">${extraText(x)}</span>
+      <span class="bw-right">${fmtKcal(m.kcal)} kcal
+        <button class="icon small danger" data-action="extra-del" data-id="${x.id}" aria-label="Quitar extra">✕</button></span>
+    </div>`;
+  }).join('');
+  const form = extraMode === 'food'
+    ? `<form class="add-item" data-form="extra-food" novalidate>
+        <div class="add-row" style="margin-top:0">
+          <input name="q" data-bind="food-q" placeholder="🔍 Buscar alimento…" autocomplete="off" aria-label="Buscar alimento">
+          <input name="g" inputmode="decimal" placeholder="g" class="grams" aria-label="Gramos">
+          <button type="button" class="chip mode-chip" data-action="add-mode" hidden aria-label="Cambiar entre gramos y unidades">u</button>
+          <button class="btn">+</button>
+        </div>
+        <div class="food-results"></div>
+      </form>`
+    : extraMode === 'manual'
+      ? `<form class="stack" data-form="extra-manual" novalidate>
+          <input name="name" placeholder="¿Qué comiste? (ej. Completo)" autocomplete="off" aria-label="Qué comiste">
+          <div class="extra-macros">
+            <label class="field"><span>Calorías</span><input name="kcal" inputmode="numeric" placeholder="kcal" autocomplete="off"></label>
+            <label class="field"><span>Prot.</span><input name="p" inputmode="decimal" placeholder="g" autocomplete="off"></label>
+            <label class="field"><span>Carbos</span><input name="c" inputmode="decimal" placeholder="g" autocomplete="off"></label>
+            <label class="field"><span>Grasas</span><input name="f" inputmode="decimal" placeholder="g" autocomplete="off"></label>
+          </div>
+          <p class="muted small" style="margin:0">Solo el nombre y las calorías son obligatorios.</p>
+          <p class="form-msg" hidden></p>
+          <button class="btn primary block">Agregar</button>
+        </form>`
+      : '';
+  return `<h2>Extras de hoy</h2>
+    <section class="card stack">
+      ${list || '<p class="muted small" style="margin:0">Lo que comas fuera de tu dieta se suma al día.</p>'}
+      <div class="ex-actions extra-modes">
+        <button class="btn ${extraMode === 'food' ? 'primary' : ''}" data-action="extra-mode" data-v="food">Buscar alimento</button>
+        <button class="btn ${extraMode === 'manual' ? 'primary' : ''}" data-action="extra-mode" data-v="manual">Anotar a mano</button>
+      </div>
+      ${form}
+    </section>`;
+}
+
+// Lee el formulario de buscar alimento (dieta o extras): { foodId, g } o { foodId, n }, o null si falta algo
+function readFoodForm(f) {
+  const typed = normText(f.elements.q.value.trim());
+  const exact = typed && [...N().foods, ...BASE_FOODS].find(x => normText(x.name) === typed);
+  const foodId = f.dataset.food || (exact && exact.id), g = num(f.elements.g.value);
+  if (!foodId) { alert('Busca el alimento y elígelo de la lista.'); f.elements.q.focus(); return null; }
+  const food = foodById(foodId), portions = !!food.unitG && f.dataset.mode === 'u' && f.dataset.food === foodId;
+  const count = isUnit(food) || portions;
+  if (g == null || g <= 0 || g > (count ? 100 : 5000)) { alert(count ? 'Escribe la cantidad (ej. 2).' : 'Escribe los gramos (ej. 120).'); f.elements.g.focus(); return null; }
+  return portions ? { foodId, n: round1(g) } : { foodId, g: round1(g) };
 }
 
 // ---------- Agua ----------
@@ -1114,13 +1269,16 @@ function viewAccount() {
       <label class="field"><span>Estatura</span>
         <div class="add-row" style="margin-top:0"><input name="height" inputmode="numeric" value="${bd.heightCm || ''}" placeholder="ej. 175" autocomplete="off" aria-label="Estatura en cm"><span class="unit-label">cm</span></div>
       </label>
+      <label class="field"><span>Año de nacimiento</span>
+        <input name="birth" inputmode="numeric" value="${bd.birthYear || ''}" placeholder="ej. 1998" autocomplete="bday-year" aria-label="Año de nacimiento">
+      </label>
       <div class="field"><span>Sexo</span>
         <div class="per-choice">
           <label><input type="radio" name="sex" value="h" ${bd.sex === 'h' ? 'checked' : ''}> Hombre</label>
           <label><input type="radio" name="sex" value="m" ${bd.sex === 'm' ? 'checked' : ''}> Mujer</label>
         </div>
       </div>
-      <p class="muted small" style="margin:0">La estatura y el sexo se usan para calcular tu FFMI en Peso.</p>
+      <p class="muted small" style="margin:0">Se usan para calcular tu FFMI en Peso y tus calorías objetivo en Nutrición.</p>
       <p class="form-msg" hidden></p>
       <button class="btn primary block">Guardar cambios</button>
     </form>
@@ -1169,7 +1327,10 @@ async function saveProfileData(f) {
   const hText = f.elements.height.value.trim(), h = num(hText), sex = f.elements.sex.value;
   if (!name) return formMsg(f, 'Escribe un nombre de usuario.');
   if (hText && (h == null || h < 100 || h > 250)) return formMsg(f, 'Escribe tu estatura en cm (ej. 175) o déjala vacía.');
+  const yText = f.elements.birth.value.trim(), year = num(yText), now = new Date().getFullYear();
+  if (yText && (year == null || year < now - 100 || year > now - 10)) return formMsg(f, 'Escribe tu año de nacimiento (ej. 1998) o déjalo vacío.');
   if (hText) db.body.heightCm = Math.round(h); else delete db.body.heightCm;
+  if (yText) db.body.birthYear = Math.round(year); else delete db.body.birthYear;
   if (sex) db.body.sex = sex;
   save();
   if (name !== user.username) {
@@ -2684,6 +2845,7 @@ function render() {
   if (screen !== 'rutina' && screen !== 'dieta') shareResult = null;
   if (screen !== 'chat') { attach = null; editingMsg = null; selectedMsg = null; }
   if (screen !== 'agua') waterEditing = null;
+  if (screen !== 'nutricion') extraMode = null;
   if (screen !== 'chat' && screen !== 'perfil') closeMessages();   // el perfil muestra lo compartido en el chat
 
   let html, tab = null;
@@ -2703,6 +2865,7 @@ function render() {
     case 'rutinas': html = viewHome(); tab = 'rutinas'; break;
     case 'peso': html = viewBodyweight(); break;
     case 'sueno': html = viewSleep(); break;
+    case 'objetivo': html = viewTarget(); break;
     case 'nutricion': html = viewNutrition(arg); break;
     case 'alimento': html = viewFoodForm(arg, routeParts()[2]); break;
     case 'dieta': html = viewDietEditor(arg); break;
@@ -3481,6 +3644,29 @@ $app.addEventListener('click', e => {
       go('#/dieta/' + diet.id);
       break;
     }
+    case 'extra-mode':
+      extraMode = extraMode === el.dataset.v ? null : el.dataset.v;
+      render();
+      { const input = $app.querySelector('[data-form="extra-food"] [name="q"], [data-form="extra-manual"] [name="name"]'); if (input) input.focus(); }
+      break;
+    case 'extra-del': {
+      const day = N().log[todayKey()];
+      if (!day || !day.extras) return;
+      const k = day.extras.findIndex(x => x.id === id);
+      if (k < 0) return;
+      const [removed] = day.extras.splice(k, 1);
+      save(); render();
+      showUndo('Extra quitado', () => { (N().log[todayKey()].extras ||= []).splice(k, 0, removed); save(); render(); });
+      break;
+    }
+    case 'set-pace':
+      db.body.pace = Number(el.dataset.v);
+      save(); render();
+      break;
+    case 'set-activity':
+      db.body.activity = el.dataset.v;
+      save(); render();
+      break;
     case 'meal-add': {
       const diet = dietById(routeParts()[1]);
       diet.meals.push({ id: uid(), name: `Comida ${diet.meals.length + 1}`, items: [] });
@@ -3787,16 +3973,23 @@ $app.addEventListener('submit', e => {
     case 'sleep': saveSleep(parseHours(f.elements.h.value), f); return;
     case 'food': saveFood(f); return;
     case 'add-item': {
-      const diet = dietById(routeParts()[1]), m = +f.dataset.m;
-      const typed = normText(f.elements.q.value.trim());
-      const exact = typed && [...N().foods, ...BASE_FOODS].find(x => normText(x.name) === typed);
-      const foodId = f.dataset.food || (exact && exact.id), g = num(f.elements.g.value);
-      if (!foodId) { alert('Busca el alimento y elígelo de la lista.'); f.elements.q.focus(); return; }
-      const food = foodById(foodId), portions = !!food.unitG && f.dataset.mode === 'u' && f.dataset.food === foodId;
-      const count = isUnit(food) || portions;
-      if (g == null || g <= 0 || g > (count ? 100 : 5000)) { alert(count ? 'Escribe la cantidad (ej. 2).' : 'Escribe los gramos (ej. 120).'); f.elements.g.focus(); return; }
-      diet.meals[m].items.push(portions ? { foodId, n: round1(g) } : { foodId, g: round1(g) });
+      const diet = dietById(routeParts()[1]), m = +f.dataset.m, item = readFoodForm(f);
+      if (!item) return;
+      diet.meals[m].items.push(item);
       save(); render();
+      return;
+    }
+    case 'extra-food': {
+      const item = readFoodForm(f);
+      if (item) addExtra(item);
+      return;
+    }
+    case 'extra-manual': {
+      const name = f.elements.name.value.trim(), kcal = num(f.elements.kcal.value);
+      const macro = k => { const v = num(f.elements[k].value); return v != null && v >= 0 ? round1(v) : 0; };
+      if (!name) return formMsg(f, 'Escribe qué comiste.');
+      if (kcal == null || kcal <= 0 || kcal > 5000) return formMsg(f, 'Escribe las calorías (ej. 450).');
+      addExtra({ name, kcal: Math.round(kcal), p: macro('p'), c: macro('c'), f: macro('f') });
       return;
     }
     case 'water-edit': {

@@ -604,3 +604,16 @@ a.card.hub { display: grid; }
 
 /* Cuenta: el correo no se puede cambiar */
 input.readonly { color: var(--muted); background: transparent; }
+
+/* Calorías objetivo y extras */
+.target-line { display: block; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); color: var(--muted); font-size: 14px; text-decoration: none; }
+.target-line strong { color: var(--text); }
+.pace-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.choice { display: grid; gap: 2px; text-align: left; width: 100%; font: inherit; color: var(--text); cursor: pointer; }
+.choice.on { border-color: var(--accent); }
+.choice.on strong { color: var(--accent); }
+.target-card .prog-row { padding: 6px 0; }
+.extra-modes .btn { flex: 1; min-width: 0; }
+.extra-macros { display: grid; grid-template-columns: 1.3fr repeat(3, 1fr); gap: 6px; }
+.extra-macros input { min-width: 0; width: 100%; text-align: center; padding: 0 4px; }
+.extra-macros .field span { font-size: 12px; }
