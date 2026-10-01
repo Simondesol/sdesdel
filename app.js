@@ -729,8 +729,8 @@ function viewRoutine() {
         <label class="rest-field">Rest
           <input data-bind="ex-rest" data-i="${i}" value="${ex.rest ? fmtRest(ex.rest) : ''}" placeholder="m:ss" autocomplete="off" aria-label="Descanso entre series">
         </label>
-        <button class="chip toggle ${ex.rir ? 'on' : ''}" data-action="toggle-rir" data-i="${i}" aria-pressed="${!!ex.rir}">RIR ${ex.rir ? '✓' : ''}</button>
-        <button class="chip toggle ${ex.dropset ? 'on' : ''}" data-action="toggle-drop" data-i="${i}" aria-pressed="${!!ex.dropset}">Dropset ${ex.dropset ? '✓' : ''}</button>
+        <button class="chip toggle ${ex.rir ? 'on' : ''}" data-action="toggle-rir" data-i="${i}" aria-pressed="${!!ex.rir}">RIR</button>
+        <button class="chip toggle ${ex.dropset ? 'on' : ''}" data-action="toggle-drop" data-i="${i}" aria-pressed="${!!ex.dropset}">Dropset</button>
       </div>
       <div class="ex-goals" aria-label="Objetivo (opcional)">
         <label>Series<input data-bind="ex-goal-sets" data-i="${i}" inputmode="numeric" value="${ex.goalSets || ''}" placeholder="–" autocomplete="off" aria-label="Series objetivo"></label>
@@ -740,7 +740,7 @@ function viewRoutine() {
           : '<div class="goal-fixed-wrap"><span>Hasta</span><span class="goal-fixed" title="Activa RIR para poner un RIR objetivo">Fallo</span></div>'}
       </div>
     </li>
-    ${i < last ? `<li class="ss-link"><button class="chip toggle ${ex.ssNext ? 'on' : ''}" data-action="toggle-ss" data-i="${i}" aria-pressed="${!!ex.ssNext}">🔗 ${ex.ssNext ? 'En superset con el siguiente ✓' : 'Hacer superset con el siguiente'}</button></li>` : ''}`).join('');
+    ${i < last ? `<li class="ss-link"><button class="chip toggle ${ex.ssNext ? 'on' : ''}" data-action="toggle-ss" data-i="${i}" aria-pressed="${!!ex.ssNext}">🔗 ${ex.ssNext ? 'En superset con el siguiente' : 'Hacer superset con el siguiente'}</button></li>` : ''}`).join('');
   return `${header('Editar rutina', { back: true })}
     <label class="field"><span>Nombre de la rutina</span>
       <input data-bind="routine-name" value="${esc(r.name)}" autocomplete="off">
@@ -786,6 +786,8 @@ function viewWorkout() {
   const gi = groupIndex(groups, d.pos), group = groups[gi], isLast = gi === groups.length - 1;
   const bests = new Map(group.map(k => [k, bestSets(d.exercises[k].exerciseId, before)]));
 
+  // "↓ drop" solo en ejercicios marcados como Dropset en la rutina (o que ya tienen bajadas, al editar uno guardado)
+  const canDrop = ex => ex.dropset || ex.sets.some(st => st.drops && st.drops.length);
   // Fila de una serie, con sus bajadas de dropset debajo (label: "1", o "A1" en un superset)
   const setRow = (ex, i, s, j, label) => {
     const best = bests.get(i);
@@ -813,7 +815,7 @@ function viewWorkout() {
       </div>
       ${drops}
       <div class="set-ref"><span>${best[j] ? `Mejor: ${fmtNum(best[j].w)} ${best[j].unit} × ${fmtNum(best[j].r)}` : ''}</span>
-        <button class="drop-add" data-action="add-drop" data-i="${i}" data-j="${j}">↓ drop</button></div>`;
+        ${canDrop(ex) ? `<button class="drop-add" data-action="add-drop" data-i="${i}" data-j="${j}">↓ drop</button>` : ''}</div>`;
   };
 
   // Objetivo de la rutina (si tiene), aviso para subir el peso, nota y "Primera vez"
