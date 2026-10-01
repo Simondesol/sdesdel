@@ -633,3 +633,16 @@ input.readonly { color: var(--muted); background: transparent; }
 .bf-row { align-items: center; }
 .bf-row input { width: 70px; flex: none; text-align: center; }
 .bf-row .muted { flex: 1; }
+
+/* Calorías objetivo más a la vista */
+.target-banner { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; border-color: var(--accent); }
+.target-banner .grow { display: grid; gap: 2px; }
+.target-kcal strong { font-size: 22px; }
+.diet-target { display: grid; gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+.diet-target a { text-decoration: none; }
+.start-steps .card { display: flex; align-items: center; gap: 12px; }
+.start-steps .grow { display: grid; gap: 2px; }
+.step-n {
+  flex: none; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--surface2); color: var(--accent); font-weight: 700;
+}
