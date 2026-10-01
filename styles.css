@@ -608,7 +608,6 @@ input.readonly { color: var(--muted); background: transparent; }
 /* Calorías objetivo y extras */
 .target-line { display: block; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); color: var(--muted); font-size: 14px; text-decoration: none; }
 .target-line strong { color: var(--text); }
-.pace-chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .choice { display: grid; gap: 2px; text-align: left; width: 100%; font: inherit; color: var(--text); cursor: pointer; }
 .choice.on { border-color: var(--accent); }
 .choice.on strong { color: var(--accent); }
@@ -624,8 +623,7 @@ input.readonly { color: var(--muted); background: transparent; }
 .bd-row:last-child { border-bottom: 0; }
 .bd-val { flex: none; font-variant-numeric: tabular-nums; font-weight: 600; }
 .bd-total strong, .bd-total .bd-val { color: var(--accent); font-size: 17px; }
-.pace-other { margin-top: 10px; align-items: center; }
-.pace-other input { flex: 1; min-width: 0; text-align: center; }
-.pace-other input.on { border-color: var(--accent); }
-.steps-form { margin-top: 8px; }
-.steps-form input { flex: 1; min-width: 0; text-align: center; }
+/* "Subir 0,5 kg al mes": la palabra cambia entre Bajar, Mantener y Subir */
+.pace-sentence { display: flex; align-items: center; gap: 10px; font-size: 17px; font-weight: 600; }
+.pace-dir { flex: none; min-width: 110px; color: var(--accent); border-color: var(--accent); font-size: 17px; }
+.pace-sentence input { width: 76px; flex: none; text-align: center; font-size: 17px; }
