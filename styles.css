@@ -568,3 +568,14 @@ a.card.hub { display: grid; }
 .modal h2 { margin: 0; font-size: 18px; color: var(--text); text-transform: none; letter-spacing: 0; }
 .sleep-quick { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
 .sleep-quick .btn { padding: 0; }
+
+/* Agua: botones a tu medida, corregir registros y racha */
+.water-btns .btn { display: grid; justify-items: center; gap: 2px; line-height: 1.15; padding: 8px 6px; min-width: 0; }
+.water-btns .btn small { font-size: 12px; font-weight: 600; opacity: .8; }
+.hub .ex-actions .btn { min-width: 0; padding: 0 6px; }
+.quick-row input:first-child { flex: 1; min-width: 0; }
+.quick-row .grams { flex: none; width: 76px; }
+.water-edit .grams { width: 72px; text-align: center; }
+.water-edit .small-btn { min-height: 36px; padding: 0 10px; font-size: 13px; }
+.streak { color: var(--accent); font-weight: 600; }
+.hub-top .badge { margin-left: 4px; }

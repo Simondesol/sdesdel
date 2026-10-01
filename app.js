@@ -141,7 +141,7 @@ const bar = (value, goal) => `<div class="meter" role="progressbar" aria-valuemi
 function viewHub() {
   maybeAskSleep();
   const d = db.draft;
-  const ml = waterToday(), goal = waterGoal().ml;
+  const ml = waterToday(), goal = waterGoal().ml, streak = waterStreak();
   return `${header('Desdel', { sub: 'Entrena. Anota. Supera.', right: GEAR })}
     <div class="hub-wrap">
     <a class="card hub" href="#/rutinas">
@@ -154,12 +154,11 @@ function viewHub() {
     ${socialCard()}
 
     <div class="card hub">
-      <a class="hub-top" href="#/agua"><span class="hub-icon">💧</span><strong>Agua</strong><span class="chev">›</span></a>
+      <a class="hub-top" href="#/agua"><span class="hub-icon">💧</span><strong>Agua</strong>${streak >= 2 ? `<span class="badge on" title="Días seguidos cumpliendo tu meta">🔥 ${streak}</span>` : ''}<span class="chev">›</span></a>
       <a class="hub-value" href="#/agua"><strong>${fmtL(ml)} / ${fmtL(goal)}</strong> L${ml >= goal ? ' · ¡Meta cumplida! 🎉' : ''}</a>
       ${bar(ml, goal)}
       <div class="ex-actions">
-        <button class="btn" data-action="water-add" data-ml="250">+250 ml</button>
-        <button class="btn" data-action="water-add" data-ml="500">+500 ml</button>
+        ${waterQuick().map(q => `<button class="btn" data-action="water-add" data-ml="${q.ml}">${quickIcon(q.ml)} ${q.ml} ml</button>`).join('')}
       </div>
     </div>
 
@@ -502,6 +501,33 @@ function waterGoal() {
   return last ? { ml: Math.round((last.kg * 35) / 100) * 100, auto: true, kg: last.kg } : { ml: 2500, auto: true };
 }
 
+// Botones rápidos (los eliges tú, ej. "Vaso 200 ml" y "Botella 750 ml"); hasta 4
+const DEFAULT_QUICK = [{ name: 'Vaso', ml: 250 }, { name: 'Botella', ml: 500 }];
+const waterQuick = () => (db.water.quick && db.water.quick.length ? db.water.quick : DEFAULT_QUICK);
+const quickIcon = ml => (ml >= 500 ? '🧴' : '🥛');
+function ensureQuick() {
+  if (!db.water.quick || !db.water.quick.length) db.water.quick = DEFAULT_QUICK.map(q => ({ ...q }));
+  return db.water.quick;
+}
+// Mientras escribes no se redibuja (para no cerrar el teclado); la cantidad solo se guarda si es válida
+function setQuick(el) {
+  const q = ensureQuick()[+el.dataset.k];
+  if (!q) return;
+  if (el.dataset.bind === 'wq-name') q.name = el.value.trim();
+  else { const ml = Math.round(num(el.value) || 0); if (ml >= 10 && ml <= 5000) q.ml = ml; }
+}
+let waterEditing = null;   // registro de hoy que estás corrigiendo (posición en la lista)
+
+// Racha: días seguidos cumpliendo la meta (si hoy todavía no la cumples, cuenta hasta ayer)
+function waterStreak() {
+  const goal = waterGoal().ml, d = new Date();
+  const met = () => waterDay(dayKeyOf(d)).reduce((a, e) => a + e.ml, 0) >= goal;
+  if (!met()) d.setDate(d.getDate() - 1);
+  let n = 0;
+  while (met() && n < 3650) { n++; d.setDate(d.getDate() - 1); }
+  return n;
+}
+
 function addWater(ml) {
   const key = todayKey(), entry = { at: new Date().toISOString(), ml };
   (db.water.days[key] ||= []).push(entry);
@@ -513,14 +539,24 @@ function addWater(ml) {
 }
 
 function viewWater() {
-  const ml = waterToday(), g = waterGoal();
-  const entries = waterDay().map((e, k) => `
-    <div class="prog-row">
-      <span class="muted">${new Date(e.at).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })}</span>
-      <span class="bw-right">${e.ml} ml
-        <button class="icon small danger" data-action="water-del" data-k="${k}" aria-label="Borrar">✕</button>
-      </span>
-    </div>`).reverse().join('');
+  const ml = waterToday(), g = waterGoal(), streak = waterStreak(), quick = waterQuick();
+  const hhmmOf = at => new Date(at).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
+  const entries = waterDay().map((e, k) => (waterEditing === k
+    ? `<form class="prog-row water-edit" data-form="water-edit" data-k="${k}" novalidate>
+        <span class="muted">${hhmmOf(e.at)}</span>
+        <span class="bw-right">
+          <input name="ml" class="grams" inputmode="numeric" value="${e.ml}" aria-label="Cantidad en ml"><span class="unit-label">ml</span>
+          <button class="btn primary small-btn">Guardar</button>
+          <button type="button" class="icon small" data-action="water-edit-cancel" aria-label="Cancelar">✕</button>
+        </span>
+      </form>`
+    : `<div class="prog-row">
+        <span class="muted">${hhmmOf(e.at)}</span>
+        <span class="bw-right">${e.ml} ml
+          <button class="icon small" data-action="water-edit" data-k="${k}" aria-label="Corregir">✏️</button>
+          <button class="icon small danger" data-action="water-del" data-k="${k}" aria-label="Borrar">✕</button>
+        </span>
+      </div>`)).reverse().join('');
 
   // Últimos 7 días
   const days = [];
@@ -540,9 +576,9 @@ function viewWater() {
       <div class="water-big"><strong>${fmtL(ml)}</strong> / ${fmtL(g.ml)} L</div>
       ${bar(ml, g.ml)}
       <div class="muted">${ml >= g.ml ? '¡Meta cumplida! 🎉' : `Te faltan ${fmtL(g.ml - ml)} L`}</div>
+      ${streak ? `<div class="streak">🔥 ${streak === 1 ? '1 día cumpliendo tu meta' : `${streak} días seguidos cumpliendo tu meta`}</div>` : ''}
       <div class="ex-actions water-btns">
-        <button class="btn primary" data-action="water-add" data-ml="250">+250 ml</button>
-        <button class="btn primary" data-action="water-add" data-ml="500">+500 ml</button>
+        ${quick.map(q => `<button class="btn primary" data-action="water-add" data-ml="${q.ml}">${quickIcon(q.ml)} ${esc(q.name || 'Agua')}<small>+${q.ml} ml</small></button>`).join('')}
       </div>
       <form class="add-row" data-form="water-custom" novalidate>
         <input name="ml" inputmode="numeric" placeholder="Otra cantidad (ml)" autocomplete="off" aria-label="Cantidad en ml">
@@ -554,6 +590,18 @@ function viewWater() {
 
     <h2>Últimos 7 días</h2>
     <section class="card">${days.join('')}</section>
+
+    <h2>Botones rápidos</h2>
+    <section class="card stack">
+      <p class="muted small" style="margin:0">Pon el nombre y los ml de tu vaso, botella o shaker para anotar de un toque.</p>
+      ${quick.map((q, k) => `<div class="add-row quick-row" style="margin-top:0">
+        <input data-bind="wq-name" data-k="${k}" value="${esc(q.name)}" placeholder="Nombre (ej. Vaso)" autocomplete="off" aria-label="Nombre del botón">
+        <input class="grams" data-bind="wq-ml" data-k="${k}" inputmode="numeric" value="${q.ml}" autocomplete="off" aria-label="Cantidad en ml">
+        <span class="unit-label">ml</span>
+        <button class="icon small danger" data-action="wq-del" data-k="${k}" ${quick.length <= 1 ? 'disabled' : ''} aria-label="Quitar botón">✕</button>
+      </div>`).join('')}
+      ${quick.length < 4 ? '<button class="btn ghost" data-action="wq-add">+ Agregar botón</button>' : ''}
+    </section>
 
     <h2>Meta diaria</h2>
     <form class="stack card" data-form="water-goal" novalidate>
@@ -2453,6 +2501,7 @@ function render() {
   if (screen !== 'sesion' || arg !== justFinished) justFinished = null;
   if (screen !== 'rutina' && screen !== 'dieta') shareResult = null;
   if (screen !== 'chat') { attach = null; editingMsg = null; selectedMsg = null; }
+  if (screen !== 'agua') waterEditing = null;
   if (screen !== 'chat' && screen !== 'perfil') closeMessages();   // el perfil muestra lo compartido en el chat
 
   let html, tab = null;
@@ -2700,7 +2749,7 @@ function stable(v) {
 const clone = v => JSON.parse(JSON.stringify(v));
 // El peso corporal solo se incluye si hay registros: así un teléfono con la versión anterior
 // no ve una diferencia y no sobrescribe en la nube los pesos anotados en otro teléfono
-const hasWater = w => !!w && (w.goalMl != null || Object.keys(w.days || {}).length > 0);
+const hasWater = w => !!w && (w.goalMl != null || Object.keys(w.days || {}).length > 0 || (w.quick || []).length > 0);
 const mainData = () => ({
   routines: db.routines, notes: db.notes,
   ...(db.bodyweight.length ? { bodyweight: db.bodyweight } : {}),
@@ -3290,6 +3339,33 @@ $app.addEventListener('click', e => {
       });
       break;
     }
+    case 'water-edit': {
+      waterEditing = Number(el.dataset.k);
+      render();
+      const input = $app.querySelector('[data-form="water-edit"] input');
+      if (input) { input.focus(); input.select(); }
+      break;
+    }
+    case 'water-edit-cancel':
+      waterEditing = null;
+      render();
+      break;
+    case 'wq-add': {
+      const quick = ensureQuick();
+      if (quick.length >= 4) return;
+      quick.push({ name: '', ml: 330 });
+      save(); render();
+      const input = $app.querySelector(`[data-bind="wq-name"][data-k="${quick.length - 1}"]`);
+      if (input) input.focus();
+      break;
+    }
+    case 'wq-del': {
+      const quick = ensureQuick();
+      if (quick.length <= 1) return;
+      quick.splice(Number(el.dataset.k), 1);
+      save(); render();
+      break;
+    }
     case 'water-auto':
       db.water.goalMl = null;
       save(); render();
@@ -3437,7 +3513,8 @@ $app.addEventListener('input', e => {
     return;
   }
   const i = +el.dataset.i, j = +el.dataset.j;
-  if (bind === 'routine-name') curRoutine().name = el.value;
+  if (bind === 'wq-name' || bind === 'wq-ml') setQuick(el);
+  else if (bind === 'routine-name') curRoutine().name = el.value;
   else if (bind === 'ex-name') curRoutine().exercises[i].name = el.value;
   else if (bind === 'ex-rest') {
     const sec = parseRest(el.value);
@@ -3487,6 +3564,8 @@ $app.addEventListener('focusout', e => {
   } else if (bind === 'ex-rest') {
     const ex = curRoutine() && curRoutine().exercises[+e.target.dataset.i];
     if (ex) e.target.value = ex.rest ? fmtRest(ex.rest) : '';   // muestra el tiempo como m:ss
+  } else if (bind === 'wq-name' || bind === 'wq-ml') {
+    refresh();   // al salir del cuadro se ven los botones rápidos actualizados
   } else if (bind && bind.startsWith('ex-goal-')) {
     // Muestra el objetivo guardado ("8 10" queda "8-10"; si no era válido vuelve a lo anterior)
     const ex = curRoutine() && curRoutine().exercises[+e.target.dataset.i];
@@ -3522,6 +3601,14 @@ $app.addEventListener('submit', e => {
       const count = isUnit(food) || portions;
       if (g == null || g <= 0 || g > (count ? 100 : 5000)) { alert(count ? 'Escribe la cantidad (ej. 2).' : 'Escribe los gramos (ej. 120).'); f.elements.g.focus(); return; }
       diet.meals[m].items.push(portions ? { foodId, n: round1(g) } : { foodId, g: round1(g) });
+      save(); render();
+      return;
+    }
+    case 'water-edit': {
+      const ml = Math.round(num(f.elements.ml.value) || 0), entry = waterDay()[Number(f.dataset.k)];
+      if (ml < 10 || ml > 5000) { alert('Escribe una cantidad en ml (ej. 300).'); return; }
+      if (entry) entry.ml = ml;
+      waterEditing = null;
       save(); render();
       return;
     }
