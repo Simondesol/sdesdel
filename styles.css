@@ -266,13 +266,14 @@ select { width: auto; }
 .stack { display: grid; gap: 12px; }
 .form-msg { margin: 0; font-size: 14px; color: var(--danger); }
 .form-msg.ok { color: var(--accent); }
-.import-box { margin-top: 12px; }
+.import-box { margin-top: 16px; display: grid; gap: 8px; }
 .import-box .add-row { margin-top: 0; }
+.import-box .ex-actions .btn { flex: 1; }
 .import-box input { text-transform: uppercase; letter-spacing: .08em; }
 
 /* Código para compartir una rutina */
 .share-box { display: grid; gap: 10px; text-align: center; }
-.share-box .code {
+.share-box .code, .handoff .code {
   font-size: 32px; font-weight: 700; letter-spacing: .12em;
   color: var(--accent); font-variant-numeric: tabular-nums;
 }
@@ -457,3 +458,8 @@ a.card.hub { display: grid; }
 .mode-chip[hidden] { display: none; }
 
 .item-row .unit-label { flex: none; width: 36px; text-align: center; }
+
+/* Link abierto en Safari de iPhone: copiar el código para pegarlo en la app */
+.handoff .code { margin: 4px 0 12px; }
+.handoff-steps { text-align: left; margin: 16px 0; padding-left: 22px; line-height: 1.6; }
+.handoff .muted.small { text-align: left; margin-bottom: 12px; }

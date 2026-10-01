@@ -645,15 +645,44 @@ function viewHome() {
 }
 
 // Formulario para pegar un código (sirve tanto para rutinas como para dietas)
-const importForm = label => (importOpen ? `
-    <form class="stack import-box" data-form="import-code" novalidate>
+const importForm = label => `<section class="import-box">
+    <div class="muted small">${label}</div>
+    ${importOpen ? `
+    <form class="stack" data-form="import-code" novalidate>
       <div class="add-row">
         <input name="code" placeholder="Código (ej. K7P-9XQ)" autocomplete="off" autocapitalize="characters" maxlength="9" aria-label="Código">
         <button class="btn">Importar</button>
       </div>
       <p class="form-msg" hidden></p>
     </form>`
-  : `<button class="btn ghost block" data-action="show-import">${label}</button>`);
+    : `<div class="ex-actions">
+        <button class="btn" data-action="paste-import">📋 Pegar código</button>
+        <button class="btn ghost" data-action="show-import">Escribir código</button>
+      </div>`}
+  </section>`;
+
+// Saca el código de lo copiado: el código solo ("K7P-9XQ"), el link (?r=K7P9XQ) o el mensaje completo
+function codeFromText(text) {
+  const t = (text || '').toUpperCase();
+  const m = t.match(/[?&]R=([A-Z0-9]{6})\b/) || t.match(/\b([A-Z0-9]{3})-([A-Z0-9]{3})\b/) || t.trim().match(/^([A-Z0-9]{3})\s*-?\s*([A-Z0-9]{3})$/);
+  return m ? m.slice(1).join('') : '';
+}
+
+// "Pegar código": lee lo copiado e importa de una vez
+async function pasteImport() {
+  let text = '';
+  try { text = await navigator.clipboard.readText(); } catch (e) { /* el teléfono no dejó leer lo copiado */ }
+  const code = codeFromText(text);
+  importOpen = true;
+  render();
+  const f = $app.querySelector('[data-form="import-code"]');
+  if (!code) {
+    f.elements.code.focus();
+    return formMsg(f, text ? 'Lo que copiaste no es un código de Desdel. Escríbelo aquí.' : 'No se pudo pegar. Mantén presionado el cuadro, elige "Pegar" y toca Importar.');
+  }
+  f.elements.code.value = fmtCode(code);
+  importRoutine(f);
+}
 
 function viewRoutine() {
   const r = curRoutine();
@@ -971,9 +1000,9 @@ const PENDING_IMPORT = 'desdel-importar';
 const shareLink = code => `${location.origin}${location.pathname}?r=${code}`;
 const shareText = ({ name, code, kind }) => kind === 'diet'
   ? `Te comparto la dieta "${name}" en Desdel 🥗\n\nTócalo para agregarla:\n${shareLink(code)}\n\n` +
-    `Si no se abre, en Desdel ve a Nutrición → Mis dietas → "Importar dieta con código" y pega: ${fmtCode(code)}`
+    `Si no se abre, copia este código, abre Desdel y en Nutrición → Mis dietas toca "Pegar código": ${fmtCode(code)}`
   : `Te comparto mi rutina "${name}" en Desdel 💪\n\nTócalo para agregarla:\n${shareLink(code)}\n\n` +
-    `Si no se abre, en Desdel toca "Importar rutina con código" y pega: ${fmtCode(code)}`;
+    `Si no se abre, copia este código, abre Desdel y en Rutinas toca "Pegar código": ${fmtCode(code)}`;
 
 // Sube lo compartido con un código nuevo (si el código ya existe se prueba otro)
 async function shareWithCode(btn, data, result) {
@@ -1119,6 +1148,23 @@ function importDiet(data) {
 }
 
 const logoImg = '<img class="auth-logo" src="icons/logo-full.png" alt="Desdel">';
+
+// En iPhone los links siempre se abren en Safari (no en la app instalada), así que se copia el código para pegarlo en la app
+let handoffCode = null;
+function viewHandoff() {
+  return `<div class="auth handoff">${logoImg}
+    <p><strong>Te compartieron una rutina o una dieta</strong></p>
+    <div class="code">${fmtCode(handoffCode)}</div>
+    <button class="btn primary block" data-action="handoff-copy">📋 Copiar código</button>
+    <ol class="handoff-steps">
+      <li>Toca <strong>Copiar código</strong>.</li>
+      <li>Abre <strong>Desdel</strong> desde tu pantalla de inicio.</li>
+      <li>En <strong>Rutinas</strong> o en <strong>Nutrición → Mis dietas</strong> toca <strong>📋 Pegar código</strong>.</li>
+    </ol>
+    <p class="muted small">¿Todavía no tienes Desdel instalada? En Safari toca Compartir <span aria-hidden="true">⬆️</span> → <strong>Agregar a pantalla de inicio</strong>, ábrela desde ahí y pega el código.</p>
+    <button class="btn ghost block" data-action="handoff-here">Seguir aquí en Safari</button>
+  </div>`;
+}
 function viewStatus() {
   if (status === 'booting') return `<div class="auth">${logoImg}<p class="muted">Cargando…</p></div>`;
   if (status === 'load-error') {
@@ -1542,6 +1588,7 @@ function viewExercise(id) {
 function render() {
   const [screen, arg = ''] = routeParts();
   const authScreen = screen === 'login' || screen === 'registro';
+  if (handoffCode) { $app.innerHTML = viewHandoff(); $tabs.hidden = true; return; }
 
   // Sin sesión: solo pantallas de acceso. Cargando o con error: pantalla de estado.
   if (status !== 'ready') {
@@ -2334,6 +2381,9 @@ $app.addEventListener('click', e => {
       else window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
       break;
     }
+    case 'paste-import':
+      pasteImport();
+      break;
     case 'show-import':
       importOpen = true;
       render();
@@ -2352,6 +2402,17 @@ $app.addEventListener('click', e => {
       break;
     case 'reload':
       location.reload();
+      break;
+    case 'handoff-copy':
+      navigator.clipboard.writeText(fmtCode(handoffCode))
+        .then(() => { el.textContent = '✓ Código copiado. Ahora abre Desdel'; }, () => alert(`Código: ${fmtCode(handoffCode)}`));
+      break;
+    case 'handoff-here':
+      // Sigue el camino normal: inicia sesión aquí y se importa
+      localStorage.setItem(PENDING_IMPORT, handoffCode);
+      handoffCode = null;
+      if (status === 'ready') importFromLink();
+      render();
       break;
   }
 });
@@ -2489,8 +2550,13 @@ $app.addEventListener('submit', e => {
 // ---------- Inicio ----------
 // Link de rutina compartida (?r=CÓDIGO): se guarda para importarla y se limpia la dirección
 const linkParams = new URLSearchParams(location.search);
+const isLocal = ['localhost', '127.0.0.1'].includes(location.hostname);
+const isIPhone = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const isInstalled = navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
 if (linkParams.get('r')) {
-  localStorage.setItem(PENDING_IMPORT, normCode(linkParams.get('r')));
+  // En Safari de iPhone (fuera de la app) se muestra el código para copiarlo; en local se prueba con ?ios
+  if ((isIPhone && !isInstalled) || (isLocal && linkParams.has('ios'))) handoffCode = normCode(linkParams.get('r'));
+  else localStorage.setItem(PENDING_IMPORT, normCode(linkParams.get('r')));
   linkParams.delete('r');
   const qs = linkParams.toString();
   history.replaceState(null, '', `${location.pathname}${qs ? `?${qs}` : ''}${location.hash}`);
