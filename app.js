@@ -172,7 +172,7 @@ function searchFoods(query, limit = 8) {
   const words = normText(query.trim()).split(/\s+/).filter(Boolean);
   if (!words.length) return [];
   // Cada palabra buscada debe coincidir con el comienzo de alguna palabra del nombre ("pollo" no encuentra "repollo")
-  const match = f => { const parts = normText(f.name).split(/[^a-z0-9%]+/); return words.every(w => parts.some(x => x.startsWith(w))); };
+  const match = f => { const parts = normText(`${f.name} ${f.alias || ''}`).split(/[^a-z0-9%]+/); return words.every(w => parts.some(x => x.startsWith(w))); };
   const mine = N().foods.filter(match).sort((a, b) => a.name.localeCompare(b.name, 'es'));
   const myNames = new Set(N().foods.map(f => normText(f.name)));
   const base = BASE_FOODS.filter(f => match(f) && !myNames.has(normText(f.name)));

@@ -293,9 +293,44 @@ const MORE = {
   ],
 };
 for (const [cat, list] of Object.entries(MORE)) (RAW[cat] ||= []).push(...list);
+RAW['Cereales, panes y tubérculos'].push(
+  ['Fideos integrales cocidos', 149, 6, 30, 1.7],
+  ['Fideos integrales crudos', 348, 14.6, 75, 1.4],
+);
+
+// Otros nombres con que se busca un alimento (la palabra del nombre ya cuenta)
+const ALIASES = [
+  ['Fideos', 'tallarines tallarin pasta spaghetti espagueti macarrones corbatas'],
+  ['Palta', 'aguacate'],
+  ['Frutilla', 'fresa fresas'],
+  ['Porotos', 'frijoles alubias judias'],
+  ['Maní', 'cacahuate cacahuete'],
+  ['Mantequilla de maní', 'peanut butter mantequilla cacahuate'],
+  ['Zapallo italiano', 'zucchini calabacin'],
+  ['Zapallo', 'calabaza'],
+  ['Pimentón', 'pimiento morron'],
+  ['Betarraga', 'remolacha'],
+  ['Durazno', 'melocoton'],
+  ['Arvejas', 'guisantes chicharos'],
+  ['Plátano', 'banana banano'],
+  ['Choclo', 'maiz elote'],
+  ['Camote', 'batata boniato'],
+  ['Quesillo', 'cottage requeson'],
+  ['Pechuga de pollo', 'pollo'],
+  ['Trutro', 'muslo pierna'],
+  ['Choritos', 'mejillones'],
+  ['Damasco', 'albaricoque'],
+  ['Arándanos', 'blueberries'],
+  ['Proteína whey', 'proteina suero'],
+  ['Posta negra', 'vacuno carne'],
+];
+
+// id estable a partir del nombre
 
 // id estable a partir del nombre (no cambiar los nombres de alimentos ya publicados: las dietas los usan)
 const slug = s => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
+const aliasFor = name => ALIASES.filter(([start]) => name.startsWith(start)).map(([, a]) => a).join(' ');
+
 export const BASE_FOODS = Object.entries(RAW).flatMap(([cat, list]) =>
-  list.map(([name, kcal, p, c, f]) => ({ id: `b:${slug(name)}`, name, kcal, p, c, f, cat, base: true })));
+  list.map(([name, kcal, p, c, f]) => ({ id: `b:${slug(name)}`, name, kcal, p, c, f, cat, base: true, alias: aliasFor(name) })));
