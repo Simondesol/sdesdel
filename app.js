@@ -370,6 +370,7 @@ function viewDietEditor(id) {
     return `<section class="card meal-edit">
       <div class="meal-title">
         <input class="grow" data-bind="meal-name" data-m="${mi}" value="${esc(meal.name)}" aria-label="Nombre de la comida">
+        <button class="icon small" data-action="meal-dup" data-m="${mi}" aria-label="Duplicar comida" title="Duplicar comida">⧉</button>
         <button class="icon small danger" data-action="meal-del" data-m="${mi}" aria-label="Eliminar comida">✕</button>
       </div>
       ${items || '<p class="muted small" style="margin:6px 0">Agrega alimentos a esta comida.</p>'}
@@ -2104,6 +2105,16 @@ $app.addEventListener('click', e => {
       const diet = dietById(routeParts()[1]);
       diet.meals.push({ id: uid(), name: `Comida ${diet.meals.length + 1}`, items: [] });
       save(); render();
+      break;
+    }
+    case 'meal-dup': {
+      // Copia la comida (mismos alimentos y gramos) justo debajo
+      const diet = dietById(routeParts()[1]), m = +el.dataset.m, meal = diet.meals[m];
+      const copy = { id: uid(), name: `${meal.name} (copia)`, items: meal.items.map(it => ({ ...it })) };
+      diet.meals.splice(m + 1, 0, copy);
+      save(); render();
+      const input = $app.querySelector(`[data-bind="meal-name"][data-m="${m + 1}"]`);
+      if (input) { input.scrollIntoView({ block: 'center' }); input.focus(); input.select(); }
       break;
     }
     case 'meal-del': {
