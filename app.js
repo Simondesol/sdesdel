@@ -1101,25 +1101,32 @@ function syncHtml() {
 const paintSync = () => { const el = $app.querySelector('[data-sync]'); if (el) el.innerHTML = syncHtml(); };
 
 function viewAccount() {
+  const bd = db.body;
   return `${header('Cuenta', { back: true })}
-    <section class="card">
-      <strong>${esc(user.username || 'Sin nombre de usuario')}</strong>
-      <div class="muted">${esc(user.email)}</div>
-    </section>
-    <section class="card" data-sync>${syncHtml()}</section>
-    <p class="muted hint">Tus rutinas e historial se guardan en tu cuenta. Inicia sesión con el mismo correo en otro teléfono para verlos.</p>
-
     <h2>Mis datos</h2>
-    ${bodyDataForm()}
-
-    <h2>Nombre de usuario</h2>
-    <form class="stack" data-form="username" novalidate>
-      <div class="add-row" style="margin-top:0">
-        <input name="username" value="${esc(user.username)}" maxlength="30" autocomplete="nickname" aria-label="Nombre de usuario">
-        <button class="btn">Guardar</button>
+    <form class="stack card" data-form="profile" novalidate>
+      <label class="field"><span>Correo</span>
+        <input class="readonly" value="${esc(user.email)}" readonly tabindex="-1" aria-label="Correo (no se puede cambiar)">
+      </label>
+      <label class="field"><span>Nombre de usuario</span>
+        <input name="username" value="${esc(user.username)}" maxlength="30" autocomplete="nickname">
+      </label>
+      <label class="field"><span>Estatura</span>
+        <div class="add-row" style="margin-top:0"><input name="height" inputmode="numeric" value="${bd.heightCm || ''}" placeholder="ej. 175" autocomplete="off" aria-label="Estatura en cm"><span class="unit-label">cm</span></div>
+      </label>
+      <div class="field"><span>Sexo</span>
+        <div class="per-choice">
+          <label><input type="radio" name="sex" value="h" ${bd.sex === 'h' ? 'checked' : ''}> Hombre</label>
+          <label><input type="radio" name="sex" value="m" ${bd.sex === 'm' ? 'checked' : ''}> Mujer</label>
+        </div>
       </div>
+      <p class="muted small" style="margin:0">La estatura y el sexo se usan para calcular tu FFMI en Peso.</p>
       <p class="form-msg" hidden></p>
+      <button class="btn primary block">Guardar cambios</button>
     </form>
+
+    <section class="card" data-sync style="margin-top:16px">${syncHtml()}</section>
+    <p class="muted hint">Tus datos se guardan en tu cuenta. Inicia sesión con el mismo correo en otro teléfono para verlos.</p>
 
     <h2>Cambiar contraseña</h2>
     <form class="stack" data-form="password" novalidate>
@@ -1157,16 +1164,25 @@ async function busy(btn, text, fn) {
   try { return await fn(); } finally { btn.disabled = false; btn.textContent = old; }
 }
 
-async function submitUsername(f) {
+async function saveProfileData(f) {
   const name = f.elements.username.value.trim();
+  const hText = f.elements.height.value.trim(), h = num(hText), sex = f.elements.sex.value;
   if (!name) return formMsg(f, 'Escribe un nombre de usuario.');
-  if (name === user.username) return formMsg(f, 'Ese ya es tu nombre de usuario.', true);
-  try {
-    await busy(f.querySelector('button'), 'Guardando…', () => withTimeout(cloud.updateUsername(user.uid, name)));
-    user.username = name;
-    render();
-    formMsg($app.querySelector('[data-form="username"]'), '✓ Nombre actualizado', true);
-  } catch (e) { formMsg(f, authError(e)); }
+  if (hText && (h == null || h < 100 || h > 250)) return formMsg(f, 'Escribe tu estatura en cm (ej. 175) o déjala vacía.');
+  if (hText) db.body.heightCm = Math.round(h); else delete db.body.heightCm;
+  if (sex) db.body.sex = sex;
+  save();
+  if (name !== user.username) {
+    try {
+      await busy(f.querySelector('.btn.primary'), 'Guardando…', () => withTimeout(cloud.updateUsername(user.uid, name)));
+      user.username = name;
+    } catch (e) {
+      render();
+      return formMsg($app.querySelector('[data-form="profile"]'), authError(e));
+    }
+  }
+  render();
+  formMsg($app.querySelector('[data-form="profile"]'), '✓ Datos guardados', true);
 }
 
 async function submitPassword(f) {
@@ -2437,35 +2453,6 @@ function saveBodyweight(f) {
   formMsg($app.querySelector('[data-form="bodyweight"]'), `✓ Guardado: ${msg.join(' · ')}`, true);
 }
 
-// Mis datos (en Cuenta): estatura y sexo, para el FFMI
-function bodyDataForm() {
-  const b = db.body;
-  return `<form class="stack card" data-form="body" novalidate>
-      <label class="field"><span>Estatura</span>
-        <div class="add-row" style="margin-top:0"><input name="height" inputmode="numeric" value="${b.heightCm || ''}" placeholder="ej. 175" autocomplete="off" aria-label="Estatura en cm"><span class="unit-label">cm</span></div>
-      </label>
-      <div class="field"><span>Sexo</span>
-        <div class="per-choice">
-          <label><input type="radio" name="sex" value="h" ${b.sex === 'h' ? 'checked' : ''}> Hombre</label>
-          <label><input type="radio" name="sex" value="m" ${b.sex === 'm' ? 'checked' : ''}> Mujer</label>
-        </div>
-      </div>
-      <p class="muted small" style="margin:0">Se usan para calcular tu FFMI en Peso.</p>
-      <p class="form-msg" hidden></p>
-      <button class="btn block">Guardar mis datos</button>
-    </form>`;
-}
-
-function saveBodyData(f) {
-  const hText = f.elements.height.value.trim(), h = num(hText);
-  const sex = f.elements.sex.value;
-  if (hText && (h == null || h < 100 || h > 250)) return formMsg(f, 'Escribe tu estatura en cm (ej. 175).');
-  if (hText) db.body.heightCm = Math.round(h); else delete db.body.heightCm;
-  if (sex) db.body.sex = sex;
-  save();
-  render();
-  formMsg($app.querySelector('[data-form="body"]'), '✓ Datos guardados', true);
-}
 
 // ---------- Sueño ----------
 // Un registro por día: { date: 'AAAA-MM-DD', h } con las horas que dormiste la noche anterior
@@ -3792,12 +3779,11 @@ $app.addEventListener('submit', e => {
   switch (f.dataset.form) {
     case 'login':
     case 'register': submitAuth(f); return;
-    case 'username': submitUsername(f); return;
+    case 'profile': saveProfileData(f); return;
     case 'password': submitPassword(f); return;
     case 'import-code': importRoutine(f); return;
     case 'chat-send': sendText(f); return;
     case 'bodyweight': saveBodyweight(f); return;
-    case 'body': saveBodyData(f); return;
     case 'sleep': saveSleep(parseHours(f.elements.h.value), f); return;
     case 'food': saveFood(f); return;
     case 'add-item': {

@@ -601,3 +601,6 @@ a.card.hub { display: grid; }
 .ffmi-levels { display: grid; gap: 2px; }
 .ffmi-row { display: flex; justify-content: space-between; padding: 6px 10px; border-radius: 10px; font-size: 14px; }
 .ffmi-row.on { background: var(--surface2); outline: 1px solid var(--accent); font-weight: 700; }
+
+/* Cuenta: el correo no se puede cambiar */
+input.readonly { color: var(--muted); background: transparent; }
