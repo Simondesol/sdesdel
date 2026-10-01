@@ -108,6 +108,14 @@ export function sendMessage(chatId, msg, preview) {
   return batch.commit();
 }
 
+// Cambia el texto de un mensaje tuyo; `last` (si viene) actualiza el resumen del chat
+export function editMessage(chatId, msgId, text, last) {
+  const batch = writeBatch(fs);
+  batch.update(doc(fs, 'chats', chatId, 'messages', msgId), { text, edited: true });
+  if (last !== undefined) batch.update(chatRef(chatId), { last });
+  return batch.commit();
+}
+
 // Borra un mensaje tuyo; `last` (si viene) es el nuevo resumen del chat
 export function deleteMessage(chatId, msgId, last) {
   const batch = writeBatch(fs);

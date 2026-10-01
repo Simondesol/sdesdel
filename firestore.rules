@@ -55,7 +55,12 @@ service cloud.firestore {
           && request.resource.data.type in ['text', 'diet', 'routine', 'workout', 'pr']
           && request.resource.data.keys().hasOnly(['from', 'at', 'type', 'text', 'diet', 'routine'])
           && (!('text' in request.resource.data) || request.resource.data.text.size() <= 4000);
-        // Cada uno puede borrar sus propios mensajes (se borran para los dos)
+        // Cada uno puede editar (solo el texto) y borrar sus propios mensajes; el cambio se ve para los dos
+        allow update: if isMember(chatId) && resource.data.from == request.auth.uid
+          && resource.data.type == 'text'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'edited'])
+          && request.resource.data.text is string && request.resource.data.text.size() <= 4000
+          && request.resource.data.edited == true;
         allow delete: if isMember(chatId) && resource.data.from == request.auth.uid;
       }
     }

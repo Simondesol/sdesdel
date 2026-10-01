@@ -1326,7 +1326,8 @@ let chatsLoaded = false, chatsError = false;
 let stopChats = () => {};
 let chatMsgs = { id: null, list: [], loaded: false, stop: () => {} };
 let attach = null;            // panel para enviar: null | 'menu' | 'diet' | 'routine' | 'workout'
-let selectedMsg = null;       // mensaje tuyo tocado (muestra "Eliminar")
+let selectedMsg = null;       // mensaje tuyo tocado o mantenido apretado (muestra Editar / Eliminar)
+let editingMsg = null;        // mensaje tuyo que estás editando
 let inviteBusy = false, inviteError = false;
 let prsSent = null;           // { id, n } PRs avisados al terminar un entrenamiento
 
@@ -1490,6 +1491,7 @@ function openMessages(id) {
 }
 function closeMessages() {
   selectedMsg = null;
+  editingMsg = null;
   chatMsgs.stop();
   chatMsgs = { id: null, list: [], loaded: false, stop: () => {} };
 }
@@ -1504,10 +1506,11 @@ function viewChat(id) {
   return `${header(gymbroName(c), { back: true, sub: 'Gymbro' })}
     <div class="chat-msgs">${msgsHtml()}</div>
     ${attachPanel()}
-    <form class="chat-bar" data-form="chat-send" novalidate>
-      <button type="button" class="icon" data-action="attach" aria-label="Enviar dieta, rutina o entrenamiento">＋</button>
-      <input name="text" placeholder="Mensaje" autocomplete="off" maxlength="1000" enterkeyhint="send" aria-label="Mensaje">
-      <button class="btn primary">Enviar</button>
+    <form class="chat-bar ${editingMsg ? 'editing' : ''}" data-form="chat-send" novalidate>
+      ${editingMsg ? `<div class="edit-banner"><span>✏️ Editando mensaje</span><button type="button" class="btn ghost small-btn" data-action="msg-edit-cancel">Cancelar</button></div>`
+        : '<button type="button" class="icon" data-action="attach" aria-label="Enviar dieta, rutina o entrenamiento">＋</button>'}
+      <input name="text" placeholder="Mensaje" autocomplete="off" maxlength="1000" enterkeyhint="${editingMsg ? 'done' : 'send'}" aria-label="Mensaje">
+      <button class="btn primary">${editingMsg ? 'Guardar' : 'Enviar'}</button>
     </form>`;
 }
 
@@ -1522,8 +1525,11 @@ function msgsHtml() {
     lastDay = day;
     const mine = m.from === user.uid, sel = mine && selectedMsg === m.id;
     // Tus mensajes: al tocarlos aparece "Eliminar"
-    return `${sep}<div class="msg ${mine ? 'mine' : ''} ${sel ? 'selected' : ''}" ${mine ? `data-action="msg-select" data-id="${esc(m.id)}"` : ''}>${msgBody(m, mine)}<span class="msg-time">${hhmm(m.at)}</span></div>
-      ${sel ? `<button class="btn small-btn danger-text msg-del" data-action="msg-del" data-id="${esc(m.id)}">🗑 Eliminar para los dos</button>` : ''}`;
+    return `${sep}<div class="msg ${mine ? 'mine' : ''} ${sel ? 'selected' : ''}" ${mine ? `data-action="msg-select" data-id="${esc(m.id)}"` : ''}>${msgBody(m, mine)}<span class="msg-time">${m.edited ? 'editado · ' : ''}${hhmm(m.at)}</span></div>
+      ${sel ? `<div class="msg-actions">
+        ${m.type === 'text' ? `<button class="btn small-btn" data-action="msg-edit" data-id="${esc(m.id)}">✏️ Editar</button>` : ''}
+        <button class="btn small-btn danger-text" data-action="msg-del" data-id="${esc(m.id)}">🗑 Eliminar para los dos</button>
+      </div>` : ''}`;
   }).join('');
 }
 
@@ -1590,9 +1596,41 @@ function sendMsg(chatId, msg, preview) {
 function sendText(f) {
   const text = f.elements.text.value.trim();
   if (!text) return;
+  if (editingMsg) return saveMsgEdit(text);
   f.elements.text.value = '';
   f.elements.text.focus();
   sendMsg(routeParts()[1], { type: 'text', text }, text);
+}
+
+// Editar un mensaje tuyo: el texto pasa a la barra de abajo y "Guardar" lo cambia para los dos
+function startMsgEdit(id) {
+  const m = chatMsgs.list.find(x => x.id === id);
+  if (!m || m.type !== 'text') return;
+  editingMsg = id;
+  selectedMsg = null;
+  attach = null;
+  render();
+  const input = $app.querySelector('[data-form="chat-send"] input');
+  input.value = m.text;
+  input.focus();
+  input.setSelectionRange(input.value.length, input.value.length);
+  const bubble = $app.querySelector(`.msg[data-id="${CSS.escape(id)}"]`);
+  if (bubble) bubble.scrollIntoView({ block: 'center' });   // que se vea el mensaje que estás editando
+}
+function cancelMsgEdit() {
+  editingMsg = null;
+  render();
+}
+function saveMsgEdit(text) {
+  const id = editingMsg, chatId = chatMsgs.id, m = chatMsgs.list.find(x => x.id === id);
+  editingMsg = null;
+  if (m && m.text !== text) {
+    const isLast = chatMsgs.list[chatMsgs.list.length - 1] === m;
+    m.text = text; m.edited = true;   // se ve al tiro; la nube lo confirma después
+    cloud.editMessage(chatId, id, text, isLast ? { text: text.slice(0, 120), from: m.from, at: m.at } : undefined)
+      .catch(() => alert('No se pudo editar el mensaje. Revisa tu internet e intenta de nuevo.'));
+  }
+  render();
 }
 
 function sendAttachment(id) {
@@ -1677,6 +1715,30 @@ function announcePRs(w) {
   for (const c of chats) sendMsg(c.id, { type: 'pr', text }, preview);
   prsSent = { id: w.id, n: prs.length };
 }
+
+// Mantener apretado un mensaje tuyo (como en WhatsApp) muestra Editar / Eliminar
+let pressTimer = null, pressStart = null, longPressed = false;
+$app.addEventListener('pointerdown', e => {
+  const msg = e.target.closest('.msg.mine');
+  if (!msg || e.target.closest('a, button')) return;
+  pressStart = { x: e.clientX, y: e.clientY };
+  clearTimeout(pressTimer);
+  pressTimer = setTimeout(() => {
+    pressTimer = null;
+    longPressed = true;
+    selectedMsg = msg.dataset.id;
+    if (navigator.vibrate) navigator.vibrate(15);
+    paintMessages();
+  }, 450);
+});
+const cancelPress = () => { clearTimeout(pressTimer); pressTimer = null; };
+$app.addEventListener('pointerup', cancelPress);
+$app.addEventListener('pointercancel', cancelPress);
+$app.addEventListener('pointermove', e => {
+  if (pressTimer && pressStart && Math.hypot(e.clientX - pressStart.x, e.clientY - pressStart.y) > 10) cancelPress();   // está haciendo scroll
+});
+// Sin el menú del navegador al mantener apretado
+$app.addEventListener('contextmenu', e => { if (e.target.closest('.msg.mine')) e.preventDefault(); });
 
 // ---------- Progreso ----------
 const RANGES = [['semana', 'Semana', 7], ['mes', 'Mes', 30], ['3m', '3 meses', 91], ['6m', '6 meses', 182]];      // peso corporal
@@ -2840,8 +2902,15 @@ $app.addEventListener('click', e => {
       break;
     case 'msg-select':
       if (e.target.closest('a, button')) return;
+      if (longPressed) { longPressed = false; return; }   // ya se abrió al mantenerlo apretado
       selectedMsg = selectedMsg === id ? null : id;
       paintMessages();
+      break;
+    case 'msg-edit':
+      startMsgEdit(id);
+      break;
+    case 'msg-edit-cancel':
+      cancelMsgEdit();
       break;
     case 'msg-del':
       if (confirm('¿Eliminar este mensaje? Se borra para ti y para tu gymbro.')) deleteMessage(id);
