@@ -560,3 +560,11 @@ a.card.hub { display: grid; }
 /* Descanso: +30 s */
 .restbar .rest-plus { flex: none; min-height: 36px; padding: 0 12px; font-size: 14px; color: var(--accent); border-color: var(--accent); }
 .restbar.done .rest-plus { color: var(--accent-ink); border-color: var(--accent-ink); background: transparent; }
+
+/* Sueño: pregunta una vez al día */
+.modal-wrap { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; padding: 16px; }
+.modal-back { position: absolute; inset: 0; background: rgba(0, 0, 0, .65); }
+.modal { position: relative; width: 100%; max-width: 420px; display: grid; gap: 12px; }
+.modal h2 { margin: 0; font-size: 18px; color: var(--text); text-transform: none; letter-spacing: 0; }
+.sleep-quick { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+.sleep-quick .btn { padding: 0; }

@@ -11,7 +11,7 @@ const $tabs = document.getElementById('tabs');
 const emptyWater = () => ({ goalMl: null, days: {} });   // days: { 'AAAA-MM-DD': [{ at, ml }] }
 // Nutrición: alimentos (valores por 100 g), dietas con comidas y el registro de comidas marcadas por día
 const emptyNutrition = () => ({ foods: [], diets: [], activeDietId: null, log: {} });
-const emptyDb = () => ({ routines: [], workouts: [], draft: null, notes: {}, bodyweight: [], water: emptyWater(), nutrition: emptyNutrition() });
+const emptyDb = () => ({ routines: [], workouts: [], draft: null, notes: {}, bodyweight: [], sleep: [], water: emptyWater(), nutrition: emptyNutrition() });
 const emptySynced = () => ({ main: null, w: {} });
 let db = emptyDb();
 let user = null;                 // { uid, email, username }
@@ -139,6 +139,7 @@ const bar = (value, goal) => `<div class="meter" role="progressbar" aria-valuemi
   <span style="width:${Math.min(100, goal ? (value / goal) * 100 : 0)}%"></span></div>`;
 
 function viewHub() {
+  maybeAskSleep();
   const d = db.draft;
   const ml = waterToday(), goal = waterGoal().ml;
   return `${header('Desdel', { sub: 'Entrena. Anota. Supera.', right: GEAR })}
@@ -163,7 +164,10 @@ function viewHub() {
     </div>
 
     ${bodyweightCard()}
-    </div>`;
+
+    ${sleepCard()}
+    </div>
+    ${sleepAsk ? sleepModal() : ''}`;
 }
 
 // ---------- Nutrición ----------
@@ -2218,6 +2222,134 @@ function saveBodyweight(f) {
   formMsg($app.querySelector('[data-form="bodyweight"]'), `✓ Guardado: ${fmtKg(kg)} hoy`, true);
 }
 
+// ---------- Sueño ----------
+// Un registro por día: { date: 'AAAA-MM-DD', h } con las horas que dormiste la noche anterior
+let sleepRange = 'mes';
+let sleepAsk = false;   // ventana "¿Cuántas horas dormiste anoche?" abierta
+const fmtH = h => `${fmtNum(round1(h))} h`;
+const sleepAskedKey = () => `desdel-sueno-pregunta-${user.uid}`;
+
+// Acepta "7", "7,5" o "7:30"
+function parseHours(text) {
+  const t = String(text).trim().replace(',', '.');
+  const m = t.match(/^(\d{1,2}):(\d{1,2})$/);
+  if (m) return +m[1] + +m[2] / 60;
+  const n = Number(t);
+  return t && Number.isFinite(n) ? n : null;
+}
+
+function sleepAvg(days) {
+  const since = Date.now() - days * 86400000;
+  const list = db.sleep.filter(e => Date.parse(bwIso(e.date)) >= since);
+  return list.length ? list.reduce((a, e) => a + e.h, 0) / list.length : null;
+}
+
+// Una vez al día, al abrir la app, pregunta cuántas horas dormiste (si todavía no lo anotas)
+function maybeAskSleep() {
+  if (localStorage.getItem(sleepAskedKey()) === todayKey()) return;
+  localStorage.setItem(sleepAskedKey(), todayKey());
+  if (!db.sleep.some(e => e.date === todayKey())) sleepAsk = true;
+}
+
+const sleepQuick = () => `<div class="sleep-quick">${[5, 6, 7, 8, 9].map(h =>
+  `<button type="button" class="btn" data-action="sleep-set" data-h="${h}">${h} h</button>`).join('')}</div>`;
+
+function sleepModal() {
+  return `<div class="modal-wrap">
+    <div class="modal-back" data-action="sleep-skip"></div>
+    <section class="modal card" role="dialog" aria-modal="true" aria-labelledby="sleep-title">
+      <h2 id="sleep-title">😴 ¿Cuántas horas dormiste anoche?</h2>
+      ${sleepQuick()}
+      <form class="stack" data-form="sleep" novalidate>
+        <div class="add-row" style="margin-top:0">
+          <input name="h" inputmode="decimal" placeholder="Otra (ej. 7,5)" autocomplete="off" aria-label="Horas de sueño">
+          <button class="btn primary">Guardar</button>
+        </div>
+        <p class="form-msg" hidden></p>
+      </form>
+      <button class="btn ghost block" data-action="sleep-skip">Ahora no</button>
+    </section>
+  </div>`;
+}
+
+function saveSleep(h, f) {
+  if (h == null || h <= 0 || h > 16) return f ? formMsg(f, 'Escribe las horas que dormiste (ej. 7,5).') : null;
+  const date = todayKey();
+  const entry = db.sleep.find(e => e.date === date);
+  if (entry) entry.h = round1(h);
+  else db.sleep.push({ date, h: round1(h) });
+  db.sleep.sort((a, b) => (a.date < b.date ? -1 : 1));
+  sleepAsk = false;
+  save();
+  render();
+  const form = $app.querySelector('.sleep-today[data-form="sleep"]');
+  if (form) formMsg(form, `✓ Guardado: ${fmtH(h)} anoche`, true);
+}
+
+function sleepCard() {
+  const last = db.sleep[db.sleep.length - 1], avg = sleepAvg(7);
+  const today = last && last.date === todayKey();
+  return `<a class="card hub" href="#/sueno">
+      <div class="hub-top"><span class="hub-icon">😴</span><strong>Sueño</strong><span class="chev">›</span></div>
+      ${last
+        ? `<div class="hub-value"><strong>${fmtH(last.h)}</strong> ${today ? 'anoche' : `· ${bwDate(last.date)}`}</div>
+           <span class="muted">${today ? '' : 'Toca para anotar hoy · '}${avg != null ? `Promedio 7 días: ${fmtH(avg)}` : ''}</span>`
+        : '<span class="muted">Anota cuántas horas duermes cada noche</span>'}
+    </a>`;
+}
+
+function viewSleep() {
+  const today = db.sleep.find(e => e.date === todayKey());
+  const days = RANGES.find(r => r[0] === sleepRange)[2];
+  const since = Date.now() - days * 86400000;
+  const points = db.sleep
+    .map(e => ({ t: Date.parse(bwIso(e.date)), date: bwIso(e.date), y: e.h, tip: fmtH(e.h) }))
+    .filter(pt => pt.t >= since);
+  chart = null;
+
+  const form = `<section class="card stack">
+      <span class="muted">${today ? `Anoche: <strong>${fmtH(today.h)}</strong> (puedes corregirlo)` : 'Horas que dormiste anoche'}</span>
+      ${sleepQuick()}
+      <form class="stack sleep-today" data-form="sleep" novalidate>
+        <div class="add-row" style="margin-top:0">
+          <input name="h" inputmode="decimal" placeholder="Otra (ej. 7,5 o 7:30)" autocomplete="off" aria-label="Horas de sueño">
+          <button class="btn primary">Guardar</button>
+        </div>
+        <p class="form-msg" hidden></p>
+      </form>
+    </section>`;
+
+  let body;
+  if (!points.length) {
+    body = `<p class="empty">${db.sleep.length ? 'No hay registros en este período.' : 'Todavía no anotas tu sueño. Empieza hoy arriba 👆'}</p>`;
+  } else {
+    const ys = points.map(pt => pt.y), avg = ys.reduce((a, v) => a + v, 0) / ys.length;
+    body = `<div class="stats">
+        <div class="stat"><span class="muted">Promedio</span><strong>${fmtH(avg)}</strong></div>
+        <div class="stat"><span class="muted">Mínimo</span><strong>${fmtH(Math.min(...ys))}</strong></div>
+        <div class="stat"><span class="muted">Máximo</span><strong>${fmtH(Math.max(...ys))}</strong></div>
+      </div>
+      <section class="card chart-card">
+        ${chartSvg(points, 'h', days, 'Horas de sueño por noche')}
+        <div class="tip" hidden></div>
+      </section>`;
+  }
+
+  const list = db.sleep.slice().reverse().map(e => `
+    <div class="prog-row">
+      <span class="muted">${bwDate(e.date)}</span>
+      <span class="bw-right">${fmtH(e.h)}
+        <button class="icon small danger" data-action="del-sleep" data-date="${e.date}" aria-label="Borrar registro">✕</button>
+      </span>
+    </div>`).join('');
+
+  return `${header('Sueño', { back: true, sub: 'Horas que dormiste cada noche' })}
+    ${form}
+    ${rangeButtons(RANGES, sleepRange, 'sl')}
+    ${body}
+    ${list ? `<h2>Registros</h2><section class="card">${list}</section>` : ''}`;
+}
+
 function viewProgressExercise(id) {
   const rows = historyFor(id);
   if (!rows.length) { location.replace('#/progreso'); return ''; }
@@ -2337,6 +2469,7 @@ function render() {
     case 'agua': html = viewWater(); break;
     case 'rutinas': html = viewHome(); tab = 'rutinas'; break;
     case 'peso': html = viewBodyweight(); break;
+    case 'sueno': html = viewSleep(); break;
     case 'nutricion': html = viewNutrition(arg); break;
     case 'alimento': html = viewFoodForm(arg, routeParts()[2]); break;
     case 'dieta': html = viewDietEditor(arg); break;
@@ -2547,6 +2680,8 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') {
     paintTimer();
     if (db.draft && db.draft.timer) keepScreenOn(true);
+    // Si la app quedó abierta y es un día nuevo, el inicio vuelve a preguntar por el sueño
+    if (status === 'ready' && routeParts()[0] === '' && user && localStorage.getItem(sleepAskedKey()) !== todayKey()) refresh();
   }
 });
 
@@ -2567,6 +2702,7 @@ const hasWater = w => !!w && (w.goalMl != null || Object.keys(w.days || {}).leng
 const mainData = () => ({
   routines: db.routines, notes: db.notes,
   ...(db.bodyweight.length ? { bodyweight: db.bodyweight } : {}),
+  ...(db.sleep.length ? { sleep: db.sleep } : {}),
   ...(hasWater(db.water) ? { water: db.water } : {}),
   ...(hasNutrition(db.nutrition) ? { nutrition: db.nutrition } : {}),
 });
@@ -2620,18 +2756,19 @@ async function sync() {
 
 // Cambios que llegan desde otro dispositivo. Si aquí hay cambios sin subir, ganan los de aquí.
 function applyRemoteMain(data) {
-  const bw = data.bodyweight || [];
+  const bw = data.bodyweight || [], sl = data.sleep || [];
   const water = hasWater(data.water) ? { ...emptyWater(), ...data.water } : emptyWater();
   const remote = {
     routines: data.routines || [], notes: data.notes || {},
     ...(bw.length ? { bodyweight: bw } : {}),
+    ...(sl.length ? { sleep: sl } : {}),
     ...(hasWater(water) ? { water } : {}),
     ...(hasNutrition(data.nutrition) ? { nutrition: data.nutrition } : {}),
   };
   const r = stable(remote), local = stable(mainData());
   if (local !== synced.main) return;
   synced.main = r;
-  if (r !== local) { db.routines = remote.routines; db.notes = remote.notes; db.bodyweight = bw; db.water = water; db.nutrition = hasNutrition(data.nutrition) ? { ...emptyNutrition(), ...data.nutrition } : emptyNutrition(); refresh(); }
+  if (r !== local) { db.routines = remote.routines; db.notes = remote.notes; db.bodyweight = bw; db.sleep = sl; db.water = water; db.nutrition = hasNutrition(data.nutrition) ? { ...emptyNutrition(), ...data.nutrition } : emptyNutrition(); refresh(); }
   persistLocal();
 }
 
@@ -2675,6 +2812,7 @@ async function loadFromCloud() {
     db.routines = main.routines || [];
     db.notes = main.notes || {};
     db.bodyweight = main.bodyweight || [];
+    db.sleep = main.sleep || [];
     db.water = hasWater(main.water) ? { ...emptyWater(), ...main.water } : emptyWater();
     db.nutrition = hasNutrition(main.nutrition) ? { ...emptyNutrition(), ...main.nutrition } : emptyNutrition();
     synced.main = stable(mainData());
@@ -2831,6 +2969,25 @@ $app.addEventListener('click', e => {
     }
 
     // Rutina
+    case 'sleep-set':
+      saveSleep(+el.dataset.h);
+      break;
+    case 'sleep-skip':
+      sleepAsk = false;
+      render();
+      break;
+    case 'del-sleep': {
+      const k = db.sleep.findIndex(e => e.date === el.dataset.date);
+      if (k < 0) return;
+      const [removed] = db.sleep.splice(k, 1);
+      save(); render();
+      showUndo(`Registro de ${bwDate(removed.date)} borrado`, () => {
+        db.sleep.push(removed);
+        db.sleep.sort((a, b) => (a.date < b.date ? -1 : 1));
+        save(); render();
+      });
+      break;
+    }
     case 'del-bw': {
       const k = db.bodyweight.findIndex(e => e.date === el.dataset.date);
       if (k < 0) return;
@@ -2844,7 +3001,9 @@ $app.addEventListener('click', e => {
       break;
     }
     case 'range':
-      if (el.dataset.s === 'bw') bwRange = el.dataset.r; else progressRange = el.dataset.r;
+      if (el.dataset.s === 'bw') bwRange = el.dataset.r;
+      else if (el.dataset.s === 'sl') sleepRange = el.dataset.r;
+      else progressRange = el.dataset.r;
       render();
       break;
     case 'toggle-drop':
@@ -3349,6 +3508,7 @@ $app.addEventListener('submit', e => {
     case 'import-code': importRoutine(f); return;
     case 'chat-send': sendText(f); return;
     case 'bodyweight': saveBodyweight(f); return;
+    case 'sleep': saveSleep(parseHours(f.elements.h.value), f); return;
     case 'food': saveFood(f); return;
     case 'add-item': {
       const diet = dietById(routeParts()[1]), m = +f.dataset.m;
