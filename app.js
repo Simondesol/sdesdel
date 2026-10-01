@@ -655,12 +655,10 @@ const importForm = label => `<section class="import-box">
         <input name="code" placeholder="Código (ej. K7P-9XQ)" autocomplete="off" autocapitalize="characters" maxlength="9" aria-label="Código">
         <button class="btn">Importar</button>
       </div>
+      <p class="muted small" style="margin:0">Escribe el código que te pasaron y toca Importar.</p>
       <p class="form-msg" hidden></p>
     </form>`
-    : `<div class="ex-actions">
-        <button class="btn" data-action="paste-import">📋 Pegar código</button>
-        <button class="btn ghost" data-action="show-import">Escribir código</button>
-      </div>`}
+    : '<button class="btn block" data-action="paste-import">📋 Pegar código</button>'}
   </section>`;
 
 // Saca el código de lo copiado: el código solo ("K7P-9XQ"), el link (?r=K7P9XQ) o el mensaje completo
@@ -670,7 +668,7 @@ function codeFromText(text) {
   return m ? m.slice(1).join('') : '';
 }
 
-// "Pegar código": lee lo copiado e importa de una vez
+// "Pegar código": lee lo copiado e importa de una vez; si no hay un código copiado, se abre el cuadro para escribirlo
 async function pasteImport() {
   let text = '';
   try { text = await navigator.clipboard.readText(); } catch (e) { /* el teléfono no dejó leer lo copiado */ }
@@ -680,7 +678,8 @@ async function pasteImport() {
   const f = $app.querySelector('[data-form="import-code"]');
   if (!code) {
     f.elements.code.focus();
-    return formMsg(f, text ? 'Lo que copiaste no es un código de Desdel. Escríbelo aquí.' : 'No se pudo pegar. Mantén presionado el cuadro, elige "Pegar" y toca Importar.');
+    if (text.trim()) formMsg(f, 'Lo que copiaste no es un código de Desdel.');
+    return;
   }
   f.elements.code.value = fmtCode(code);
   importRoutine(f);
@@ -1291,6 +1290,7 @@ let chatsLoaded = false, chatsError = false;
 let stopChats = () => {};
 let chatMsgs = { id: null, list: [], loaded: false, stop: () => {} };
 let attach = null;            // panel para enviar: null | 'menu' | 'diet' | 'routine' | 'workout'
+let selectedMsg = null;       // mensaje tuyo tocado (muestra "Eliminar")
 let inviteBusy = false, inviteError = false;
 let prsSent = null;           // { id, n } PRs avisados al terminar un entrenamiento
 
@@ -1453,6 +1453,7 @@ function openMessages(id) {
   });
 }
 function closeMessages() {
+  selectedMsg = null;
   chatMsgs.stop();
   chatMsgs = { id: null, list: [], loaded: false, stop: () => {} };
 }
@@ -1483,8 +1484,10 @@ function msgsHtml() {
     const day = dayLabel(m.at);
     const sep = day !== lastDay ? `<div class="chat-day">${day}</div>` : '';
     lastDay = day;
-    const mine = m.from === user.uid;
-    return `${sep}<div class="msg ${mine ? 'mine' : ''}">${msgBody(m, mine)}<span class="msg-time">${hhmm(m.at)}</span></div>`;
+    const mine = m.from === user.uid, sel = mine && selectedMsg === m.id;
+    // Tus mensajes: al tocarlos aparece "Eliminar"
+    return `${sep}<div class="msg ${mine ? 'mine' : ''} ${sel ? 'selected' : ''}" ${mine ? `data-action="msg-select" data-id="${esc(m.id)}"` : ''}>${msgBody(m, mine)}<span class="msg-time">${hhmm(m.at)}</span></div>
+      ${sel ? `<button class="btn small-btn danger-text msg-del" data-action="msg-del" data-id="${esc(m.id)}">🗑 Eliminar para los dos</button>` : ''}`;
   }).join('');
 }
 
@@ -1571,6 +1574,29 @@ function sendAttachment(id) {
   attach = null;
   render();
   scrollChatBottom();
+}
+
+// Texto corto del mensaje para la lista de chats
+const msgPreview = m => ({
+  diet: () => `🥗 Dieta: ${m.diet.name}`,
+  routine: () => `🏋️ Rutina: ${m.routine.name}`,
+  workout: () => '💪 Entrenamiento',
+  pr: () => '🔥 Nuevo PR',
+}[m.type] || (() => m.text || ''))().slice(0, 120);
+
+// Borra un mensaje tuyo para los dos; si era el último, la lista de chats muestra el anterior
+function deleteMessage(id) {
+  const k = chatMsgs.list.findIndex(x => x.id === id);
+  if (k < 0) return;
+  const chatId = chatMsgs.id;
+  const rest = chatMsgs.list.filter(x => x.id !== id);
+  const wasLast = k === chatMsgs.list.length - 1;
+  const prev = rest[rest.length - 1];
+  const last = !wasLast ? undefined : prev ? { text: msgPreview(prev), from: prev.from, at: prev.at } : null;
+  selectedMsg = null;
+  chatMsgs.list = rest;   // se quita al tiro de la pantalla
+  paintMessages();
+  cloud.deleteMessage(chatId, id, last).catch(() => alert('No se pudo eliminar el mensaje. Revisa tu internet e intenta de nuevo.'));
 }
 
 // Agregar a tu app la dieta o rutina que te mandaron
@@ -2776,6 +2802,14 @@ $app.addEventListener('click', e => {
     case 'msg-add':
       addFromMessage(id);
       break;
+    case 'msg-select':
+      if (e.target.closest('a, button')) return;
+      selectedMsg = selectedMsg === id ? null : id;
+      paintMessages();
+      break;
+    case 'msg-del':
+      if (confirm('¿Eliminar este mensaje? Se borra para ti y para tu gymbro.')) deleteMessage(id);
+      break;
     case 'gymbro-del': {
       const c = chats.find(x => x.id === routeParts()[1]);
       if (!c || !confirm(`¿Eliminar a ${gymbroName(c)} de tus gymbros? El chat se borra para los dos.`)) return;
@@ -2790,11 +2824,6 @@ $app.addEventListener('click', e => {
     }
     case 'paste-import':
       pasteImport();
-      break;
-    case 'show-import':
-      importOpen = true;
-      render();
-      $app.querySelector('[data-form="import-code"] input').focus();
       break;
 
     // Cuenta

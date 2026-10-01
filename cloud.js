@@ -108,6 +108,14 @@ export function sendMessage(chatId, msg, preview) {
   return batch.commit();
 }
 
+// Borra un mensaje tuyo; `last` (si viene) es el nuevo resumen del chat
+export function deleteMessage(chatId, msgId, last) {
+  const batch = writeBatch(fs);
+  batch.delete(doc(fs, 'chats', chatId, 'messages', msgId));
+  if (last !== undefined) batch.update(chatRef(chatId), { last });
+  return batch.commit();
+}
+
 export function listenChats(uid, cb, onError = () => {}) {
   return onSnapshot(query(collection(fs, 'chats'), where('members', 'array-contains', uid)), snap => {
     cb(snap.docs.map(d => {

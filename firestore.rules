@@ -55,6 +55,8 @@ service cloud.firestore {
           && request.resource.data.type in ['text', 'diet', 'routine', 'workout', 'pr']
           && request.resource.data.keys().hasOnly(['from', 'at', 'type', 'text', 'diet', 'routine'])
           && (!('text' in request.resource.data) || request.resource.data.text.size() <= 4000);
+        // Cada uno puede borrar sus propios mensajes (se borran para los dos)
+        allow delete: if isMember(chatId) && resource.data.from == request.auth.uid;
       }
     }
   }
