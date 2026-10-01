@@ -192,18 +192,32 @@ function searchFoods(query, limit = 8) {
 }
 const foodResultBtn = (f, action, extra = '') => `<button type="button" class="food-pick" data-action="${action}" data-id="${f.id}" ${extra}>
   <span class="grow">${esc(f.name)}${f.base ? '' : ' <span class="badge on">Mío</span>'}</span>
-  <span class="muted small">${fmtKcal(f.kcal)} kcal${isUnit(f) ? ' c/u' : ''} · P ${fmtG(f.p)}</span></button>`;
+  <span class="muted small">${f.unitG ? portionHint(f) : `${fmtKcal(f.kcal)} kcal${isUnit(f) ? ' c/u' : ''} · P ${fmtG(f.p)}`}</span></button>`;
 const dietById = id => N().diets.find(d => d.id === id);
 const sumM = list => list.reduce((a, m) => ({ kcal: a.kcal + m.kcal, p: a.p + m.p, c: a.c + m.c, f: a.f + m.f }), { ...ZERO });
 // Alimentos por unidad (1 huevo, 1 rebanada...) o por 100 g
 const isUnit = f => !!f && f.per === 'unit';
 const perText = f => (isUnit(f) ? 'por unidad' : 'por 100 g');
 // "120 g Carne molida" o "2 × Huevo"
-const itemText = (food, n) => (isUnit(food) ? `${fmtNum(n)} × ${esc(food.name)}` : `${fmtNum(n)} g ${esc(food.name)}`);
+// Porciones de la base: se puede anotar en unidades (it.n) o en gramos (it.g)
+const byPortion = (food, it) => it.n != null && !!food.unitG;
+const itemGrams = (food, it) => (byPortion(food, it) ? it.n * food.unitG : it.g || 0);
+const portionPlural = (label, n) => (n === 1 ? label : `${label}s`);
+const itemText = (food, it) => {
+  if (isUnit(food)) return `${fmtNum(it.g)} × ${esc(food.name)}`;
+  if (byPortion(food, it)) {
+    const approx = ` (≈${fmtNum(Math.round(itemGrams(food, it)))} g)`;
+    return food.unitLabel === 'unidad'
+      ? `${fmtNum(it.n)} × ${esc(food.name)}${approx}`
+      : `${fmtNum(it.n)} ${portionPlural(food.unitLabel, it.n)} ${esc(food.name)}${approx}`;
+  }
+  return `${fmtNum(it.g)} g ${esc(food.name)}`;
+};
+const portionHint = f => (f.unitG ? `1 ${f.unitLabel} ≈ ${f.unitG} g` : '');
 function itemMacros(it) {
   const food = foodById(it.foodId);
   if (!food) return { ...ZERO };
-  const k = isUnit(food) ? (it.g || 0) : (it.g || 0) / 100;   // it.g = gramos, o cantidad si es por unidad
+  const k = isUnit(food) ? (it.g || 0) : itemGrams(food, it) / 100;   // it.g = gramos, o cantidad si es por unidad
   return { kcal: food.kcal * k, p: food.p * k, c: food.c * k, f: food.f * k };
 }
 const mealMacros = meal => sumM(meal.items.map(itemMacros));
@@ -249,7 +263,7 @@ function viewNutrition(section) {
       <div class="grow">
         <div class="meal-head"><strong>${esc(meal.name)}</strong><span>${fmtKcal(m.kcal)} kcal</span></div>
         <div class="muted small">${macroLine(m)}</div>
-        <div class="muted small">${meal.items.map(it => { const fd = foodById(it.foodId); return fd ? itemText(fd, it.g) : '(alimento borrado)'; }).join(' · ') || 'Sin alimentos'}</div>
+        <div class="muted small">${meal.items.map(it => { const fd = foodById(it.foodId); return fd ? itemText(fd, it) : '(alimento borrado)'; }).join(' · ') || 'Sin alimentos'}</div>
       </div>
     </section>`;
   }).join('');
@@ -385,8 +399,10 @@ function viewDietEditor(id) {
       const food = foodById(it.foodId), im = itemMacros(it);
       return `<div class="item-row">
         <span class="grow">${esc(food ? food.name : '(alimento borrado)')}</span>
-        <input class="grams" inputmode="decimal" data-bind="item-g" data-m="${mi}" data-i="${ii}" value="${toField(it.g)}" aria-label="${isUnit(food) ? 'Cantidad' : 'Gramos'}">
-        <span class="unit-label">${isUnit(food) ? 'u' : 'g'}</span>
+        <input class="grams" inputmode="decimal" data-bind="item-g" data-m="${mi}" data-i="${ii}" value="${toField(food && byPortion(food, it) ? it.n : it.g)}" aria-label="${food && (isUnit(food) || byPortion(food, it)) ? 'Cantidad' : 'Gramos'}">
+        ${food && food.unitG
+          ? `<button type="button" class="chip mode-chip" data-action="item-mode" data-m="${mi}" data-i="${ii}" title="${portionHint(food)}" aria-label="Cambiar entre gramos y unidades">${byPortion(food, it) ? 'u' : 'g'}</button>`
+          : `<span class="unit-label">${isUnit(food) ? 'u' : 'g'}</span>`}
         <span class="item-kcal" data-item-kcal="${mi}-${ii}">${fmtKcal(im.kcal)} kcal</span>
         <button class="icon small danger" data-action="item-del" data-m="${mi}" data-i="${ii}" aria-label="Quitar">✕</button>
       </div>`;
@@ -402,6 +418,7 @@ function viewDietEditor(id) {
         <div class="add-row" style="margin-top:0">
           <input name="q" data-bind="food-q" data-m="${mi}" placeholder="🔍 Buscar alimento…" autocomplete="off" aria-label="Buscar alimento">
           <input name="g" inputmode="decimal" placeholder="g" class="grams" aria-label="Gramos">
+          <button type="button" class="chip mode-chip" data-action="add-mode" hidden aria-label="Cambiar entre gramos y unidades">u</button>
           <button class="btn">+</button>
         </div>
         <div class="food-results" data-results="${mi}"></div>
@@ -420,6 +437,17 @@ function viewDietEditor(id) {
     <p class="muted hint">¿Falta un alimento? <a href="#/alimento/nuevo">Créalo aquí</a> y vuelve.</p>
     <button class="btn primary block" data-action="diet-done" style="margin-top:20px">Terminar dieta</button>
     <button class="btn ghost block danger-text" data-action="diet-del">Eliminar dieta</button>`;
+}
+
+
+// Ajusta el formulario de agregar según el modo (gramos o unidades) del alimento elegido
+function setAddMode(form, food) {
+  const units = isUnit(food) || (food.unitG && form.dataset.mode === 'u');
+  const chip = form.querySelector('[data-action="add-mode"]');
+  chip.textContent = form.dataset.mode === 'u' ? 'u' : 'g';
+  chip.title = portionHint(food);
+  form.elements.g.placeholder = units ? 'cant.' : 'g';
+  form.elements.g.setAttribute('aria-label', units ? 'Cantidad' : 'Gramos');
 }
 
 // Actualiza los totales mientras cambias gramos (sin redibujar, para no cerrar el teclado)
@@ -2089,9 +2117,27 @@ $app.addEventListener('click', e => {
       form.dataset.food = id;
       form.elements.q.value = food.name;
       form.querySelector('.food-results').innerHTML = '';
-      form.elements.g.placeholder = isUnit(food) ? 'cant.' : 'g';
-      form.elements.g.setAttribute('aria-label', isUnit(food) ? 'Cantidad' : 'Gramos');
+      // Alimentos de la base con porción: por defecto se anotan en unidades (se puede cambiar a gramos)
+      const chip = form.querySelector('[data-action="add-mode"]');
+      chip.hidden = !food.unitG;
+      form.dataset.mode = food.unitG ? 'u' : 'g';
+      setAddMode(form, food);
       form.elements.g.focus();
+      break;
+    }
+    case 'add-mode': {
+      const form = el.closest('form'), food = foodById(form.dataset.food);
+      form.dataset.mode = form.dataset.mode === 'u' ? 'g' : 'u';
+      setAddMode(form, food);
+      form.elements.g.focus();
+      break;
+    }
+    case 'item-mode': {
+      // Cambia una fila entre gramos y unidades, convirtiendo la cantidad
+      const diet = dietById(routeParts()[1]), it = diet.meals[+el.dataset.m].items[i], food = foodById(it.foodId);
+      if (it.n != null) { it.g = Math.round(it.n * food.unitG); delete it.n; }
+      else { it.n = Math.max(0.5, Math.round(((it.g || 0) / food.unitG) * 2) / 2); delete it.g; }
+      save(); render();
       break;
     }
     case 'nutri-use': {
@@ -2249,7 +2295,7 @@ $app.addEventListener('input', e => {
     if (!diet) return;
     if (bind === 'diet-name') diet.name = el.value;
     else if (bind === 'meal-name') diet.meals[m].name = el.value;
-    else { const g = num(el.value); if (g != null && g >= 0) { diet.meals[m].items[+el.dataset.i].g = g; paintDietTotals(diet); } }
+    else { const g = num(el.value), it = diet.meals[m].items[+el.dataset.i]; if (g != null && g >= 0) { if (it.n != null) it.n = g; else it.g = g; paintDietTotals(diet); } }
     save();
     return;
   }
@@ -2319,9 +2365,10 @@ $app.addEventListener('submit', e => {
       const exact = typed && [...N().foods, ...BASE_FOODS].find(x => normText(x.name) === typed);
       const foodId = f.dataset.food || (exact && exact.id), g = num(f.elements.g.value);
       if (!foodId) { alert('Busca el alimento y elígelo de la lista.'); f.elements.q.focus(); return; }
-      const unitFood = isUnit(foodById(foodId));
-      if (g == null || g <= 0 || g > (unitFood ? 100 : 5000)) { alert(unitFood ? 'Escribe la cantidad (ej. 2).' : 'Escribe los gramos (ej. 120).'); f.elements.g.focus(); return; }
-      diet.meals[m].items.push({ foodId, g: round1(g) });
+      const food = foodById(foodId), portions = !!food.unitG && f.dataset.mode === 'u' && f.dataset.food === foodId;
+      const count = isUnit(food) || portions;
+      if (g == null || g <= 0 || g > (count ? 100 : 5000)) { alert(count ? 'Escribe la cantidad (ej. 2).' : 'Escribe los gramos (ej. 120).'); f.elements.g.focus(); return; }
+      diet.meals[m].items.push(portions ? { foodId, n: round1(g) } : { foodId, g: round1(g) });
       save(); render();
       return;
     }

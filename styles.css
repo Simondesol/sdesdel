@@ -451,3 +451,9 @@ a.card.hub { display: grid; }
 .food-form .when-unit { display: none; }
 .food-form:has(input[value="unit"]:checked) .when-unit { display: inline; }
 .food-form:has(input[value="unit"]:checked) .when-100 { display: none; }
+
+/* Botón gramos / unidades */
+.mode-chip { flex: none; width: 36px; min-width: 36px; padding: 0; color: var(--accent); border-color: var(--accent); }
+.mode-chip[hidden] { display: none; }
+
+.item-row .unit-label { flex: none; width: 36px; text-align: center; }

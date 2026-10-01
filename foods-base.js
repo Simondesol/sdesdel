@@ -377,5 +377,34 @@ const slug = s => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').repla
 
 const aliasFor = name => ALIASES.filter(([start]) => name.startsWith(start)).map(([, a]) => a).join(' ');
 
+// Peso aproximado de 1 unidad o porción, para poder anotar "2 plátanos" en vez de gramos.
+// [gramos, nombre de la porción] (sin nombre = unidad)
+export const UNITS = {
+  // Frutas
+  'Plátano': [120], 'Manzana': [180], 'Naranja': [150], 'Mandarina': [90], 'Pera': [170], 'Kiwi': [75],
+  'Durazno': [150], 'Nectarín': [140], 'Ciruela': [65], 'Damasco': [35], 'Caqui': [170], 'Tuna': [100],
+  'Limón': [60], 'Higo fresco': [50], 'Dátiles': [8], 'Palta': [170], 'Mango': [200], 'Frutilla': [12],
+  // Huevos
+  'Huevo entero': [50], 'Huevo duro': [50], 'Clara de huevo': [33], 'Yema de huevo': [17], 'Huevo de codorniz': [9],
+  // Panes
+  'Pan marraqueta': [100], 'Pan hallulla': [90], 'Pan italiano': [120], 'Pan pita': [60],
+  'Pan de molde integral': [28, 'rebanada'], 'Pan de molde blanco': [25, 'rebanada'],
+  'Tortilla de trigo': [40], 'Tortilla de maíz': [25], 'Galletas de arroz': [9], 'Galletas de agua': [6],
+  // Verduras
+  'Tomate': [120], 'Pepino': [200], 'Zanahoria': [70], 'Cebolla': [150], 'Pimentón': [150],
+  'Papa cocida': [170], 'Papa cruda': [170], 'Camote cocido': [150], 'Camote crudo': [150],
+  'Choclo cocido': [100], 'Choclo crudo': [100],
+  // Porciones típicas
+  'Proteína whey (polvo)': [30, 'scoop'], 'Aceite de oliva': [13, 'cucharada'], 'Aceite vegetal': [13, 'cucharada'],
+  'Aceite de coco': [13, 'cucharada'], 'Aceite de palta': [13, 'cucharada'], 'Mantequilla de maní': [16, 'cucharada'],
+  'Miel': [21, 'cucharada'], 'Azúcar': [5, 'cucharadita'], 'Mantequilla': [5, 'cucharadita'], 'Mayonesa': [14, 'cucharada'],
+  'Ketchup': [17, 'cucharada'], 'Semillas de chía': [10, 'cucharada'], 'Queso mantecoso': [20, 'lámina'],
+  'Jamón de pavo': [20, 'lámina'], 'Jamón de cerdo': [20, 'lámina'], 'Vienesa': [40], 'Barra de proteína': [60],
+};
+
 export const BASE_FOODS = Object.entries(RAW).flatMap(([cat, list]) =>
-  list.map(([name, kcal, p, c, f]) => ({ id: `b:${slug(name)}`, name, kcal, p, c, f, cat, base: true, alias: aliasFor(name) })));
+  list.map(([name, kcal, p, c, f]) => {
+    const u = UNITS[name];
+    return { id: `b:${slug(name)}`, name, kcal, p, c, f, cat, base: true, alias: aliasFor(name),
+      ...(u ? { unitG: u[0], unitLabel: u[1] || 'unidad' } : {}) };
+  }));
