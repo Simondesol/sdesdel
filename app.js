@@ -1,4 +1,4 @@
-import { BASE_FOODS } from './foods-base.js';
+import { BASE_FOODS, synonymsOf } from './foods-base.js';
 
 // ---------- Datos ----------
 // Cada usuario tiene una copia en el teléfono (para usar la app sin internet en el gym)
@@ -168,11 +168,23 @@ const fmtG = n => fmtNum(round1(n));
 const BASE_BY_ID = new Map(BASE_FOODS.map(f => [f.id, f]));
 const foodById = id => N().foods.find(f => f.id === id) || BASE_BY_ID.get(id);
 // Busca por palabras (sin importar tildes ni mayúsculas): tus alimentos primero, después la base
+const searchCache = new Map();
+function searchText(f) {
+  const key = `${f.name}|${f.alias || ''}`;
+  if (!searchCache.has(key)) searchCache.set(key, normText(`${f.name} ${f.alias || ''} ${synonymsOf(f.name)}`).split(/[^a-z0-9%]+/));
+  return searchCache.get(key);
+}
 function searchFoods(query, limit = 8) {
   const words = normText(query.trim()).split(/\s+/).filter(Boolean);
   if (!words.length) return [];
   // Cada palabra buscada debe coincidir con el comienzo de alguna palabra del nombre ("pollo" no encuentra "repollo")
-  const match = f => { const parts = normText(`${f.name} ${f.alias || ''}`).split(/[^a-z0-9%]+/); return words.every(w => parts.some(x => x.startsWith(w))); };
+  // Cada palabra buscada (o su singular) debe coincidir con el comienzo de alguna palabra del nombre,
+  // de sus otros nombres o de sus sinónimos ("tallarines" encuentra "Fideos", también en tus alimentos)
+  const sing = w => (w.length > 4 ? w.replace(/(es|s)$/, '') : w);
+  const match = f => {
+    const parts = searchText(f);
+    return words.every(w => parts.some(x => x.startsWith(w) || x.startsWith(sing(w))));
+  };
   const mine = N().foods.filter(match).sort((a, b) => a.name.localeCompare(b.name, 'es'));
   const myNames = new Set(N().foods.map(f => normText(f.name)));
   const base = BASE_FOODS.filter(f => match(f) && !myNames.has(normText(f.name)));
@@ -254,7 +266,7 @@ let foodQuery = '';
 function viewFoods() {
   const foods = N().foods.slice().sort((a, b) => a.name.localeCompare(b.name, 'es'));
   const list = foods.map(f => `
-    <a class="card" href="#/alimento/${f.id}" data-search="${esc(normText(f.name))}">
+    <a class="card" href="#/alimento/${f.id}" data-search="${esc(normText(`${f.name} ${synonymsOf(f.name)}`))}">
       <div class="grow"><strong>${esc(f.name)}</strong>
         <span class="muted small">${fmtKcal(f.kcal)} kcal · P ${fmtG(f.p)} · C ${fmtG(f.c)} · G ${fmtG(f.f)} <span class="per">por 100 g</span></span>
       </div><span class="chev">›</span>
@@ -269,7 +281,11 @@ function viewFoods() {
 
 function filterFoods() {
   const q = normText(foodQuery.trim());
-  $app.querySelectorAll('.food-list [data-search]').forEach(a => { a.hidden = q && !a.dataset.search.includes(q); });
+  const words = q.split(/\s+/).filter(Boolean), sing = w => (w.length > 4 ? w.replace(/(es|s)$/, '') : w);
+  $app.querySelectorAll('.food-list [data-search]').forEach(a => {
+    const parts = a.dataset.search.split(/[^a-z0-9%]+/);
+    a.hidden = words.length > 0 && !words.every(w => parts.some(x => x.startsWith(w) || x.startsWith(sing(w))));
+  });
   const box = $app.querySelector('.base-results');
   if (!box) return;
   const base = q ? searchFoods(foodQuery, 30).filter(f => f.base) : [];

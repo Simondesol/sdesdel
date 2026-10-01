@@ -340,7 +340,37 @@ const ALIASES = [
   ['Cacao en polvo', 'cacao amargo'],
 ];
 
-// id estable a partir del nombre
+// Sinónimos por palabra: valen para cualquier alimento, también los que crea cada usuario.
+// Si el nombre tiene una palabra del grupo (en singular o plural), se puede buscar con cualquiera de las otras.
+const SYNONYMS = [
+  ['fideo', 'tallarin', 'pasta', 'spaghetti', 'espagueti', 'macarron', 'corbata'],
+  ['palta', 'aguacate'],
+  ['frutilla', 'fresa'],
+  ['poroto', 'frijol', 'alubia', 'judia'],
+  ['mani', 'cacahuate', 'cacahuete'],
+  ['pimenton', 'pimiento', 'morron'],
+  ['betarraga', 'remolacha'],
+  ['durazno', 'melocoton'],
+  ['arveja', 'guisante', 'chicharo'],
+  ['platano', 'banana', 'banano'],
+  ['choclo', 'maiz', 'elote'],
+  ['camote', 'batata', 'boniato'],
+  ['quesillo', 'cottage', 'requeson'],
+  ['chorito', 'mejillon'],
+  ['damasco', 'albaricoque'],
+  ['arandano', 'blueberry'],
+  ['tortilla', 'rapidita', 'wrap'],
+  ['jardinera', 'surtido'],
+  ['zapallito', 'zucchini', 'calabacin'],
+  ['trutro', 'muslo'],
+];
+const normWord = s => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+const singular = w => w.replace(/(es|s)$/, '');
+// Texto extra para buscar un alimento por sus sinónimos
+export function synonymsOf(name) {
+  const words = new Set(normWord(name).split(/[^a-z0-9%]+/).filter(Boolean).flatMap(w => [w, singular(w)]));
+  return SYNONYMS.filter(group => group.some(g => words.has(g))).flat().join(' ');
+}
 
 // id estable a partir del nombre (no cambiar los nombres de alimentos ya publicados: las dietas los usan)
 const slug = s => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
