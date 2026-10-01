@@ -155,6 +155,8 @@ function viewHub() {
     </div>
 
     ${bodyweightCard()}
+
+    ${socialCard()}
     </div>`;
 }
 
@@ -664,7 +666,7 @@ const importForm = label => `<section class="import-box">
 // Saca el código de lo copiado: el código solo ("K7P-9XQ"), el link (?r=K7P9XQ) o el mensaje completo
 function codeFromText(text) {
   const t = (text || '').toUpperCase();
-  const m = t.match(/[?&]R=([A-Z0-9]{6})\b/) || t.match(/\b([A-Z0-9]{3})-([A-Z0-9]{3})\b/) || t.trim().match(/^([A-Z0-9]{3})\s*-?\s*([A-Z0-9]{3})$/);
+  const m = t.match(/[?&][RG]=([A-Z0-9]{6})\b/) || t.match(/\b([A-Z0-9]{3})-([A-Z0-9]{3})\b/) || t.trim().match(/^([A-Z0-9]{3})\s*-?\s*([A-Z0-9]{3})$/);
   return m ? m.slice(1).join('') : '';
 }
 
@@ -875,7 +877,7 @@ function viewAuth(mode) {
   return `<div class="auth">
     <h1><img class="auth-logo" src="icons/logo-full.png" alt="Desdel"></h1>
     <p class="muted">Entrena. Anota. Supera.</p>
-    ${localStorage.getItem(PENDING_IMPORT) ? `<p class="auth-note">Te compartieron una rutina o una dieta. ${reg ? 'Crea tu cuenta' : 'Inicia sesión'} y se agrega automáticamente.</p>` : ''}
+    ${localStorage.getItem(PENDING_IMPORT) ? `<p class="auth-note">Abriste un link de Desdel. ${reg ? 'Crea tu cuenta' : 'Inicia sesión'} y se agrega automáticamente.</p>` : ''}
     ${readLegacy() ? `<p class="auth-note">Tienes rutinas guardadas en este celular. Al ${reg ? 'crear tu cuenta' : 'iniciar sesión'} se suben a tu cuenta automáticamente.</p>` : ''}
     <form class="auth-form" data-form="${reg ? 'register' : 'login'}" novalidate>
       <label class="field"><span>Correo</span>
@@ -1029,14 +1031,17 @@ async function shareRoutine(btn) {
   const r = curRoutine();
   if (!r.exercises.length) { alert('Agrega ejercicios a la rutina antes de compartirla.'); return; }
   // Solo se comparten los ejercicios: sin pesos, historial ni notas
-  const routine = { name: r.name, exercises: r.exercises.map(ex => ({ name: ex.name, unit: ex.unit, rest: ex.rest || 0, rir: !!ex.rir })) };
-  await shareWithCode(btn, { routine }, { id: r.id, name: r.name, kind: 'routine' });
+  await shareWithCode(btn, { routine: routinePayload(r) }, { id: r.id, name: r.name, kind: 'routine' });
 }
+const routinePayload = r => ({ name: r.name, exercises: r.exercises.map(ex => ({ name: ex.name, unit: ex.unit, rest: ex.rest || 0, rir: !!ex.rir })) });
 
 // Se comparten las comidas con sus cantidades y los alimentos propios que usa (los de la base ya los tiene todo el mundo)
 async function shareDiet(btn) {
   const d = dietById(routeParts()[1]);
   if (!d.meals.some(m => m.items.length)) { alert('Agrega alimentos a la dieta antes de compartirla.'); return; }
+  await shareWithCode(btn, { diet: dietPayload(d) }, { id: d.id, name: d.name, kind: 'diet' });
+}
+function dietPayload(d) {
   const foods = new Map();
   const meals = d.meals.map(m => ({
     name: m.name,
@@ -1046,7 +1051,7 @@ async function shareDiet(btn) {
       return it.n != null ? { foodId: it.foodId, n: it.n } : { foodId: it.foodId, g: it.g || 0 };
     }),
   }));
-  await shareWithCode(btn, { diet: { name: d.name, meals, foods: [...foods.values()] } }, { id: d.id, name: d.name, kind: 'diet' });
+  return { name: d.name, meals, foods: [...foods.values()] };
 }
 
 // Cuadro con el código generado (rutina o dieta)
@@ -1086,8 +1091,17 @@ async function importByCode(code, showError) {
     return showError(e.code === 'auth/network-request-failed' || !navigator.onLine
       ? 'Se necesita internet para importar.' : 'No se pudo buscar el código. Intenta de nuevo.');
   }
-  if (!data || !(data.routine || data.diet)) return showError('No existe ninguna rutina ni dieta con ese código.');
+  if (!data || !(data.routine || data.diet)) {
+    let inv = null;
+    try { inv = await withTimeout(cloud.getInvite(code)); } catch (e) { /* sin internet: se avisa abajo */ }
+    if (inv) return addGymbro(code, inv, showError);
+    return showError('No existe ninguna rutina, dieta ni gymbro con ese código.');
+  }
   if (data.diet) return importDiet(data);
+  importRoutineData(data);
+}
+
+function importRoutineData(data) {
   const r = data.routine;
   const repeated = db.routines.some(x => sameName(x.name, r.name))
     ? `\n\nYa tienes una rutina llamada "${r.name}"; se agregará otra.` : '';
@@ -1110,15 +1124,20 @@ async function importByCode(code, showError) {
   go('#/rutina/' + routine.id);
 }
 
-function importDiet(data) {
-  const d = data.diet, from = data.ownerName || '';
+// Calorías de una dieta compartida (con los alimentos que trae)
+function sharedDietKcal(d) {
   const sharedFood = id => (d.foods || []).find(x => x.id === id) || BASE_BY_ID.get(id);
-  const kcal = d.meals.reduce((sum, m) => sum + m.items.reduce((a, it) => {
+  return d.meals.reduce((sum, m) => sum + m.items.reduce((a, it) => {
     const f = sharedFood(it.foodId);
     if (!f) return a;
     const k = f.per === 'unit' ? (it.g || 0) : (it.n != null && f.unitG ? it.n * f.unitG : it.g || 0) / 100;
     return a + f.kcal * k;
   }, 0), 0);
+}
+
+function importDiet(data) {
+  const d = data.diet, from = data.ownerName || '';
+  const kcal = sharedDietKcal(d);
   const repeated = N().diets.some(x => sameName(x.name, d.name)) ? `\n\nYa tienes una dieta llamada "${d.name}"; se agregará otra.` : '';
   if (!confirm(`¿Agregar la dieta "${d.name}"${from ? ` de ${from}` : ''} (${plural(d.meals.length, 'comida')}, ${fmtKcal(kcal)} kcal)?${repeated}`)) return;
   // Alimentos propios de quien la compartió: si ya tienes uno igual (mismo nombre y macros) se usa el tuyo; si no, se crea
@@ -1150,16 +1169,16 @@ function importDiet(data) {
 const logoImg = '<img class="auth-logo" src="icons/logo-full.png" alt="Desdel">';
 
 // En iPhone los links siempre se abren en Safari (no en la app instalada), así que se copia el código para pegarlo en la app
-let handoffCode = null;
+let handoffCode = null, handoffGymbro = false;
 function viewHandoff() {
   return `<div class="auth handoff">${logoImg}
-    <p><strong>Te compartieron una rutina o una dieta</strong></p>
+    <p><strong>${handoffGymbro ? 'Te invitaron a ser gymbro en Desdel 💪' : 'Te compartieron una rutina o una dieta'}</strong></p>
     <div class="code">${fmtCode(handoffCode)}</div>
     <button class="btn primary block" data-action="handoff-copy">📋 Copiar código</button>
     <ol class="handoff-steps">
       <li>Toca <strong>Copiar código</strong>.</li>
       <li>Abre <strong>Desdel</strong> desde tu pantalla de inicio.</li>
-      <li>En <strong>Rutinas</strong> o en <strong>Nutrición → Mis dietas</strong> toca <strong>📋 Pegar código</strong>.</li>
+      <li>${handoffGymbro ? 'En <strong>Social → Agregar gymbro</strong>' : 'En <strong>Rutinas</strong> o en <strong>Nutrición → Mis dietas</strong>'} toca <strong>📋 Pegar código</strong>.</li>
     </ol>
     <p class="muted small">¿Todavía no tienes Desdel instalada? En Safari toca Compartir <span aria-hidden="true">⬆️</span> → <strong>Agregar a pantalla de inicio</strong>, ábrela desde ahí y pega el código.</p>
     <button class="btn ghost block" data-action="handoff-here">Seguir aquí en Safari</button>
@@ -1221,6 +1240,7 @@ function viewSession(id) {
 
   return `${header(w.routineName, { back: true, sub: fmtLongDate(w.date) })}
     ${summary}
+    ${prsSent && prsSent.id === w.id ? `<p class="pr-note">🔥 ¡${prsSent.n === 1 ? 'Nuevo PR' : `${prsSent.n} PRs nuevos`}! Se lo avisamos a tus gymbros.</p>` : ''}
     <button class="btn primary block" data-action="share-workout" data-id="${w.id}" style="margin:0 0 10px">📤 Compartir entrenamiento</button>
     ${blocks}
     <a class="btn block center" href="#/editar/${w.id}">Editar entrenamiento</a>
@@ -1228,7 +1248,7 @@ function viewSession(id) {
 }
 
 // Mensaje para WhatsApp con el resumen de un entrenamiento guardado
-function workoutShareText(w) {
+function workoutShareText(w, forChat = false) {
   const k = db.workouts.indexOf(w);
   let ups = 0;
   const lines = w.exercises.map(ex => {
@@ -1241,9 +1261,10 @@ function workoutShareText(w) {
     });
     return `• ${ex.name} (${ex.unit}): ${sets.join(' · ')}`;
   });
-  const title = `💪 *${w.routineName}*${w.durationSec ? ` · ${fmtDuration(w.durationSec)}` : ''}`;
+  const title = `💪 ${forChat ? w.routineName : `*${w.routineName}*`}${w.durationSec ? ` · ${fmtDuration(w.durationSec)}` : ''}`;
   const closing = ups ? `🔥 Superé mi récord en ${plural(ups, 'serie')}` : '✅ Entrenamiento completado';
-  return `${title}\n${fmtLongDate(w.date)}\n\n${lines.join('\n')}\n\n${closing}\n\nDesdel · ${location.origin}${location.pathname}`;
+  const text = `${title}\n${fmtLongDate(w.date)}\n\n${lines.join('\n')}\n\n${closing}`;
+  return forChat ? text : `${text}\n\nDesdel · ${location.origin}${location.pathname}`;
 }
 
 async function shareWorkout(btn, id) {
@@ -1261,6 +1282,338 @@ async function shareWorkout(btn, id) {
   } catch (e) {
     window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
   }
+}
+
+// ---------- Social: gymbros y chats 1 a 1 ----------
+// Cada uno tiene un código de gymbro (invites/{código}). Quien lo usa crea el chat entre los dos (chats/{uidA_uidB}).
+let chats = [];               // chats con tus gymbros, en vivo
+let chatsLoaded = false, chatsError = false;
+let stopChats = () => {};
+let chatMsgs = { id: null, list: [], loaded: false, stop: () => {} };
+let attach = null;            // panel para enviar: null | 'menu' | 'diet' | 'routine' | 'workout'
+let inviteBusy = false, inviteError = false;
+let prsSent = null;           // { id, n } PRs avisados al terminar un entrenamiento
+
+const inviteKey = () => `desdel-gymbro-${user.uid}`;
+const inviteCode = () => localStorage.getItem(inviteKey());
+const inviteLink = code => `${location.origin}${location.pathname}?g=${code}`;
+const inviteText = code => `Agrégame como gymbro en Desdel 💪\n\nToca el link:\n${inviteLink(code)}\n\n` +
+  `Si no se abre, copia este código, abre Desdel y en Social → Agregar gymbro toca "Pegar código": ${fmtCode(code)}`;
+const autoPRKey = () => `desdel-avisar-pr-${user.uid}`;
+const autoPR = () => localStorage.getItem(autoPRKey()) !== '0';
+
+// Leídos: hasta qué mensaje viste cada chat (en este teléfono)
+const readKey = () => `desdel-leido-${user.uid}`;
+function readMap() { try { return JSON.parse(localStorage.getItem(readKey())) || {}; } catch (e) { return {}; } }
+function markRead(chatId, at) {
+  const m = readMap();
+  if (!at || (m[chatId] || 0) >= at) return;
+  m[chatId] = at;
+  localStorage.setItem(readKey(), JSON.stringify(m));
+}
+const isUnread = c => !!c.last && c.last.from !== user.uid && c.last.at > (readMap()[c.id] || 0);
+const otherUid = c => c.members.find(m => m !== user.uid);
+const gymbroName = c => (c.names && c.names[otherUid(c)]) || 'Gymbro';
+const hhmm = ms => new Date(ms).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
+const sameDay = (a, b) => new Date(a).toDateString() === new Date(b).toDateString();
+const fmtWhen = ms => (sameDay(ms, Date.now()) ? hhmm(ms) : new Date(ms).toLocaleDateString('es', { day: 'numeric', month: 'short' }));
+const dayLabel = ms => (sameDay(ms, Date.now()) ? 'Hoy' : sameDay(ms, Date.now() - 86400000) ? 'Ayer' : fmtDate(ms));
+
+function onChats(list) {
+  const first = !chatsLoaded;
+  chats = list;
+  chatsLoaded = true; chatsError = false;
+  // Si cambiaste tu nombre de usuario, se actualiza en tus chats
+  for (const c of chats) {
+    if (user.username && c.names && c.names[user.uid] !== user.username) cloud.renameInChat(c.id, user.uid, user.username).catch(() => {});
+  }
+  const [screen, arg] = routeParts();
+  if (screen === 'chat') {
+    const c = chats.find(x => x.id === arg);
+    if (c && c.last) markRead(c.id, c.last.at);
+    if (!c || first || !$app.querySelector('.chat-msgs')) refresh();   // terminó de cargar o se borró
+    return;
+  }
+  if (screen === '' || screen === 'social') refresh();
+}
+
+function startSocial(uid) {
+  chatsLoaded = false; chatsError = false;
+  stopChats = cloud.listenChats(uid, onChats, () => {
+    chatsError = true; chatsLoaded = true;
+    if (['', 'social', 'chat'].includes(routeParts()[0])) refresh();
+  });
+}
+function stopSocial() {
+  stopChats(); stopChats = () => {};
+  closeMessages();
+  chats = []; chatsLoaded = false;
+}
+
+function socialCard() {
+  const n = chats.filter(isUnread).length;
+  return `<a class="card hub" href="#/social">
+      <div class="hub-top"><span class="hub-icon">👥</span><strong>Social</strong>${n ? `<span class="badge on">${n}</span>` : ''}<span class="chev">›</span></div>
+      <span class="muted">${n ? `${plural(n, 'chat')} con mensajes nuevos` : chats.length ? `${plural(chats.length, 'gymbro')} · Chatea y comparte` : 'Agrega a tus gymbros y chatea con ellos'}</span>
+    </a>`;
+}
+
+function viewSocial() {
+  const when = c => (c.last ? c.last.at : c.createdAt || 0);
+  const list = chats.slice().sort((a, b) => when(b) - when(a)).map(c => {
+    const name = gymbroName(c);
+    return `<a class="card chat-item" href="#/chat/${c.id}">
+      <span class="avatar" aria-hidden="true">${esc(name.trim().charAt(0).toUpperCase() || '?')}</span>
+      <div class="grow"><strong>${esc(name)}</strong>
+        <span class="muted small">${c.last ? esc(`${c.last.from === user.uid ? 'Tú: ' : ''}${c.last.text}`) : 'Saluda a tu gymbro 👋'}</span></div>
+      ${isUnread(c) ? '<span class="dot-new" aria-label="Mensajes nuevos"></span>' : `<span class="muted small">${c.last ? fmtWhen(c.last.at) : ''}</span>`}
+    </a>`;
+  }).join('');
+  return `${header('Social', { home: true, sub: 'Chatea con tus gymbros' })}
+    <a class="btn primary block center" href="#/gymbro" style="margin:0 0 12px">+ Agregar gymbro</a>
+    ${!chatsLoaded ? '<p class="empty">Cargando…</p>'
+      : chatsError && !chats.length ? '<p class="empty">No se pudieron cargar tus chats. Revisa tu internet y vuelve a abrir la app.</p>'
+      : list || '<p class="empty">Todavía no tienes gymbros. Toca "Agregar gymbro" y mándale tu link a un amigo.</p>'}
+    <label class="card toggle-row">
+      <input type="checkbox" data-action="auto-pr" ${autoPR() ? 'checked' : ''}>
+      <span class="grow">Avisar mis PRs a mis gymbros<br><span class="muted small">Cuando superes tu récord estimado (1RM) de la 1ª serie, se envía solo a tus chats.</span></span>
+    </label>`;
+}
+
+function viewAddGymbro() {
+  const code = inviteCode();
+  return `${header('Agregar gymbro', { back: true })}
+    <section class="card share-box">
+      <div class="muted">Tu código de gymbro</div>
+      ${code ? `<div class="code">${fmtCode(code)}</div>
+        <div class="ex-actions">
+          <button class="btn primary" data-action="send-invite">Enviar</button>
+          <button class="btn" data-action="copy-invite">Copiar link</button>
+        </div>`
+      : inviteError ? '<p>No se pudo crear tu código. Revisa tu internet.</p><button class="btn primary" data-action="make-invite">Reintentar</button>'
+      : '<p class="muted">Creando tu código…</p>'}
+      <p class="muted hint">Mándale tu link a un amigo. Cuando lo toque quedan conectados como gymbros y pueden chatear. Solo puede agregarte quien tenga tu código.</p>
+    </section>
+    ${importForm('¿Te pasaron un código de gymbro?')}`;
+}
+
+// Crea tu código de gymbro la primera vez (si ya existe ese código se prueba otro)
+async function ensureInvite() {
+  if (inviteCode() || inviteBusy || inviteError) return;
+  inviteBusy = true;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const code = newCode();
+    try {
+      await withTimeout(cloud.createInvite(code, { ownerUid: user.uid, ownerName: user.username || '' }));
+      localStorage.setItem(inviteKey(), code);
+      break;
+    } catch (e) {
+      if (e.code === 'permission-denied' && attempt < 2) continue;
+      inviteError = true;
+      break;
+    }
+  }
+  inviteBusy = false;
+  if (routeParts()[0] === 'gymbro') refresh();
+}
+
+async function addGymbro(code, inv, showError) {
+  if (inv.ownerUid === user.uid) return showError('Ese es tu propio código de gymbro. Mándaselo a un amigo.');
+  const members = [user.uid, inv.ownerUid].sort();
+  const id = members.join('_');
+  let existing = chats.find(c => c.id === id);
+  if (!existing) { try { existing = await withTimeout(cloud.getChat(id)); } catch (e) { /* se intenta crear */ } }
+  if (!existing) {
+    if (!confirm(`¿Agregar a ${inv.ownerName || 'este usuario'} como gymbro?`)) return;
+    try {
+      await withTimeout(cloud.createChat(id, {
+        members, via: code, last: null,
+        names: { [user.uid]: user.username || 'Gymbro', [inv.ownerUid]: inv.ownerName || 'Gymbro' },
+      }));
+    } catch (e) {
+      return showError('No se pudo agregar. Revisa tu internet e intenta de nuevo.');
+    }
+  }
+  importOpen = false;
+  go('#/chat/' + id);
+}
+
+// Mensajes del chat abierto (en vivo mientras está en pantalla)
+function openMessages(id) {
+  if (chatMsgs.id === id) return;
+  closeMessages();
+  chatMsgs = { id, list: [], loaded: false, stop: () => {} };
+  chatMsgs.stop = cloud.listenMessages(id, list => {
+    if (chatMsgs.id !== id) return;
+    chatMsgs.list = list;
+    chatMsgs.loaded = true;
+    const c = chats.find(x => x.id === id);
+    if (c && c.last) markRead(id, c.last.at);
+    paintMessages();
+  });
+}
+function closeMessages() {
+  chatMsgs.stop();
+  chatMsgs = { id: null, list: [], loaded: false, stop: () => {} };
+}
+
+function viewChat(id) {
+  const c = chats.find(x => x.id === id);
+  if (!c) {
+    if (chatsLoaded) { location.replace('#/social'); return ''; }
+    return `${header('Chat', { back: true })}<p class="empty">Cargando…</p>`;
+  }
+  openMessages(id);
+  return `${header(gymbroName(c), { back: true, sub: 'Gymbro' })}
+    <div class="chat-msgs">${msgsHtml()}</div>
+    ${attachPanel()}
+    <form class="chat-bar" data-form="chat-send" novalidate>
+      <button type="button" class="icon" data-action="attach" aria-label="Enviar dieta, rutina o entrenamiento">＋</button>
+      <input name="text" placeholder="Mensaje" autocomplete="off" maxlength="1000" enterkeyhint="send" aria-label="Mensaje">
+      <button class="btn primary">Enviar</button>
+    </form>`;
+}
+
+function msgsHtml() {
+  if (!chatMsgs.loaded) return '<p class="empty">Cargando…</p>';
+  const del = '<button class="btn ghost small-btn danger-text" data-action="gymbro-del">Eliminar gymbro</button>';
+  if (!chatMsgs.list.length) return `${del}<p class="empty">Todavía no hay mensajes. ¡Saluda! 👋<br>Con ＋ puedes enviarle una dieta, una rutina o un entrenamiento.</p>`;
+  let lastDay = '';
+  return del + chatMsgs.list.map(m => {
+    const day = dayLabel(m.at);
+    const sep = day !== lastDay ? `<div class="chat-day">${day}</div>` : '';
+    lastDay = day;
+    const mine = m.from === user.uid;
+    return `${sep}<div class="msg ${mine ? 'mine' : ''}">${msgBody(m, mine)}<span class="msg-time">${hhmm(m.at)}</span></div>`;
+  }).join('');
+}
+
+function msgBody(m, mine) {
+  const add = label => (mine ? '' : `<button class="btn" data-action="msg-add" data-id="${esc(m.id)}">${label}</button>`);
+  switch (m.type) {
+    case 'diet':
+      return `<div class="msg-card"><span class="muted small">🥗 Dieta</span><strong>${esc(m.diet.name)}</strong>
+        <span class="muted small">${plural(m.diet.meals.length, 'comida')} · ${fmtKcal(sharedDietKcal(m.diet))} kcal</span>${add('Agregar a mis dietas')}</div>`;
+    case 'routine':
+      return `<div class="msg-card"><span class="muted small">🏋️ Rutina</span><strong>${esc(m.routine.name)}</strong>
+        <span class="muted small">${esc(m.routine.exercises.map(ex => ex.name).join(' · '))}</span>${add('Agregar a mis rutinas')}</div>`;
+    case 'workout':
+      return `<div class="msg-card"><span class="muted small">💪 Entrenamiento</span><div class="pre">${esc(m.text)}</div></div>`;
+    case 'pr':
+      return `<div class="msg-card"><span class="muted small">🔥 ¡Nuevo PR!</span><div class="pre">${esc(m.text)}</div></div>`;
+    default:
+      return `<div class="pre">${esc(m.text || '')}</div>`;
+  }
+}
+
+// Repinta solo los mensajes (sin redibujar la pantalla, para no cerrar el teclado)
+function paintMessages() {
+  const box = $app.querySelector('.chat-msgs');
+  if (!box) return;
+  const doc = document.documentElement;
+  const nearBottom = innerHeight + scrollY >= doc.scrollHeight - 160;
+  box.innerHTML = msgsHtml();
+  const last = chatMsgs.list[chatMsgs.list.length - 1];
+  if (nearBottom || (last && last.from === user.uid)) scrollChatBottom();
+}
+const scrollChatBottom = () => requestAnimationFrame(() => window.scrollTo(0, document.documentElement.scrollHeight));
+
+function attachPanel() {
+  if (!attach) return '';
+  if (attach === 'menu') {
+    return `<section class="card attach">
+      <button class="btn block" data-action="attach-pick" data-kind="diet">🥗 Enviar una dieta</button>
+      <button class="btn block" data-action="attach-pick" data-kind="routine">🏋️ Enviar una rutina</button>
+      <button class="btn block" data-action="attach-pick" data-kind="workout">💪 Enviar un entrenamiento</button>
+      <button class="btn ghost block" data-action="attach-close">Cancelar</button>
+    </section>`;
+  }
+  const items = attach === 'diet'
+    ? N().diets.map(d => [d.id, d.name, `${plural(d.meals.length, 'comida')} · ${fmtKcal(dietMacros(d).kcal)} kcal`])
+    : attach === 'routine'
+      ? db.routines.filter(r => r.exercises.length).map(r => [r.id, r.name || '(sin nombre)', plural(r.exercises.length, 'ejercicio')])
+      : db.workouts.slice(-20).reverse().map(w => [w.id, w.routineName, fmtDate(w.date)]);
+  const title = { diet: '¿Qué dieta?', routine: '¿Qué rutina?', workout: '¿Qué entrenamiento?' }[attach];
+  const none = { diet: 'Todavía no tienes dietas.', routine: 'Todavía no tienes rutinas con ejercicios.', workout: 'Todavía no tienes entrenamientos guardados.' }[attach];
+  return `<section class="card attach">
+      <div class="muted small">${title}</div>
+      ${items.map(([id, name, sub]) => `<button class="btn block attach-item" data-action="attach-send" data-id="${id}">
+        <span class="grow">${esc(name)}</span><span class="muted small">${esc(sub)}</span></button>`).join('') || `<p class="muted">${none}</p>`}
+      <button class="btn ghost block" data-action="attach-close">Cancelar</button>
+    </section>`;
+}
+
+function sendMsg(chatId, msg, preview) {
+  return cloud.sendMessage(chatId, { from: user.uid, ...msg }, preview.slice(0, 120))
+    .catch(() => alert('No se pudo enviar el mensaje. Revisa tu internet e intenta de nuevo.'));
+}
+
+function sendText(f) {
+  const text = f.elements.text.value.trim();
+  if (!text) return;
+  f.elements.text.value = '';
+  f.elements.text.focus();
+  sendMsg(routeParts()[1], { type: 'text', text }, text);
+}
+
+function sendAttachment(id) {
+  const chatId = routeParts()[1];
+  if (attach === 'diet') {
+    const d = dietById(id);
+    sendMsg(chatId, { type: 'diet', diet: dietPayload(d) }, `🥗 Dieta: ${d.name}`);
+  } else if (attach === 'routine') {
+    const r = db.routines.find(x => x.id === id);
+    sendMsg(chatId, { type: 'routine', routine: routinePayload(r) }, `🏋️ Rutina: ${r.name}`);
+  } else {
+    const w = db.workouts.find(x => x.id === id);
+    sendMsg(chatId, { type: 'workout', text: workoutShareText(w, true) }, `💪 Entrenamiento: ${w.routineName}`);
+  }
+  attach = null;
+  render();
+  scrollChatBottom();
+}
+
+// Agregar a tu app la dieta o rutina que te mandaron
+function addFromMessage(id) {
+  const m = chatMsgs.list.find(x => x.id === id);
+  const c = chats.find(x => x.id === chatMsgs.id);
+  if (!m) return;
+  const data = { ownerName: c ? gymbroName(c) : '' };
+  if (m.type === 'diet') importDiet({ ...data, diet: m.diet });
+  else if (m.type === 'routine') importRoutineData({ ...data, routine: m.routine });
+}
+
+// PRs del entrenamiento recién guardado: 1RM estimado de la 1ª serie mayor que el mejor anterior
+function newPRs(w) {
+  const firstE1rm = ex => {
+    const s = ex.sets.find(x => x.w != null);
+    return s ? toKg(epley(s.w, s.r || 1), ex.unit) : 0;
+  };
+  const prs = [];
+  for (const ex of w.exercises) {
+    const cur = firstE1rm(ex);
+    if (!cur) continue;
+    let prev = 0;
+    for (const o of db.workouts) {
+      if (o === w) continue;
+      const oe = o.exercises.find(e => e.exerciseId === ex.exerciseId);
+      if (oe) prev = Math.max(prev, firstE1rm(oe));
+    }
+    if (prev > 0 && cur > prev + 0.01) {
+      const s = ex.sets.find(x => x.w != null);
+      prs.push({ name: ex.name, text: `${ex.name}: ${fmtNum(s.w)} ${ex.unit} × ${fmtNum(s.r || 1)} → 1RM ≈ ${fmtNum(round1(epley(s.w, s.r || 1)))} ${ex.unit}` });
+    }
+  }
+  return prs;
+}
+
+function announcePRs(w) {
+  const prs = newPRs(w);
+  if (!prs.length || !autoPR() || !chats.length) return;
+  const text = prs.map(p => p.text).join('\n');
+  const preview = `🔥 Nuevo PR: ${prs[0].name}${prs.length > 1 ? ` y ${prs.length - 1} más` : ''}`;
+  for (const c of chats) sendMsg(c.id, { type: 'pr', text }, preview);
+  prsSent = { id: w.id, n: prs.length };
 }
 
 // ---------- Progreso ----------
@@ -1602,6 +1955,7 @@ function render() {
   else if (!editBuf || editBuf.editOf !== arg) editBuf = makeEditBuf(arg);
   if (screen !== 'sesion' || arg !== justFinished) justFinished = null;
   if (screen !== 'rutina' && screen !== 'dieta') shareResult = null;
+  if (screen !== 'chat') { closeMessages(); attach = null; }
 
   let html, tab = null;
   switch (screen) {
@@ -1622,6 +1976,9 @@ function render() {
     case 'nutricion': html = viewNutrition(arg); break;
     case 'alimento': html = viewFoodForm(arg, routeParts()[2]); break;
     case 'dieta': html = viewDietEditor(arg); break;
+    case 'social': html = viewSocial(); break;
+    case 'gymbro': html = viewAddGymbro(); break;
+    case 'chat': html = viewChat(arg); break;
     default: html = viewHub();   // Inicio: sin pestañas
   }
   $app.innerHTML = html;
@@ -1629,6 +1986,8 @@ function render() {
   $tabs.querySelectorAll('a').forEach(a => a.classList.toggle('active', a.dataset.tab === tab));
   if (tab === 'progreso' && progressQuery) filterProgress();
   if (screen === 'nutricion' && arg === 'alimentos' && foodQuery) filterFoods();   // al volver, mantiene la búsqueda aplicada
+  if (screen === 'gymbro') ensureInvite();
+  if (screen === 'chat') scrollChatBottom();
   paintTimer();
 }
 
@@ -1696,9 +2055,11 @@ function finishWorkout() {
   setTimer(null);
   const id = uid();
   const durationSec = Math.max(0, Math.round((Date.now() - new Date(d.start).getTime()) / 1000));
-  db.workouts.push({ id, routineId: d.routineId, routineName: d.routineName, date: d.start, durationSec, exercises });
+  const w = { id, routineId: d.routineId, routineName: d.routineName, date: d.start, durationSec, exercises };
+  db.workouts.push(w);
   db.draft = null;
   save();
+  announcePRs(w);
   justFinished = id;
   location.replace('#/sesion/' + id);
 }
@@ -1969,6 +2330,7 @@ async function handleUser(u) {
   authUser = u;
   stopListening();
   stopListening = () => {};
+  stopSocial();
   if (!u) {
     user = null;
     db = emptyDb();
@@ -1999,6 +2361,7 @@ async function handleUser(u) {
   status = 'ready';
   persistLocal();
   stopListening = cloud.listen(u.uid, applyRemoteMain, applyRemoteWorkouts);
+  startSocial(u.uid);
   sync();
   render();
   if (db.draft && db.draft.timer) keepScreenOn(true);
@@ -2013,6 +2376,7 @@ async function logout() {
   if (!confirm(msg)) return;
   keepScreenOn(false);
   stopListening();
+  stopSocial();
   if (user) localStorage.removeItem(userKey(user.uid));
   user = null;
   await cloud.logout();                  // Firebase avisa y se muestra la pantalla de acceso
@@ -2375,6 +2739,49 @@ $app.addEventListener('click', e => {
     case 'share-diet':
       shareDiet(el);
       break;
+
+    // Social
+    case 'auto-pr':
+      localStorage.setItem(autoPRKey(), el.checked ? '1' : '0');
+      break;
+    case 'make-invite':
+      inviteError = false;
+      render();
+      break;
+    case 'send-invite': {
+      const text = inviteText(inviteCode());
+      if (navigator.share) navigator.share({ text }).catch(() => {});
+      else window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+      break;
+    }
+    case 'copy-invite':
+      navigator.clipboard.writeText(inviteLink(inviteCode()))
+        .then(() => { el.textContent = '✓ Link copiado'; }, () => alert(`Link: ${inviteLink(inviteCode())}`));
+      break;
+    case 'attach':
+      attach = attach ? null : 'menu';
+      render();
+      break;
+    case 'attach-pick':
+      attach = el.dataset.kind;
+      render();
+      break;
+    case 'attach-close':
+      attach = null;
+      render();
+      break;
+    case 'attach-send':
+      sendAttachment(id);
+      break;
+    case 'msg-add':
+      addFromMessage(id);
+      break;
+    case 'gymbro-del': {
+      const c = chats.find(x => x.id === routeParts()[1]);
+      if (!c || !confirm(`¿Eliminar a ${gymbroName(c)} de tus gymbros? El chat se borra para los dos.`)) return;
+      cloud.deleteChat(c.id).then(() => location.replace('#/social'), () => alert('No se pudo eliminar. Revisa tu internet.'));
+      break;
+    }
     case 'send-code': {
       const text = shareText(shareResult);
       if (navigator.share) navigator.share({ text }).catch(() => {});
@@ -2499,6 +2906,7 @@ $app.addEventListener('submit', e => {
     case 'username': submitUsername(f); return;
     case 'password': submitPassword(f); return;
     case 'import-code': importRoutine(f); return;
+    case 'chat-send': sendText(f); return;
     case 'bodyweight': saveBodyweight(f); return;
     case 'food': saveFood(f); return;
     case 'add-item': {
@@ -2553,11 +2961,15 @@ const linkParams = new URLSearchParams(location.search);
 const isLocal = ['localhost', '127.0.0.1'].includes(location.hostname);
 const isIPhone = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const isInstalled = navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
-if (linkParams.get('r')) {
+const linkCode = linkParams.get('r') || linkParams.get('g');   // r = rutina o dieta, g = gymbro
+if (linkCode) {
   // En Safari de iPhone (fuera de la app) se muestra el código para copiarlo; en local se prueba con ?ios
-  if ((isIPhone && !isInstalled) || (isLocal && linkParams.has('ios'))) handoffCode = normCode(linkParams.get('r'));
-  else localStorage.setItem(PENDING_IMPORT, normCode(linkParams.get('r')));
+  if ((isIPhone && !isInstalled) || (isLocal && linkParams.has('ios'))) {
+    handoffCode = normCode(linkCode);
+    handoffGymbro = linkParams.has('g');
+  } else localStorage.setItem(PENDING_IMPORT, normCode(linkCode));
   linkParams.delete('r');
+  linkParams.delete('g');
   const qs = linkParams.toString();
   history.replaceState(null, '', `${location.pathname}${qs ? `?${qs}` : ''}${location.hash}`);
 }

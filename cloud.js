@@ -4,6 +4,9 @@
 //   users/{uid}/data/main       → { routines, notes }
 //   users/{uid}/workouts/{id}   → un entrenamiento guardado
 //   shared/{código}             → rutina o dieta compartida { ownerUid, ownerName, routine | diet, createdAt }
+//   invites/{código}            → código de gymbro { ownerUid, ownerName, createdAt }
+//   chats/{uidA_uidB}           → chat entre dos gymbros { members, names, via, last, createdAt }
+//   chats/{id}/messages/{id}    → mensaje { from, at, type, text | diet | routine }
 import { firebaseConfig } from './firebase-config.js';
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.8.0/firebase-app.js';
 import {
@@ -13,6 +16,7 @@ import {
 } from 'https://www.gstatic.com/firebasejs/12.8.0/firebase-auth.js';
 import {
   getFirestore, doc, collection, getDoc, getDocs, setDoc, deleteDoc, onSnapshot, serverTimestamp,
+  query, where, orderBy, limitToLast, updateDoc, writeBatch,
 } from 'https://www.gstatic.com/firebasejs/12.8.0/firebase-firestore.js';
 
 const app = initializeApp(firebaseConfig);
@@ -77,4 +81,45 @@ export function listen(uid, onMain, onWorkouts) {
     if (changes.length) onWorkouts(changes);
   }, () => {});
   return () => { stopMain(); stopWorkouts(); };
+}
+
+// ---------- Gymbros: códigos y chats 1 a 1 ----------
+const ms = t => (t && typeof t.toMillis === 'function' ? t.toMillis() : typeof t === 'number' ? t : Date.now());
+const chatRef = id => doc(fs, 'chats', id);
+
+export const createInvite = (code, data) => setDoc(doc(fs, 'invites', code), { ...data, createdAt: serverTimestamp() });
+export async function getInvite(code) {
+  const snap = await getDoc(doc(fs, 'invites', code));
+  return snap.exists() ? snap.data() : null;
+}
+export async function getChat(id) {
+  const snap = await getDoc(chatRef(id));
+  return snap.exists() ? { id, ...snap.data() } : null;
+}
+export const createChat = (id, data) => setDoc(chatRef(id), { ...data, createdAt: serverTimestamp() });
+export const deleteChat = id => deleteDoc(chatRef(id));
+export const renameInChat = (id, uid, name) => updateDoc(chatRef(id), { [`names.${uid}`]: name });
+
+// Mensaje + resumen del último mensaje del chat, juntos
+export function sendMessage(chatId, msg, preview) {
+  const batch = writeBatch(fs);
+  batch.set(doc(collection(fs, 'chats', chatId, 'messages')), { ...msg, at: serverTimestamp() });
+  batch.update(chatRef(chatId), { last: { text: preview, from: msg.from, at: serverTimestamp() } });
+  return batch.commit();
+}
+
+export function listenChats(uid, cb, onError = () => {}) {
+  return onSnapshot(query(collection(fs, 'chats'), where('members', 'array-contains', uid)), snap => {
+    cb(snap.docs.map(d => {
+      const c = d.data({ serverTimestamps: 'estimate' });
+      return { ...c, id: d.id, createdAt: ms(c.createdAt), last: c.last ? { ...c.last, at: ms(c.last.at) } : null };
+    }));
+  }, onError);
+}
+
+export function listenMessages(chatId, cb) {
+  const q = query(collection(fs, 'chats', chatId, 'messages'), orderBy('at'), limitToLast(200));
+  return onSnapshot(q, snap => {
+    cb(snap.docs.map(d => { const m = d.data({ serverTimestamps: 'estimate' }); return { ...m, id: d.id, at: ms(m.at) }; }));
+  }, () => {});
 }
