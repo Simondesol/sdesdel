@@ -139,3 +139,11 @@ export function listenMessages(chatId, cb) {
     cb(snap.docs.map(d => { const m = d.data({ serverTimestamps: 'estimate' }); return { ...m, id: d.id, at: ms(m.at) }; }));
   }, () => {});
 }
+
+// Perfil de gymbro: resumen que solo tus gymbros pueden leer
+export const putProfile = (uid, data) => setDoc(doc(fs, 'profiles', uid), { ...data, updatedAt: serverTimestamp() });
+export const deleteProfile = uid => deleteDoc(doc(fs, 'profiles', uid));
+export async function getProfile(uid) {
+  const snap = await getDoc(doc(fs, 'profiles', uid));
+  return snap.exists() ? snap.data() : null;
+}

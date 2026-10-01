@@ -30,7 +30,7 @@ let justFinished = null;         // entrenamiento recién guardado (para mostrar
 function persistLocal() {
   if (user) localStorage.setItem(userKey(user.uid), JSON.stringify({ db, synced }));
 }
-function save() { persistLocal(); scheduleSync(); }
+function save() { persistLocal(); scheduleSync(); scheduleProfile(); }
 
 // Datos guardados en el teléfono antes de tener cuenta (se suben al iniciar sesión)
 function readLegacy() {
@@ -115,11 +115,12 @@ function liveCmp(s, unit, best) {
 const markSpan = c => (c == null ? '' :
   `<span class="mark ${c > 0 ? 'up' : c < 0 ? 'down' : 'eq'}">${c > 0 ? '▲' : c < 0 ? '▼' : '='}</span>`);
 
-function header(title, { back = false, home = false, sub = '', right = '' } = {}) {
+function header(title, { back = false, home = false, sub = '', right = '', href = '' } = {}) {
+  const titles = `<h1>${esc(title)}</h1>${sub ? `<div class="sub">${esc(sub)}</div>` : ''}`;
   return `<header class="bar">
     ${back ? '<button class="icon" data-action="back" aria-label="Volver">‹</button>' : ''}
     ${home ? '<a class="icon home" href="#/" aria-label="Volver al inicio">‹</a>' : ''}
-    <div class="titles"><h1>${esc(title)}</h1>${sub ? `<div class="sub">${esc(sub)}</div>` : ''}</div>
+    ${href ? `<a class="titles" href="${href}">${titles}</a>` : `<div class="titles">${titles}</div>`}
     ${right}
   </header>`;
 }
@@ -1363,6 +1364,7 @@ const dayLabel = ms => (sameDay(ms, Date.now()) ? 'Hoy' : sameDay(ms, Date.now()
 
 function onChats(list) {
   const first = !chatsLoaded;
+  if (list.length && !chats.length) scheduleProfile();   // con gymbros, se publica tu perfil
   chats = list;
   chatsLoaded = true; chatsError = false;
   // Si cambiaste tu nombre de usuario, se actualiza en tus chats
@@ -1377,6 +1379,8 @@ function onChats(list) {
     return;
   }
   if (screen === '' || screen === 'social') refresh();
+  // Perfil: cuando terminan de cargar los chats, o si se borró ese gymbro
+  else if (screen === 'perfil' && (first || (arg !== 'yo' && !chats.some(x => x.id === arg)))) refresh();
 }
 
 function startSocial(uid) {
@@ -1417,6 +1421,10 @@ function viewSocial() {
       : chatsError && !chats.length ? '<p class="empty">No se pudieron cargar tus chats. Revisa tu internet y vuelve a abrir la app.</p>'
       : list || '<p class="empty">Todavía no tienes gymbros. Toca "Agregar gymbro" y mándale tu link a un amigo.</p>'}
     <label class="card toggle-row">
+      <input type="checkbox" data-action="share-profile" ${shareProfile() ? 'checked' : ''}>
+      <span class="grow">Compartir mis récords y estadísticas con mis gymbros<br><span class="muted small">Solo tus gymbros los ven en tu perfil. <a href="#/perfil/yo">Ver cómo me ven ›</a></span></span>
+    </label>
+    <label class="card toggle-row" style="margin-top:8px">
       <input type="checkbox" data-action="auto-pr" ${autoPR() ? 'checked' : ''}>
       <span class="grow">Avisar mis PRs a mis gymbros<br><span class="muted small">Cuando superes tu récord estimado (1RM) de la 1ª serie, se envía solo a tus chats.</span></span>
     </label>`;
@@ -1492,6 +1500,7 @@ function openMessages(id) {
     const c = chats.find(x => x.id === id);
     if (c && c.last) markRead(id, c.last.at);
     paintMessages();
+    if (routeParts()[0] === 'perfil') refresh();
   });
 }
 function closeMessages() {
@@ -1508,7 +1517,7 @@ function viewChat(id) {
     return `${header('Chat', { back: true })}<p class="empty">Cargando…</p>`;
   }
   openMessages(id);
-  return `${header(gymbroName(c), { back: true, sub: 'Gymbro' })}
+  return `${header(gymbroName(c), { back: true, sub: 'Ver perfil ›', href: `#/perfil/${c.id}` })}
     <div class="chat-msgs">${msgsHtml()}</div>
     ${attachPanel()}
     <form class="chat-bar ${editingMsg ? 'editing' : ''}" data-form="chat-send" novalidate>
@@ -1521,10 +1530,9 @@ function viewChat(id) {
 
 function msgsHtml() {
   if (!chatMsgs.loaded) return '<p class="empty">Cargando…</p>';
-  const del = '<button class="btn ghost small-btn danger-text" data-action="gymbro-del">Eliminar gymbro</button>';
-  if (!chatMsgs.list.length) return `${del}<p class="empty">Todavía no hay mensajes. ¡Saluda! 👋<br>Con ＋ puedes enviarle una dieta, una rutina o un entrenamiento.</p>`;
+  if (!chatMsgs.list.length) return '<p class="empty">Todavía no hay mensajes. ¡Saluda! 👋<br>Con ＋ puedes enviarle una dieta, una rutina o un entrenamiento.</p>';
   let lastDay = '';
-  return del + chatMsgs.list.map(m => {
+  return chatMsgs.list.map(m => {
     const day = dayLabel(m.at);
     const sep = day !== lastDay ? `<div class="chat-day">${day}</div>` : '';
     lastDay = day;
@@ -1744,6 +1752,143 @@ $app.addEventListener('pointermove', e => {
 });
 // Sin el menú del navegador al mantener apretado
 $app.addEventListener('contextmenu', e => { if (e.target.closest('.msg.mine')) e.preventDefault(); });
+
+// ---------- Perfil de gymbro ----------
+// Cada uno publica un resumen (récords, estadísticas, últimos entrenamientos) en profiles/{uid}; solo sus gymbros lo pueden leer.
+const shareProfileKey = () => `desdel-perfil-${user.uid}`;
+const shareProfile = () => localStorage.getItem(shareProfileKey()) !== '0';
+const profilePubKey = () => `desdel-perfil-pub-${user.uid}`;
+const profiles = new Map();   // uid → { data, error, loading, at }
+let profileTimer = null;
+
+// Lunes de la semana (para la racha de semanas seguidas entrenando)
+function weekStart(ms) {
+  const d = new Date(ms);
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  return d.getTime();
+}
+
+function myProfile() {
+  const ws = db.workouts, now = new Date();
+  const month = ws.filter(w => { const d = new Date(w.date); return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear(); }).length;
+  const weeks = new Set(ws.map(w => weekStart(Date.parse(w.date))));
+  let wk = weekStart(Date.now()), streak = 0;
+  if (!weeks.has(wk)) wk = weekStart(wk - 3 * 86400000);   // si esta semana aún no entrena, la racha sigue viva
+  while (weeks.has(wk)) { streak++; wk = weekStart(wk - 3 * 86400000); }
+  // Récord de cada ejercicio: el mejor 1RM estimado de la 1ª serie (igual que el gráfico de Progreso)
+  const best = new Map();
+  for (const w of ws) {
+    for (const ex of w.exercises) {
+      const st = ex.sets.find(x => x.w != null);
+      if (!st) continue;
+      const e = epley(st.w, st.r || 1), kg = toKg(e, ex.unit), cur = best.get(ex.exerciseId);
+      if (!cur || kg > cur.kg) best.set(ex.exerciseId, { kg, name: ex.name, v: round1(e), unit: ex.unit, set: `${fmtNum(st.w)} ${ex.unit} × ${fmtNum(st.r || 1)}`, date: w.date });
+    }
+  }
+  const prs = [...best.values()].sort((a, b) => b.kg - a.kg).slice(0, 15).map(({ kg, ...pr }) => pr);
+  const recent = ws.slice(-5).reverse().map(w => ({ routine: w.routineName || 'Entrenamiento', date: w.date, min: w.durationSec ? Math.round(w.durationSec / 60) : 0 }));
+  return { name: user.username || '', stats: { month, total: ws.length, streak }, prs, recent };
+}
+
+// Se publica unos segundos después de cada cambio, solo si cambió algo y si tienes gymbros
+function scheduleProfile() {
+  clearTimeout(profileTimer);
+  profileTimer = setTimeout(publishProfile, 4000);
+}
+async function publishProfile() {
+  if (!user || status !== 'ready' || !shareProfile() || !chats.length) return;
+  const data = myProfile(), json = stable(data);
+  if (localStorage.getItem(profilePubKey()) === json) return;
+  try {
+    await cloud.putProfile(user.uid, data);
+    localStorage.setItem(profilePubKey(), json);
+  } catch (e) { /* sin internet: se intenta de nuevo en el próximo cambio */ }
+}
+function setShareProfile(on) {
+  localStorage.setItem(shareProfileKey(), on ? '1' : '0');
+  localStorage.removeItem(profilePubKey());
+  if (on) publishProfile();
+  else cloud.deleteProfile(user.uid).catch(() => {});
+}
+
+function loadProfile(uid) {
+  const p = profiles.get(uid);
+  if (p && (p.loading || Date.now() - p.at < 60000)) return;
+  profiles.set(uid, { ...(p || {}), loading: true });
+  cloud.getProfile(uid)
+    .then(data => profiles.set(uid, { data, at: Date.now() }), () => profiles.set(uid, { error: true, at: Date.now() }))
+    .then(() => { if (routeParts()[0] === 'perfil') refresh(); });
+}
+
+function profileBody(d, me) {
+  const st = d.stats || {};
+  const stats = `<div class="stats">
+      <div class="stat"><span class="muted">Este mes</span><strong>${st.month || 0}</strong><span class="muted">${st.month === 1 ? 'entrenamiento' : 'entrenamientos'}</span></div>
+      <div class="stat"><span class="muted">Total</span><strong>${st.total || 0}</strong><span class="muted">${st.total === 1 ? 'entrenamiento' : 'entrenamientos'}</span></div>
+      <div class="stat"><span class="muted">Racha</span><strong>${st.streak || 0}</strong><span class="muted">${st.streak === 1 ? 'semana' : 'semanas'}</span></div>
+    </div>`;
+  const prs = (d.prs || []).map(pr => `<div class="prog-row">
+      <span>${esc(pr.name)}</span>
+      <span class="pr-val"><strong>${fmtNum(pr.v)} ${esc(pr.unit)}</strong><span class="muted small">${esc(pr.set)}</span></span>
+    </div>`).join('');
+  const recent = (d.recent || []).map(w => `<div class="prog-row">
+      <span>${esc(w.routine)}</span>
+      <span class="muted">${dayLabel(Date.parse(w.date))}${w.min ? ` · ${w.min} min` : ''}</span>
+    </div>`).join('');
+  return `${stats}
+    <h2>Récords · 1RM estimado</h2>
+    ${prs ? `<section class="card">${prs}</section>` : `<p class="empty">${me ? 'Todavía no tienes' : 'Todavía no tiene'} récords con peso anotado.</p>`}
+    <h2>Últimos entrenamientos</h2>
+    ${recent ? `<section class="card">${recent}</section>` : '<p class="empty">Todavía no hay entrenamientos.</p>'}`;
+}
+
+// Dietas y rutinas que se han enviado en el chat (las más nuevas primero)
+function sharedInChat(c) {
+  if (chatMsgs.id !== c.id || !chatMsgs.loaded) return '';
+  const items = chatMsgs.list.filter(m => m.type === 'diet' || m.type === 'routine').reverse();
+  if (!items.length) return '';
+  return `<h2>Compartido en el chat</h2>
+    <section class="card">${items.map(m => {
+      const mine = m.from === user.uid, diet = m.type === 'diet';
+      return `<div class="prog-row">
+        <span class="grow">${diet ? '🥗' : '🏋️'} ${esc(diet ? m.diet.name : m.routine.name)}<br><span class="muted small">${mine ? 'Enviada por ti' : `Te la envió ${esc(gymbroName(c))}`} · ${dayLabel(m.at)}</span></span>
+        ${mine ? '' : `<button class="btn small-btn" data-action="msg-add" data-id="${esc(m.id)}">Agregar</button>`}
+      </div>`;
+    }).join('')}</section>`;
+}
+
+function viewProfile(arg) {
+  const me = arg === 'yo';
+  const c = me ? null : chats.find(x => x.id === arg);
+  if (!me && !c) {
+    if (chatsLoaded) { location.replace('#/social'); return ''; }
+    return `${header('Perfil', { back: true })}<p class="empty">Cargando…</p>`;
+  }
+  let p;
+  if (me) p = { data: myProfile() };
+  else {
+    loadProfile(otherUid(c));
+    openMessages(c.id);
+    p = profiles.get(otherUid(c)) || { loading: true };
+  }
+  const name = me ? (user.username || 'Tú') : gymbroName(c);
+  const head = `<section class="profile-head">
+      <span class="avatar big" aria-hidden="true">${esc(name.trim().charAt(0).toUpperCase() || '?')}</span>
+      <h2>${esc(name)}</h2>
+      <span class="muted small">${me ? 'Así te ven tus gymbros' : `Gymbros desde el ${fmtLongDate(c.createdAt)}`}</span>
+    </section>`;
+  let body;
+  if (!p.data && p.loading) body = '<p class="empty">Cargando…</p>';
+  else if (!p.data) body = `<p class="empty">${p.error ? 'No se pudo cargar el perfil. Revisa tu internet.' : `${esc(name)} todavía no comparte sus récords ni estadísticas.`}</p>`;
+  else body = profileBody(p.data, me);
+  if (me && !shareProfile()) body = '<p class="empty">No estás compartiendo tus récords ni estadísticas. Actívalo en Social.</p>';
+  return `${header(me ? 'Mi perfil' : 'Perfil', { back: true })}
+    ${head}
+    ${body}
+    ${me ? '' : sharedInChat(c)}
+    ${me ? '' : '<button class="btn ghost block danger-text" data-action="gymbro-del" style="margin-top:24px">Eliminar gymbro</button>'}`;
+}
 
 // ---------- Progreso ----------
 const RANGES = [['semana', 'Semana', 7], ['mes', 'Mes', 30], ['3m', '3 meses', 91], ['6m', '6 meses', 182]];      // peso corporal
@@ -2084,7 +2229,8 @@ function render() {
   else if (!editBuf || editBuf.editOf !== arg) editBuf = makeEditBuf(arg);
   if (screen !== 'sesion' || arg !== justFinished) justFinished = null;
   if (screen !== 'rutina' && screen !== 'dieta') shareResult = null;
-  if (screen !== 'chat') { closeMessages(); attach = null; }
+  if (screen !== 'chat') { attach = null; editingMsg = null; selectedMsg = null; }
+  if (screen !== 'chat' && screen !== 'perfil') closeMessages();   // el perfil muestra lo compartido en el chat
 
   let html, tab = null;
   switch (screen) {
@@ -2108,6 +2254,7 @@ function render() {
     case 'social': html = viewSocial(); break;
     case 'gymbro': html = viewAddGymbro(); break;
     case 'chat': html = viewChat(arg); break;
+    case 'perfil': html = viewProfile(arg); break;
     default: html = viewHub();   // Inicio: sin pestañas
   }
   $app.innerHTML = html;
@@ -2872,6 +3019,9 @@ $app.addEventListener('click', e => {
     // Social
     case 'auto-pr':
       localStorage.setItem(autoPRKey(), el.checked ? '1' : '0');
+      break;
+    case 'share-profile':
+      setShareProfile(el.checked);
       break;
     case 'make-invite':
       inviteError = false;

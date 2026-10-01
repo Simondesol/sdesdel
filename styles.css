@@ -530,3 +530,12 @@ a.card.hub { display: grid; }
   display: grid; place-items: center; min-height: 44px; border-radius: 10px;
   border: 1px dashed var(--border); color: var(--text); font-size: 15px; font-weight: 600;
 }
+
+/* Perfil de gymbro */
+.bar a.titles { color: inherit; text-decoration: none; }
+.bar a.titles .sub { color: var(--accent); }
+.profile-head { display: grid; justify-items: center; gap: 4px; text-align: center; margin: 4px 0 16px; }
+.profile-head h2 { margin: 6px 0 0; font-size: 22px; color: var(--text); text-transform: none; letter-spacing: 0; }
+.avatar.big { width: 72px; height: 72px; font-size: 30px; }
+.pr-val { display: grid; justify-items: end; }
+.prog-row .grow { min-width: 0; }

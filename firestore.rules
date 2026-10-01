@@ -27,6 +27,16 @@ service cloud.firestore {
       allow delete: if request.auth != null && resource.data.ownerUid == request.auth.uid;
     }
 
+    // Perfil (récords, estadísticas, últimos entrenamientos): lo escribe el dueño y solo sus gymbros lo leen
+    match /profiles/{uid} {
+      allow get: if request.auth != null && (request.auth.uid == uid
+        || exists(/databases/$(database)/documents/chats/$(uid + '_' + request.auth.uid))
+        || exists(/databases/$(database)/documents/chats/$(request.auth.uid + '_' + uid)));
+      allow create, update: if request.auth != null && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['name', 'stats', 'prs', 'recent', 'updatedAt']);
+      allow delete: if request.auth != null && request.auth.uid == uid;
+    }
+
     // Chats 1 a 1: solo los dos gymbros los ven. Se crean usando el código de gymbro del otro.
     function isMember(chatId) {
       return request.auth != null
