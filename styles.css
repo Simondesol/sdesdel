@@ -627,3 +627,9 @@ input.readonly { color: var(--muted); background: transparent; }
 .pace-sentence { display: flex; align-items: center; gap: 10px; font-size: 17px; font-weight: 600; }
 .pace-dir { flex: none; min-width: 110px; color: var(--accent); border-color: var(--accent); font-size: 17px; }
 .pace-sentence input { width: 76px; flex: none; text-align: center; font-size: 17px; }
+
+/* Peso: meta en su tarjeta y % de grasa en el FFMI */
+.goal-top .small-btn { min-height: 32px; padding: 0 10px; font-size: 13px; flex: none; }
+.bf-row { align-items: center; }
+.bf-row input { width: 70px; flex: none; text-align: center; }
+.bf-row .muted { flex: 1; }

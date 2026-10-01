@@ -519,12 +519,12 @@ const activityOf = b => ACTIVITY.find(x => x[0] === b.activity) || ACTIVITY[2];
 
 function calorieTarget() {
   const b = db.body, last = db.bodyweight[db.bodyweight.length - 1];
-  const bfEntry = db.bodyweight.slice().reverse().find(x => x.bf != null);
+  const bf = currentBf();
   const age = b.birthYear ? new Date().getFullYear() - b.birthYear : null;
-  if (!last || (!bfEntry && (!b.heightCm || !b.sex || !age))) {
+  if (!last || (bf == null && (!b.heightCm || !b.sex || !age))) {
     const missing = [];
     if (!last) missing.push(['tu peso', '#/peso']);
-    if (!bfEntry) {
+    if (bf == null) {
       if (!b.heightCm) missing.push(['tu estatura', '#/cuenta']);
       if (!b.sex) missing.push(['tu sexo', '#/cuenta']);
       if (!age) missing.push(['tu año de nacimiento', '#/cuenta']);
@@ -534,8 +534,8 @@ function calorieTarget() {
   // steps: líneas del desglose [nombre, fórmula usada, cuenta, resultado]
   const kg = last.kg, steps = [];
   let bmr;
-  if (bfEntry) {
-    const lean = kg * (1 - bfEntry.bf / 100);
+  if (bf != null) {
+    const lean = kg * (1 - bf / 100);
     bmr = 370 + 21.6 * lean;
     steps.push(['Metabolismo basal', '(Fórmula Katch-McArdle)', `370 + 21,6 × ${fmt1(lean)} kg de masa magra`, `${fmtKcal(bmr)} kcal`]);
   } else {
@@ -548,7 +548,7 @@ function calorieTarget() {
   const pm = paceMonth(b), adj = (pm * KCAL_PER_KG) / DAYS_PER_MONTH;
   if (pm) steps.push(['Ritmo', '', `${pm > 0 ? '+' : '−'}${fmtNum(Math.abs(pm))} kg al mes × 7.700 ÷ 30,4`, `${adj > 0 ? '+' : '−'}${fmtKcal(Math.abs(adj))} kcal`]);
   const target = round10(tdee + adj);
-  return { bmr: round10(bmr), tdee: round10(tdee), target, pace: pm, kg, katch: !!bfEntry, low: target < bmr, steps };
+  return { bmr: round10(bmr), tdee: round10(tdee), target, pace: pm, kg, katch: bf != null, low: target < bmr, steps };
 }
 
 // "Objetivo calculado: 2.250 kcal · tu dieta +150"
@@ -2483,17 +2483,20 @@ function goalInfo() {
   return { g, last, pct, left, reached, forecast };
 }
 
+// % de grasa: un solo dato, sin fecha (antes se anotaba junto al peso; si no hay, se usa el último de esos)
+const currentBf = () => db.body.bf ?? (db.bodyweight.slice().reverse().find(x => x.bf != null) || {}).bf ?? null;
+let goalEditing = false;   // formulario de la meta de peso abierto
+
 // FFMI ajustado por estatura: masa magra ÷ estatura² + 6,1 × (1,8 − estatura)
 const FFMI_LEVELS = ['Bajo el promedio', 'Promedio', 'Sobre el promedio', 'Excelente', 'Superior', 'Cerca del límite natural'];
 const ffmiCuts = sex => (sex === 'm' ? [14, 16, 18, 19, 21] : [18, 20, 22, 23, 25]);
 function ffmiInfo() {
-  const { heightCm, sex } = db.body;
-  const e = db.bodyweight.slice().reverse().find(x => x.bf != null);
-  if (!heightCm || !sex || !e) return null;
-  const m = heightCm / 100, lean = e.kg * (1 - e.bf / 100);
+  const { heightCm, sex } = db.body, bf = currentBf(), last = db.bodyweight[db.bodyweight.length - 1];
+  if (!heightCm || !sex || bf == null || !last) return null;
+  const m = heightCm / 100, lean = last.kg * (1 - bf / 100);
   const value = Math.round((lean / (m * m) + 6.1 * (1.8 - m)) * 10) / 10;   // con un decimal, igual que se muestra
   const cuts = ffmiCuts(sex);
-  return { value, lean, e, level: cuts.filter(c => value >= c).length, cuts };
+  return { value, lean, bf, level: cuts.filter(c => value >= c).length, cuts };
 }
 
 // "tu estatura, tu sexo y tu % de grasa": lo que falta para calcular el FFMI
@@ -2501,7 +2504,8 @@ function ffmiMissing() {
   const miss = [];
   if (!db.body.heightCm) miss.push('tu estatura');
   if (!db.body.sex) miss.push('tu sexo');
-  if (!db.bodyweight.some(x => x.bf != null)) miss.push('tu % de grasa (se anota arriba, junto a tu peso)');
+  if (currentBf() == null) miss.push('tu % de grasa (anótalo aquí arriba)');
+  if (!db.bodyweight.length) miss.push('tu peso');
   const list = miss.length > 1 ? `${miss.slice(0, -1).join(', ')} y ${miss[miss.length - 1]}` : miss[0];
   return `${list}.${!db.body.heightCm || !db.body.sex ? ' La estatura y el sexo se ponen en <a href="#/cuenta">⚙️ Cuenta → Mis datos</a>' : ''}`;
 }
@@ -2527,46 +2531,53 @@ function viewBodyweight() {
   const inRange = db.bodyweight.filter(e => Date.parse(bwIso(e.date)) >= since);
   const points = inRange.map(e => ({
     t: Date.parse(bwIso(e.date)), date: bwIso(e.date), y: e.kg,
-    tip: `${fmtKg(e.kg)}${e.bf != null ? ` · ${fmtNum(e.bf)} % grasa` : ''}`,
+    tip: fmtKg(e.kg),
   }));
   const gi = goalInfo();
   chart = null;
 
   const form = `<form class="stack card" data-form="bodyweight" novalidate>
       ${today ? '<span class="muted small">Hoy ya anotaste tu peso; puedes corregirlo.</span>' : ''}
-      <div class="bw-inputs">
-        <label class="field"><span>Peso de hoy</span>
-          <div class="add-row" style="margin-top:0">
-            <input name="kg" inputmode="decimal" value="${today ? toField(today.kg) : ''}"
-              placeholder="${last ? toField(last.kg) : 'ej. 75,5'}" autocomplete="off" aria-label="Peso en kg">
-            <span class="unit-label">kg</span>
-          </div>
-        </label>
-        <label class="field"><span>% grasa</span>
-          <div class="add-row" style="margin-top:0">
-            <input name="bf" inputmode="decimal" value="${today && today.bf != null ? toField(today.bf) : ''}" placeholder="opcional" autocomplete="off" aria-label="Porcentaje de grasa (opcional)">
-            <span class="unit-label">%</span>
-          </div>
-        </label>
-        <label class="field"><span>Meta</span>
-          <div class="add-row" style="margin-top:0">
-            <input name="goal" inputmode="decimal" value="${db.body.goal ? toField(db.body.goal.kg) : ''}" placeholder="opcional" autocomplete="off" aria-label="Peso meta en kg (opcional)">
-            <span class="unit-label">kg</span>
-          </div>
-        </label>
-      </div>
-      <button class="btn primary block">Guardar</button>
+      <label class="field"><span>Peso de hoy</span>
+        <div class="add-row" style="margin-top:0">
+          <input name="kg" inputmode="decimal" value="${today ? toField(today.kg) : ''}"
+            placeholder="${last ? toField(last.kg) : 'ej. 75,5'}" autocomplete="off" aria-label="Peso en kg">
+          <span class="unit-label">kg</span>
+          <button class="btn primary">Guardar</button>
+        </div>
+      </label>
       <p class="form-msg" hidden></p>
     </form>`;
 
-  const goalCard = gi ? `<section class="card stack goal-card">
-      <div class="goal-top"><span class="muted">Meta: <strong>${fmtKg(gi.g.kg)}</strong></span>
-        <span class="muted">${gi.reached ? '100%' : `${Math.round(gi.pct)}%`}</span></div>
-      ${bar(gi.pct, 100)}
-      <div class="goal-top"><span class="muted small">Inicio: ${fmtKg(gi.g.startKg)} (${bwDate(gi.g.startDate)})</span>
-        <span class="muted small">${gi.reached ? '' : `Faltan ${fmtKg(gi.left)}`}</span></div>
-      <p class="muted small" style="margin:0">${gi.forecast}</p>
-    </section>` : '';
+  const g = db.body.goal;
+  const goalCard = goalEditing
+    ? `<form class="card stack" data-form="goal" novalidate>
+        <label class="field"><span>Peso meta</span>
+          <div class="add-row" style="margin-top:0">
+            <input name="goal" inputmode="decimal" value="${g ? toField(g.kg) : ''}" placeholder="ej. 80" autocomplete="off" aria-label="Peso meta en kg">
+            <span class="unit-label">kg</span>
+            <button class="btn primary">Guardar</button>
+          </div>
+        </label>
+        <p class="form-msg" hidden></p>
+        <div class="ex-actions">
+          ${g ? '<button type="button" class="btn ghost danger-text" data-action="goal-del">Quitar meta</button>' : ''}
+          <button type="button" class="btn ghost" data-action="goal-cancel">Cancelar</button>
+        </div>
+      </form>`
+    : gi ? `<section class="card stack goal-card">
+        <div class="goal-top"><span class="muted">Meta: <strong>${fmtKg(gi.g.kg)}</strong> · ${gi.reached ? '100%' : `${Math.round(gi.pct)}%`}</span>
+          <button class="btn ghost small-btn" data-action="goal-edit">Cambiar</button></div>
+        ${bar(gi.pct, 100)}
+        <div class="goal-top"><span class="muted small">Inicio: ${fmtKg(gi.g.startKg)} (${bwDate(gi.g.startDate)})</span>
+          <span class="muted small">${gi.reached ? '' : `Faltan ${fmtKg(gi.left)}`}</span></div>
+        <p class="muted small" style="margin:0">${gi.forecast}</p>
+      </section>`
+    : g ? `<section class="card goal-top">
+        <span class="muted">Meta: <strong>${fmtKg(g.kg)}</strong> · empieza a contar con tu primer peso</span>
+        <button class="btn ghost small-btn" data-action="goal-edit">Cambiar</button>
+      </section>`
+    : '<button class="btn ghost block" data-action="goal-edit">+ Poner meta de peso (opcional)</button>';
 
   let body;
   if (!points.length) {
@@ -2594,22 +2605,29 @@ function viewBodyweight() {
   }
 
   // FFMI
-  const ff = ffmiInfo();
+  const ff = ffmiInfo(), bf = currentBf();
+  const bfForm = `<form class="add-row bf-row" data-form="bf" novalidate style="margin-top:0">
+      <span class="muted">% de grasa</span>
+      <input name="bf" inputmode="decimal" value="${bf != null ? toField(bf) : ''}" placeholder="ej. 18" autocomplete="off" aria-label="Porcentaje de grasa">
+      <span class="unit-label">%</span>
+      <button class="btn">Guardar</button>
+    </form>`;
   const ffmi = ff ? `<section class="card stack">
+      ${bfForm}
       <div class="ffmi-top"><strong class="ffmi-value">${ff.value.toFixed(1).replace('.', ',')}</strong>
         <span class="badge on">${FFMI_LEVELS[ff.level]}</span></div>
-      <span class="muted small">Masa magra ${fmtKg(ff.lean)} · ${fmtNum(ff.e.bf)} % grasa (${bwDate(ff.e.date)})</span>
+      <span class="muted small">Masa magra ${fmtKg(ff.lean)} (con tu último peso y ${fmtNum(ff.bf)} % de grasa)</span>
       <div class="ffmi-levels">${FFMI_LEVELS.map((name, k) => `<div class="ffmi-row ${k === ff.level ? 'on' : ''}">
         <span>${name}</span><span class="muted">${k === 0 ? `< ${ff.cuts[0]}` : k === FFMI_LEVELS.length - 1 ? `${ff.cuts[k - 1]}+` : `${ff.cuts[k - 1]} – ${ff.cuts[k]}`}</span>
       </div>`).join('')}</div>
       <p class="muted small" style="margin:0">Mide cuánta masa magra tienes para tu estatura. A diferencia del IMC, no confunde músculo con grasa.</p>
     </section>`
-    : `<p class="muted card">Para ver tu FFMI falta ${ffmiMissing()}</p>`;
+    : `<section class="card stack">${bfForm}<p class="muted small" style="margin:0">Para ver tu FFMI falta ${ffmiMissing()}</p></section>`;
 
   const list = db.bodyweight.slice().reverse().map(e => `
     <div class="prog-row">
       <span class="muted">${bwDate(e.date)}</span>
-      <span class="bw-right">${fmtKg(e.kg)}${e.bf != null ? ` <span class="muted">· ${fmtNum(e.bf)} %</span>` : ''}
+      <span class="bw-right">${fmtKg(e.kg)}
         <button class="icon small danger" data-action="del-bw" data-date="${e.date}" aria-label="Borrar registro">✕</button>
       </span>
     </div>`).join('');
@@ -2625,38 +2643,40 @@ function viewBodyweight() {
 }
 
 function saveBodyweight(f) {
-  const kgText = f.elements.kg.value.trim(), kg = num(kgText);
-  const bfText = f.elements.bf.value.trim(), bf = num(bfText);
-  const gText = f.elements.goal.value.trim(), g = num(gText);
-  const goalChanged = gText ? !db.body.goal || db.body.goal.kg !== round1(g) : !!db.body.goal;
-  if (!kgText && !goalChanged) return formMsg(f, 'Escribe tu peso en kg (ej. 75,5).');
-  if (kgText && (kg == null || kg < 20 || kg > 400)) return formMsg(f, 'Escribe tu peso en kg (ej. 75,5).');
-  if (bfText && (bf == null || bf < 3 || bf > 60)) return formMsg(f, 'El % de grasa debe estar entre 3 y 60 (o déjalo vacío).');
-  if (gText && (g == null || g < 30 || g > 300)) return formMsg(f, 'Escribe tu peso meta en kg (ej. 80) o déjalo vacío.');
-  const msg = [];
-  if (kgText) {
-    const date = todayKey();
-    let entry = db.bodyweight.find(e => e.date === date);
-    if (!entry) { entry = { date }; db.bodyweight.push(entry); }
-    entry.kg = round1(kg);
-    if (bfText) entry.bf = round1(bf); else delete entry.bf;
-    db.bodyweight.sort((a, b) => (a.date < b.date ? -1 : 1));
-    msg.push(`${fmtKg(kg)}${bfText ? ` · ${fmtNum(round1(bf))} % grasa` : ''} hoy`);
-    // Meta puesta antes de anotar tu primer peso: empieza a contar desde hoy
-    if (db.body.goal && db.body.goal.startKg == null) Object.assign(db.body.goal, { startKg: round1(kg), startDate: todayKey() });
-  }
-  if (goalChanged) {
-    if (!gText) { delete db.body.goal; msg.push('meta quitada'); }
-    else {
-      // La meta nueva parte desde tu último peso anotado
-      const last = db.bodyweight[db.bodyweight.length - 1];
-      db.body.goal = { kg: round1(g), startKg: last ? last.kg : null, startDate: last ? last.date : todayKey() };
-      msg.push(`meta ${fmtKg(g)}`);
-    }
-  }
+  const kg = num(f.elements.kg.value);
+  if (kg == null || kg < 20 || kg > 400) return formMsg(f, 'Escribe tu peso en kg (ej. 75,5).');
+  const date = todayKey();
+  let entry = db.bodyweight.find(e => e.date === date);
+  if (!entry) { entry = { date }; db.bodyweight.push(entry); }
+  entry.kg = round1(kg);
+  db.bodyweight.sort((a, b) => (a.date < b.date ? -1 : 1));
+  // Meta puesta antes de anotar tu primer peso: empieza a contar desde hoy
+  if (db.body.goal && db.body.goal.startKg == null) Object.assign(db.body.goal, { startKg: round1(kg), startDate: date });
   save();
   render();
-  formMsg($app.querySelector('[data-form="bodyweight"]'), `Guardado: ${msg.join(' · ')}`, true);
+  formMsg($app.querySelector('[data-form="bodyweight"]'), `Guardado: ${fmtKg(kg)} hoy`, true);
+}
+
+// Meta de peso: la nueva parte desde tu último peso anotado
+function saveGoal(f) {
+  const g = num(f.elements.goal.value);
+  if (g == null || g < 30 || g > 300) return formMsg(f, 'Escribe tu peso meta en kg (ej. 80).');
+  if (!db.body.goal || db.body.goal.kg !== round1(g)) {
+    const last = db.bodyweight[db.bodyweight.length - 1];
+    db.body.goal = { kg: round1(g), startKg: last ? last.kg : null, startDate: last ? last.date : todayKey() };
+  }
+  goalEditing = false;
+  save();
+  render();
+}
+
+function saveBf(f) {
+  const t = f.elements.bf.value.trim(), v = num(t);
+  if (t && (v == null || v < 3 || v > 60)) { alert('El % de grasa debe estar entre 3 y 60.'); return; }
+  if (t) db.body.bf = round1(v);
+  else { db.body.bf = null; db.bodyweight.forEach(e => delete e.bf); }   // vacío: se borra
+  save();
+  render();
 }
 
 
@@ -2890,6 +2910,7 @@ function render() {
   if (screen !== 'rutina' && screen !== 'dieta') shareResult = null;
   if (screen !== 'chat') { attach = null; editingMsg = null; selectedMsg = null; }
   if (screen !== 'agua') waterEditing = null;
+  if (screen !== 'peso') goalEditing = false;
   if (screen !== 'nutricion') extraMode = null;
   if (screen !== 'chat' && screen !== 'perfil') closeMessages();   // el perfil muestra lo compartido en el chat
 
@@ -3442,6 +3463,20 @@ $app.addEventListener('click', e => {
       });
       break;
     }
+    case 'goal-edit':
+      goalEditing = true;
+      render();
+      { const input = $app.querySelector('[data-form="goal"] input'); if (input) { input.focus(); input.select(); } }
+      break;
+    case 'goal-cancel':
+      goalEditing = false;
+      render();
+      break;
+    case 'goal-del':
+      delete db.body.goal;
+      goalEditing = false;
+      save(); render();
+      break;
     case 'del-bw': {
       const k = db.bodyweight.findIndex(e => e.date === el.dataset.date);
       if (k < 0) return;
@@ -4018,6 +4053,8 @@ $app.addEventListener('submit', e => {
     case 'import-code': importRoutine(f); return;
     case 'chat-send': sendText(f); return;
     case 'bodyweight': saveBodyweight(f); return;
+    case 'goal': saveGoal(f); return;
+    case 'bf': saveBf(f); return;
     case 'sleep': saveSleep(parseHours(f.elements.h.value), f); return;
     case 'food': saveFood(f); return;
     case 'add-item': {
