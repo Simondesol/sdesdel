@@ -840,8 +840,9 @@ function viewWorkout() {
         <div class="muted">${fmtDate(w.date)}</div>
         ${setsChips(pex)}
       </div>`).join('') || '<p class="muted">Aún no hay historial de este ejercicio.</p>';
-  const restBtn = i => (!editing && d.exercises[i].rest
-    ? `<button class="btn ghost" data-action="rest" data-i="${i}" data-rest="${i}">Rest ${fmtRest(d.exercises[i].rest)}</button>` : '');
+  // pre: letra del ejercicio en un superset ("A "), para saber de cuál es cada descanso
+  const restBtn = (i, pre = '') => (!editing && d.exercises[i].rest
+    ? `<button class="btn ghost" data-action="rest" data-i="${i}" data-rest="${i}" data-pre="${pre}">Rest ${pre}${fmtRest(d.exercises[i].rest)}</button>` : '');
   const dropBadge = ex => (ex.dropset ? '<span class="badge on">Dropset</span>' : '');
 
   const exerciseBlock = (ex, i) => {
@@ -859,7 +860,7 @@ function viewWorkout() {
     </section>`;
   };
 
-  // Superset: A1, B1, A2, B2… en una sola tarjeta; el Rest es después de cada vuelta
+  // Superset: A1, B1, A2, B2… en una sola tarjeta; cada ejercicio tiene su propio Rest (haces A, descansas, haces B…)
   const supersetBlock = idx => {
     const rounds = Math.max(...idx.map(k => d.exercises[k].sets.length));
     let rows = '';
@@ -869,7 +870,6 @@ function viewWorkout() {
         return st ? `<div class="ss-name">${letterOf(n)} · ${esc(ex.name)}</div>${setRow(ex, k, st, j, `${letterOf(n)}${j + 1}`)}` : '';
       }).join('')}</div>`;
     }
-    const restI = idx.reduce((a, k) => (d.exercises[k].rest > d.exercises[a].rest ? k : a), idx[idx.length - 1]);
     const open = idx.some(k => openHistory.has(d.exercises[k].exerciseId));
     return `<section class="card superset" data-ex="${idx[0]}">
       <div class="ss-tag">🔗 Superset · alterna una serie de cada uno</div>
@@ -880,7 +880,7 @@ function viewWorkout() {
       <div class="sets">${rows}</div>
       <div class="ex-actions">
         <button class="btn ghost" data-action="add-round" data-i="${idx[0]}">+ vuelta</button>
-        ${restBtn(restI)}
+        ${idx.map((k, n) => restBtn(k, `${letterOf(n)} `)).join('')}
         <button class="btn ghost ${open ? 'on' : ''}" data-action="toggle-history" data-i="${idx[0]}" data-group="1">Historial ${open ? '▴' : '▾'}</button>
       </div>
       ${open ? idx.map((k, n) => `<div class="hist"><strong>${letterOf(n)} · ${esc(d.exercises[k].name)}</strong>${historyHtml(d.exercises[k])}</div>`).join('') : ''}
@@ -2518,7 +2518,8 @@ function paintTimer() {
     const active = t && t.i === i;
     b.classList.toggle('running', !!active && left > 0);
     b.classList.toggle('done', !!active && left <= 0);
-    b.textContent = !active ? `Rest ${fmtRest(d.exercises[i].rest)}` : left > 0 ? `Rest ${fmtRest(left)}` : '¡A darle!';
+    const pre = b.dataset.pre || '';
+    b.textContent = !active ? `Rest ${pre}${fmtRest(d.exercises[i].rest)}` : left > 0 ? `Rest ${pre}${fmtRest(left)}` : '¡A darle!';
   });
 
   const bar = document.getElementById('restbar');
