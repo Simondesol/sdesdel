@@ -192,13 +192,21 @@ function searchFoods(query, limit = 8) {
 }
 const foodResultBtn = (f, action, extra = '') => `<button type="button" class="food-pick" data-action="${action}" data-id="${f.id}" ${extra}>
   <span class="grow">${esc(f.name)}${f.base ? '' : ' <span class="badge on">Mío</span>'}</span>
-  <span class="muted small">${fmtKcal(f.kcal)} kcal · P ${fmtG(f.p)}</span></button>`;
+  <span class="muted small">${fmtKcal(f.kcal)} kcal${isUnit(f) ? ` c/${esc(f.unitName || 'unidad')}` : ''} · P ${fmtG(f.p)}</span></button>`;
 const dietById = id => N().diets.find(d => d.id === id);
 const sumM = list => list.reduce((a, m) => ({ kcal: a.kcal + m.kcal, p: a.p + m.p, c: a.c + m.c, f: a.f + m.f }), { ...ZERO });
+// Alimentos por unidad (1 huevo, 1 rebanada...) o por 100 g
+const isUnit = f => !!f && f.per === 'unit';
+const unitPlural = (name, n) => (n === 1 ? name : /[aeiouáéíóú]$/i.test(name) ? `${name}s` : `${name}es`);
+const amountText = (food, n) => (isUnit(food) ? `${fmtNum(n)} ${unitPlural(food.unitName || 'unidad', n)}` : `${fmtNum(n)} g`);
+const perText = f => (isUnit(f) ? `por 1 ${f.unitName || 'unidad'}` : 'por 100 g');
+// "120 g Carne molida", "2 rebanadas Pan integral" o solo "2 huevos" si la unidad ya es el nombre
+const itemText = (food, n) => (isUnit(food) && normText(food.name).startsWith(normText(food.unitName || '-'))
+  ? amountText(food, n) : `${amountText(food, n)} ${esc(food.name)}`);
 function itemMacros(it) {
   const food = foodById(it.foodId);
   if (!food) return { ...ZERO };
-  const k = (it.g || 0) / 100;
+  const k = isUnit(food) ? (it.g || 0) : (it.g || 0) / 100;   // it.g = gramos, o cantidad si es por unidad
   return { kcal: food.kcal * k, p: food.p * k, c: food.c * k, f: food.f * k };
 }
 const mealMacros = meal => sumM(meal.items.map(itemMacros));
@@ -244,7 +252,7 @@ function viewNutrition(section) {
       <div class="grow">
         <div class="meal-head"><strong>${esc(meal.name)}</strong><span>${fmtKcal(m.kcal)} kcal</span></div>
         <div class="muted small">${macroLine(m)}</div>
-        <div class="muted small">${meal.items.map(it => `${fmtNum(it.g)} g ${esc((foodById(it.foodId) || { name: '(borrado)' }).name)}`).join(' · ') || 'Sin alimentos'}</div>
+        <div class="muted small">${meal.items.map(it => { const fd = foodById(it.foodId); return fd ? itemText(fd, it.g) : '(alimento borrado)'; }).join(' · ') || 'Sin alimentos'}</div>
       </div>
     </section>`;
   }).join('');
@@ -268,7 +276,7 @@ function viewFoods() {
   const list = foods.map(f => `
     <a class="card" href="#/alimento/${f.id}" data-search="${esc(normText(`${f.name} ${synonymsOf(f.name)}`))}">
       <div class="grow"><strong>${esc(f.name)}</strong>
-        <span class="muted small">${fmtKcal(f.kcal)} kcal · P ${fmtG(f.p)} · C ${fmtG(f.c)} · G ${fmtG(f.f)} <span class="per">por 100 g</span></span>
+        <span class="muted small">${fmtKcal(f.kcal)} kcal · P ${fmtG(f.p)} · C ${fmtG(f.c)} · G ${fmtG(f.f)} <span class="per">${perText(f)}</span></span>
       </div><span class="chev">›</span>
     </a>`).join('');
   return `${header('Nutrición', { home: true })}${nutriTabs('alimentos')}
@@ -305,10 +313,20 @@ function viewFoodForm(id, fromId) {
   const v = k => (src ? toField(src[k]) : '');
   const field = (name, label, unit) => `<label class="field"><span>${label}</span>
       <div class="add-row" style="margin-top:0"><input name="${name}" inputmode="decimal" value="${v(name)}" autocomplete="off"><span class="unit-label">${unit}</span></div></label>`;
-  return `${header(food ? 'Editar alimento' : 'Nuevo alimento', { back: true, sub: 'Valores por cada 100 g' })}
-    <form class="stack card" data-form="food" data-id="${food ? food.id : ''}" novalidate>
+  const unit = isUnit(src);
+  return `${header(food ? 'Editar alimento' : 'Nuevo alimento', { back: true })}
+    <form class="stack card food-form" data-form="food" data-id="${food ? food.id : ''}" novalidate>
       ${from ? '<p class="muted small" style="margin:0">Copiado de la base de Desdel (valores aproximados). Ajústalo con tu etiqueta y guárdalo.</p>' : ''}
       <label class="field"><span>Nombre</span><input name="name" value="${src ? esc(src.name) : ''}" placeholder="Ej. Carne molida 10% grasa" autocomplete="off"></label>
+      <div class="field"><span>Los valores son</span>
+        <div class="per-choice">
+          <label><input type="radio" name="per" value="100g" ${unit ? '' : 'checked'}> Por 100 g</label>
+          <label><input type="radio" name="per" value="unit" ${unit ? 'checked' : ''}> Por unidad</label>
+        </div>
+      </div>
+      <label class="field unit-name"><span>¿Cómo se llama la unidad? (ej. huevo, rebanada, lámina)</span>
+        <input name="unitName" value="${unit ? esc(src.unitName || '') : ''}" placeholder="unidad" autocomplete="off"></label>
+      <p class="muted small per-hint" style="margin:0">Escribe los macros de <strong class="when-100">100 g</strong><strong class="when-unit">1 unidad</strong> del alimento.</p>
       ${field('p', 'Proteínas', 'g')}
       ${field('c', 'Carbohidratos', 'g')}
       ${field('f', 'Grasas', 'g')}
@@ -324,14 +342,25 @@ function saveFood(f) {
   const val = k => num(f.elements[k].value);
   const p = val('p'), c = val('c'), fat = val('f');
   if (!name) return formMsg(f, 'Escribe el nombre del alimento.');
-  if ([p, c, fat].some(x => x == null || x < 0 || x > 100)) return formMsg(f, 'Escribe proteínas, carbohidratos y grasas en gramos por 100 g (entre 0 y 100).');
+  const unit = f.elements.per.value === 'unit';
+  if ([p, c, fat].some(x => x == null || x < 0 || x > (unit ? 300 : 100))) {
+    return formMsg(f, unit ? 'Escribe proteínas, carbohidratos y grasas en gramos de 1 unidad.' : 'Escribe proteínas, carbohidratos y grasas en gramos por 100 g (entre 0 y 100).');
+  }
   let kcal = val('kcal');
   if (kcal == null) kcal = Math.round(p * 4 + c * 4 + fat * 9);       // 4 kcal por g de proteína y carbo, 9 por g de grasa
-  if (kcal < 0 || kcal > 1000) return formMsg(f, 'Las calorías por 100 g deben estar entre 0 y 1000.');
+  if (kcal < 0 || kcal > (unit ? 3000 : 1000)) return formMsg(f, unit ? 'Revisa las calorías de 1 unidad.' : 'Las calorías por 100 g deben estar entre 0 y 1000.');
   const data = { name, kcal: round1(kcal), p: round1(p), c: round1(c), f: round1(fat) };
-  const existing = f.dataset.id && foodById(f.dataset.id);
-  if (existing) Object.assign(existing, data);
-  else N().foods.push({ id: uid(), ...data });
+  if (unit) { data.per = 'unit'; data.unitName = f.elements.unitName.value.trim().toLowerCase() || 'unidad'; }
+  const existing = f.dataset.id && N().foods.find(x => x.id === f.dataset.id);
+  if (existing) {
+    const changed = isUnit(existing) !== unit;
+    delete existing.per; delete existing.unitName;
+    Object.assign(existing, data);
+    const used = N().diets.some(d => d.meals.some(m => m.items.some(it => it.foodId === existing.id)));
+    if (changed && used) alert(`Cambiaste "${name}" a ${unit ? 'por unidad' : 'por 100 g'}. Revisa las cantidades en tus dietas: ahora se cuentan en ${unit ? 'unidades' : 'gramos'}.`);
+  } else {
+    N().foods.push({ id: uid(), ...data });
+  }
   save();
   history.back();
 }
@@ -361,8 +390,8 @@ function viewDietEditor(id) {
       const food = foodById(it.foodId), im = itemMacros(it);
       return `<div class="item-row">
         <span class="grow">${esc(food ? food.name : '(alimento borrado)')}</span>
-        <input class="grams" inputmode="decimal" data-bind="item-g" data-m="${mi}" data-i="${ii}" value="${toField(it.g)}" aria-label="Gramos">
-        <span class="unit-label">g</span>
+        <input class="grams" inputmode="decimal" data-bind="item-g" data-m="${mi}" data-i="${ii}" value="${toField(it.g)}" aria-label="${isUnit(food) ? 'Cantidad' : 'Gramos'}">
+        <span class="unit-label">${isUnit(food) ? 'u' : 'g'}</span>
         <span class="item-kcal" data-item-kcal="${mi}-${ii}">${fmtKcal(im.kcal)} kcal</span>
         <button class="icon small danger" data-action="item-del" data-m="${mi}" data-i="${ii}" aria-label="Quitar">✕</button>
       </div>`;
@@ -2065,6 +2094,8 @@ $app.addEventListener('click', e => {
       form.dataset.food = id;
       form.elements.q.value = food.name;
       form.querySelector('.food-results').innerHTML = '';
+      form.elements.g.placeholder = isUnit(food) ? 'cant.' : 'g';
+      form.elements.g.setAttribute('aria-label', isUnit(food) ? 'Cantidad' : 'Gramos');
       form.elements.g.focus();
       break;
     }
@@ -2293,7 +2324,8 @@ $app.addEventListener('submit', e => {
       const exact = typed && [...N().foods, ...BASE_FOODS].find(x => normText(x.name) === typed);
       const foodId = f.dataset.food || (exact && exact.id), g = num(f.elements.g.value);
       if (!foodId) { alert('Busca el alimento y elígelo de la lista.'); f.elements.q.focus(); return; }
-      if (g == null || g <= 0 || g > 5000) { alert('Escribe los gramos (ej. 120).'); f.elements.g.focus(); return; }
+      const unitFood = isUnit(foodById(foodId));
+      if (g == null || g <= 0 || g > (unitFood ? 100 : 5000)) { alert(unitFood ? 'Escribe la cantidad (ej. 2).' : 'Escribe los gramos (ej. 120).'); f.elements.g.focus(); return; }
       diet.meals[m].items.push({ foodId, g: round1(g) });
       save(); render();
       return;

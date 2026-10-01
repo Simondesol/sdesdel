@@ -439,3 +439,16 @@ a.card.hub { display: grid; }
   background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; min-height: 40px;
 }
 .food-pick .grow { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Alimento por 100 g o por unidad */
+.per-choice { display: flex; gap: 8px; }
+.per-choice label {
+  flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px;
+  border: 1px solid var(--border); border-radius: 10px; background: var(--bg); cursor: pointer; font-weight: 600;
+}
+.per-choice label:has(input:checked) { border-color: var(--accent); color: var(--accent); }
+.per-choice input { width: auto; min-height: 0; accent-color: var(--accent); }
+.food-form .unit-name, .food-form .when-unit { display: none; }
+.food-form:has(input[value="unit"]:checked) .unit-name { display: block; }
+.food-form:has(input[value="unit"]:checked) .when-unit { display: inline; }
+.food-form:has(input[value="unit"]:checked) .when-100 { display: none; }
