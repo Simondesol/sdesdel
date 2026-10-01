@@ -3,7 +3,7 @@
 //   users/{uid}                 → { username, email, createdAt }
 //   users/{uid}/data/main       → { routines, notes }
 //   users/{uid}/workouts/{id}   → un entrenamiento guardado
-//   shared/{código}             → rutina compartida { ownerUid, ownerName, routine, createdAt }
+//   shared/{código}             → rutina o dieta compartida { ownerUid, ownerName, routine | diet, createdAt }
 import { firebaseConfig } from './firebase-config.js';
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.8.0/firebase-app.js';
 import {

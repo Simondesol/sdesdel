@@ -386,7 +386,8 @@ function viewDiets() {
   }).join('');
   return `${header('Nutrición', { home: true })}${nutriTabs('dietas')}
     <button class="btn primary block" data-action="diet-new" style="margin:0 0 12px">+ Crear dieta</button>
-    ${list || `<p class="empty">${N().foods.length ? 'Crea tu primera dieta.' : 'Primero agrega tus alimentos en <a href="#/nutricion/alimentos">Mis alimentos</a>.'}</p>`}`;
+    ${list || `<p class="empty">${N().foods.length ? 'Crea tu primera dieta.' : 'Primero agrega tus alimentos en <a href="#/nutricion/alimentos">Mis alimentos</a>.'}</p>`}
+    ${importForm('Importar dieta con código')}`;
 }
 
 function viewDietEditor(id) {
@@ -436,6 +437,8 @@ function viewDietEditor(id) {
     <button class="btn block" data-action="meal-add">+ Agregar comida ${diet.meals.length + 1}</button>
     <p class="muted hint">¿Falta un alimento? <a href="#/alimento/nuevo">Créalo aquí</a> y vuelve.</p>
     <button class="btn primary block" data-action="diet-done" style="margin-top:20px">Terminar dieta</button>
+    ${shareBox(diet.id, 'Tu alumno toca el link y la dieta se le agrega sola (o ingresa el código en Nutrición → Mis dietas → "Importar dieta con código"). Se comparten las comidas, las cantidades y los alimentos que creaste tú. Si después cambias la dieta, comparte un código nuevo.')
+      || '<button class="btn block" data-action="share-diet">Compartir dieta</button>'}
     <button class="btn ghost block danger-text" data-action="diet-del">Eliminar dieta</button>`;
 }
 
@@ -638,16 +641,19 @@ function viewHome() {
       <input name="title" placeholder="Nueva rutina (ej. Brazo)" autocomplete="off" required>
       <button class="btn">Crear</button>
     </form>
-    ${importOpen ? `
+    ${importForm('Importar rutina con código')}`;
+}
+
+// Formulario para pegar un código (sirve tanto para rutinas como para dietas)
+const importForm = label => (importOpen ? `
     <form class="stack import-box" data-form="import-code" novalidate>
       <div class="add-row">
-        <input name="code" placeholder="Código (ej. K7P-9XQ)" autocomplete="off" autocapitalize="characters" maxlength="9" aria-label="Código de rutina">
+        <input name="code" placeholder="Código (ej. K7P-9XQ)" autocomplete="off" autocapitalize="characters" maxlength="9" aria-label="Código">
         <button class="btn">Importar</button>
       </div>
       <p class="form-msg" hidden></p>
     </form>`
-    : '<button class="btn ghost block" data-action="show-import">Importar rutina con código</button>'}`;
-}
+  : `<button class="btn ghost block" data-action="show-import">${label}</button>`);
 
 function viewRoutine() {
   const r = curRoutine();
@@ -678,17 +684,8 @@ function viewRoutine() {
       ${unitSelect()}
       <button class="btn">Agregar</button>
     </form>
-    ${shareResult && shareResult.routineId === r.id ? `
-    <section class="card share-box" style="margin-top:32px">
-      <div class="muted">Código para compartir "${esc(r.name)}"</div>
-      <div class="code">${fmtCode(shareResult.code)}</div>
-      <div class="ex-actions">
-        <button class="btn primary" data-action="send-code">Enviar</button>
-        <button class="btn" data-action="copy-code">Copiar link</button>
-      </div>
-      <p class="muted hint">Tu amigo toca el link y la rutina se le agrega sola (o ingresa el código en Rutinas → "Importar rutina con código"). Solo se comparten los ejercicios y el Rest, no tus pesos ni tu historial.</p>
-    </section>`
-    : '<button class="btn block" data-action="share-routine" style="margin-top:32px">Compartir rutina</button>'}
+    ${shareBox(r.id, 'Tu amigo toca el link y la rutina se le agrega sola (o ingresa el código en Rutinas → "Importar rutina con código"). Solo se comparten los ejercicios y el Rest, no tus pesos ni tu historial.')
+      || '<button class="btn block" data-action="share-routine" style="margin-top:32px">Compartir rutina</button>'}
     <button class="btn block" data-action="dup-routine">Duplicar rutina</button>
     <button class="btn ghost block danger-text" data-action="del-routine">Eliminar rutina</button>`;
 }
@@ -849,7 +846,7 @@ function viewAuth(mode) {
   return `<div class="auth">
     <h1><img class="auth-logo" src="icons/logo-full.png" alt="Desdel"></h1>
     <p class="muted">Entrena. Anota. Supera.</p>
-    ${localStorage.getItem(PENDING_IMPORT) ? `<p class="auth-note">Te compartieron una rutina. ${reg ? 'Crea tu cuenta' : 'Inicia sesión'} y se agrega automáticamente.</p>` : ''}
+    ${localStorage.getItem(PENDING_IMPORT) ? `<p class="auth-note">Te compartieron una rutina o una dieta. ${reg ? 'Crea tu cuenta' : 'Inicia sesión'} y se agrega automáticamente.</p>` : ''}
     ${readLegacy() ? `<p class="auth-note">Tienes rutinas guardadas en este celular. Al ${reg ? 'crear tu cuenta' : 'iniciar sesión'} se suben a tu cuenta automáticamente.</p>` : ''}
     <form class="auth-form" data-form="${reg ? 'register' : 'login'}" novalidate>
       <label class="field"><span>Correo</span>
@@ -966,38 +963,75 @@ const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const newCode = () => Array.from(crypto.getRandomValues(new Uint32Array(6)), n => CODE_CHARS[n % CODE_CHARS.length]).join('');
 const fmtCode = c => `${c.slice(0, 3)}-${c.slice(3)}`;
 const normCode = s => s.toUpperCase().replace(/[^A-Z0-9]/g, '');
-let shareResult = null;   // { routineId, code } del último código generado
-let importOpen = false;   // formulario "Importar rutina" visible en inicio
+let shareResult = null;   // { id, code, name, kind } del último código generado (rutina o dieta)
+let importOpen = false;   // formulario "Importar con código" visible
 
 // Link que abre Desdel y agrega la rutina (?r=CÓDIGO)
 const PENDING_IMPORT = 'desdel-importar';
 const shareLink = code => `${location.origin}${location.pathname}?r=${code}`;
-const shareText = (name, code) =>
-  `Te comparto mi rutina "${name}" en Desdel 💪\n\nTócalo para agregarla:\n${shareLink(code)}\n\n` +
-  `Si no se abre, en Desdel toca "Importar rutina con código" y pega: ${fmtCode(code)}`;
+const shareText = ({ name, code, kind }) => kind === 'diet'
+  ? `Te comparto la dieta "${name}" en Desdel 🥗\n\nTócalo para agregarla:\n${shareLink(code)}\n\n` +
+    `Si no se abre, en Desdel ve a Nutrición → Mis dietas → "Importar dieta con código" y pega: ${fmtCode(code)}`
+  : `Te comparto mi rutina "${name}" en Desdel 💪\n\nTócalo para agregarla:\n${shareLink(code)}\n\n` +
+    `Si no se abre, en Desdel toca "Importar rutina con código" y pega: ${fmtCode(code)}`;
 
-async function shareRoutine(btn) {
-  const r = curRoutine();
-  if (!r.exercises.length) { alert('Agrega ejercicios a la rutina antes de compartirla.'); return; }
-  // Solo se comparten los ejercicios: sin pesos, historial ni notas
-  const routine = { name: r.name, exercises: r.exercises.map(ex => ({ name: ex.name, unit: ex.unit, rest: ex.rest || 0, rir: !!ex.rir })) };
+// Sube lo compartido con un código nuevo (si el código ya existe se prueba otro)
+async function shareWithCode(btn, data, result) {
   await busy(btn, 'Generando código…', async () => {
     for (let attempt = 0; attempt < 3; attempt++) {
       const code = newCode();
       try {
-        await withTimeout(cloud.shareRoutine(code, { ownerUid: user.uid, ownerName: user.username || '', routine }));
-        shareResult = { routineId: r.id, code };
+        await withTimeout(cloud.shareRoutine(code, { ownerUid: user.uid, ownerName: user.username || '', ...data }));
+        shareResult = { ...result, code };
         return;
       } catch (e) {
         if (e.code === 'permission-denied' && attempt < 2) continue;   // código repetido: se prueba otro
         alert(e.code === 'auth/network-request-failed'
-          ? 'Se necesita internet para compartir una rutina.'
+          ? 'Se necesita internet para compartir.'
           : 'No se pudo generar el código. Intenta de nuevo en un rato.');
         return;
       }
     }
   });
   render();
+}
+
+async function shareRoutine(btn) {
+  const r = curRoutine();
+  if (!r.exercises.length) { alert('Agrega ejercicios a la rutina antes de compartirla.'); return; }
+  // Solo se comparten los ejercicios: sin pesos, historial ni notas
+  const routine = { name: r.name, exercises: r.exercises.map(ex => ({ name: ex.name, unit: ex.unit, rest: ex.rest || 0, rir: !!ex.rir })) };
+  await shareWithCode(btn, { routine }, { id: r.id, name: r.name, kind: 'routine' });
+}
+
+// Se comparten las comidas con sus cantidades y los alimentos propios que usa (los de la base ya los tiene todo el mundo)
+async function shareDiet(btn) {
+  const d = dietById(routeParts()[1]);
+  if (!d.meals.some(m => m.items.length)) { alert('Agrega alimentos a la dieta antes de compartirla.'); return; }
+  const foods = new Map();
+  const meals = d.meals.map(m => ({
+    name: m.name,
+    items: m.items.filter(it => foodById(it.foodId)).map(it => {
+      const f = foodById(it.foodId);
+      if (!f.base) foods.set(f.id, { id: f.id, name: f.name, kcal: f.kcal, p: f.p, c: f.c, f: f.f, ...(isUnit(f) ? { per: 'unit' } : {}) });
+      return it.n != null ? { foodId: it.foodId, n: it.n } : { foodId: it.foodId, g: it.g || 0 };
+    }),
+  }));
+  await shareWithCode(btn, { diet: { name: d.name, meals, foods: [...foods.values()] } }, { id: d.id, name: d.name, kind: 'diet' });
+}
+
+// Cuadro con el código generado (rutina o dieta)
+function shareBox(id, hint) {
+  if (!shareResult || shareResult.id !== id) return '';
+  return `<section class="card share-box" style="margin-top:32px">
+      <div class="muted">Código para compartir "${esc(shareResult.name)}"</div>
+      <div class="code">${fmtCode(shareResult.code)}</div>
+      <div class="ex-actions">
+        <button class="btn primary" data-action="send-code">Enviar</button>
+        <button class="btn" data-action="copy-code">Copiar link</button>
+      </div>
+      <p class="muted hint">${hint}</p>
+    </section>`;
 }
 
 // Formulario "Importar rutina con código"
@@ -1021,9 +1055,10 @@ async function importByCode(code, showError) {
     data = await withTimeout(cloud.getShared(code));
   } catch (e) {
     return showError(e.code === 'auth/network-request-failed' || !navigator.onLine
-      ? 'Se necesita internet para importar una rutina.' : 'No se pudo buscar el código. Intenta de nuevo.');
+      ? 'Se necesita internet para importar.' : 'No se pudo buscar el código. Intenta de nuevo.');
   }
-  if (!data) return showError('No existe ninguna rutina con ese código.');
+  if (!data || !(data.routine || data.diet)) return showError('No existe ninguna rutina ni dieta con ese código.');
+  if (data.diet) return importDiet(data);
   const r = data.routine;
   const repeated = db.routines.some(x => sameName(x.name, r.name))
     ? `\n\nYa tienes una rutina llamada "${r.name}"; se agregará otra.` : '';
@@ -1044,6 +1079,43 @@ async function importByCode(code, showError) {
   importOpen = false;
   save();
   go('#/rutina/' + routine.id);
+}
+
+function importDiet(data) {
+  const d = data.diet, from = data.ownerName || '';
+  const sharedFood = id => (d.foods || []).find(x => x.id === id) || BASE_BY_ID.get(id);
+  const kcal = d.meals.reduce((sum, m) => sum + m.items.reduce((a, it) => {
+    const f = sharedFood(it.foodId);
+    if (!f) return a;
+    const k = f.per === 'unit' ? (it.g || 0) : (it.n != null && f.unitG ? it.n * f.unitG : it.g || 0) / 100;
+    return a + f.kcal * k;
+  }, 0), 0);
+  const repeated = N().diets.some(x => sameName(x.name, d.name)) ? `\n\nYa tienes una dieta llamada "${d.name}"; se agregará otra.` : '';
+  if (!confirm(`¿Agregar la dieta "${d.name}"${from ? ` de ${from}` : ''} (${plural(d.meals.length, 'comida')}, ${fmtKcal(kcal)} kcal)?${repeated}`)) return;
+  // Alimentos propios de quien la compartió: si ya tienes uno igual (mismo nombre y macros) se usa el tuyo; si no, se crea
+  const ids = new Map();
+  for (const f of d.foods || []) {
+    const same = N().foods.find(x => sameName(x.name, f.name) && x.kcal === f.kcal && x.p === f.p && x.c === f.c && x.f === f.f && isUnit(x) === (f.per === 'unit'));
+    if (same) { ids.set(f.id, same.id); continue; }
+    const taken = N().foods.some(x => sameName(x.name, f.name));
+    const food = { id: uid(), name: taken ? `${f.name} (${from || 'compartido'})` : f.name, kcal: f.kcal, p: f.p, c: f.c, f: f.f, ...(f.per === 'unit' ? { per: 'unit' } : {}) };
+    N().foods.push(food);
+    ids.set(f.id, food.id);
+  }
+  const diet = {
+    id: uid(),
+    name: d.name,
+    meals: d.meals.map(m => ({
+      id: uid(),
+      name: m.name,
+      items: m.items.map(it => ({ ...it, foodId: ids.get(it.foodId) || it.foodId })).filter(it => foodById(it.foodId)),
+    })),
+  };
+  N().diets.push(diet);
+  if (!N().activeDietId) N().activeDietId = diet.id;
+  importOpen = false;
+  save();
+  go('#/dieta/' + diet.id);
 }
 
 const logoImg = '<img class="auth-logo" src="icons/logo-full.png" alt="Desdel">';
@@ -1146,14 +1218,19 @@ async function shareWorkout(btn, id) {
 }
 
 // ---------- Progreso ----------
-const RANGES =[['semana', 'Semana', 7], ['mes', 'Mes', 30], ['3m', '3 meses', 91], ['6m', '6 meses', 182]];
-let progressRange = '3m';
+const RANGES = [['semana', 'Semana', 7], ['mes', 'Mes', 30], ['3m', '3 meses', 91], ['6m', '6 meses', 182]];      // peso corporal
+const EX_RANGES = [['mes', 'Mes', 30], ['3m', '3 meses', 91], ['6m', '6 meses', 182], ['1a', '1 año', 365]];   // ejercicios
+let progressRange = '3m';   // período del gráfico de ejercicios
+let bwRange = '3m';         // período del gráfico de peso corporal
 let chart = null;   // puntos del gráfico en pantalla (para el tooltip)
 
 const convertWeight = (w, from, to) => (from === to ? w : from === 'lb' ? w * 0.45359237 : w / 0.45359237);
 const round1 = n => Math.round(n * 10) / 10;
 
-// Un punto por sesión: la mejor serie del día (más peso; con igual peso, más reps)
+// Récord estimado (1RM) con la fórmula de Epley: peso × (1 + reps / 30). Con 1 rep es el mismo peso.
+const epley = (w, r) => (r > 1 ? w * (1 + r / 30) : w);
+
+// Un punto por sesión: el 1RM estimado de la primera serie con peso
 function progressPoints(exerciseId, days) {
   const rows = historyFor(exerciseId).reverse();          // de la más antigua a la más reciente
   if (!rows.length) return { unit: 'kg', points: [] };
@@ -1163,13 +1240,11 @@ function progressPoints(exerciseId, days) {
   for (const { w, ex } of rows) {
     const t = Date.parse(w.date);
     if (t < since) continue;
-    let best = null;
-    for (const s of ex.sets) {
-      if (s.w == null) continue;
-      const c = { w: s.w, r: s.r, rir: s.rir, unit: ex.unit };
-      if (!best || cmpSet(c, best) > 0) best = c;
-    }
-    if (best) points.push({ t, date: w.date, y: round1(convertWeight(best.w, best.unit, unit)), set: best, tip: setText(best, best.unit) });
+    const s = ex.sets.find(x => x.w != null);
+    if (!s) continue;
+    const set = { w: s.w, r: s.r, rir: s.rir, unit: ex.unit };
+    const y = round1(convertWeight(epley(s.w, s.r || 1), ex.unit, unit));
+    points.push({ t, date: w.date, y, set, tip: `${fmtNum(y)} ${unit} <span class="muted">(${setText(set, set.unit)})</span>` });
   }
   return { unit, points };
 }
@@ -1279,8 +1354,8 @@ function filterProgress() {
   if (none) none.hidden = any;
 }
 
-const rangeButtons = () => `<div class="range" role="group" aria-label="Período">${RANGES.map(([key, label]) =>
-  `<button class="${key === progressRange ? 'on' : ''}" data-action="range" data-r="${key}">${label}</button>`).join('')}</div>`;
+const rangeButtons = (ranges, current, scope) => `<div class="range" role="group" aria-label="Período">${ranges.map(([key, label]) =>
+  `<button class="${key === current ? 'on' : ''}" data-action="range" data-s="${scope}" data-r="${key}">${label}</button>`).join('')}</div>`;
 
 // ---------- Peso corporal ----------
 // Un registro por día: { date: 'AAAA-MM-DD', kg }
@@ -1317,7 +1392,7 @@ function bodyweightCard() {
 function viewBodyweight() {
   const today = db.bodyweight.find(e => e.date === todayKey());
   const last = db.bodyweight[db.bodyweight.length - 1];
-  const days = RANGES.find(r => r[0] === progressRange)[2];
+  const days = RANGES.find(r => r[0] === bwRange)[2];
   const since = Date.now() - days * 86400000;
   const points = db.bodyweight
     .map(e => ({ t: Date.parse(bwIso(e.date)), date: bwIso(e.date), y: e.kg, tip: fmtKg(e.kg) }))
@@ -1363,7 +1438,7 @@ function viewBodyweight() {
 
   return `${header('Peso corporal', { back: true, sub: 'Un registro por día, en kg' })}
     ${form}
-    ${rangeButtons()}
+    ${rangeButtons(RANGES, bwRange, 'bw')}
     ${body}
     ${list ? `<h2>Registros</h2><section class="card">${list}</section>` : ''}`;
 }
@@ -1385,14 +1460,15 @@ function viewProgressExercise(id) {
   const rows = historyFor(id);
   if (!rows.length) { location.replace('#/progreso'); return ''; }
   const name = rows[0].ex.name;
-  const days = RANGES.find(r => r[0] === progressRange)[2];
+  const days = EX_RANGES.find(r => r[0] === progressRange)[2];
   const { unit, points } = progressPoints(id, days);
   chart = null;
 
-  const range = rangeButtons();
+  const range = rangeButtons(EX_RANGES, progressRange, 'ex');
+  const sub = 'Récord estimado (1RM) de la 1ª serie';
 
   if (!points.length) {
-    return `${header(name, { back: true, sub: 'Peso máximo por sesión' })}${range}
+    return `${header(name, { back: true, sub })}${range}
       <p class="empty">No entrenaste este ejercicio en este período${rows.some(r => r.ex.sets.some(s => s.w != null)) ? '' : ' (o no tiene peso anotado)'}.</p>`;
   }
 
@@ -1400,20 +1476,21 @@ function viewProgressExercise(id) {
   const first = points[0], last = points[points.length - 1];
   const diff = round1(last.y - first.y);
   const stats = `<div class="stats">
-    <div class="stat"><span class="muted">Máximo del período</span><strong>${fmtNum(max.y)} ${unit}</strong><span class="muted">${fmtDate(max.date)}</span></div>
+    <div class="stat"><span class="muted">Mejor 1RM del período</span><strong>${fmtNum(max.y)} ${unit}</strong><span class="muted">${fmtDate(max.date)}</span></div>
     ${points.length > 1 ? `<div class="stat"><span class="muted">Cambio</span><strong>${diff > 0 ? '+' : ''}${fmtNum(diff)} ${unit}</strong><span class="muted">desde ${fmtDate(first.date)}</span></div>` : ''}
   </div>`;
 
   const table = points.slice().reverse().map(p => `
-    <div class="prog-row"><span class="muted">${fmtDate(p.date)}</span><span>${setText(p.set, p.set.unit)}</span></div>`).join('');
+    <div class="prog-row"><span class="muted">${fmtDate(p.date)}</span><span>${setText(p.set, p.set.unit)} <span class="muted">→ ${fmtNum(p.y)} ${unit}</span></span></div>`).join('');
 
-  return `${header(name, { back: true, sub: 'Peso máximo por sesión' })}
+  return `${header(name, { back: true, sub })}
     ${range}
     ${stats}
     <section class="card chart-card">
-      ${chartSvg(points, unit, days)}
+      ${chartSvg(points, unit, days, sub)}
       <div class="tip" hidden></div>
     </section>
+    <p class="muted hint">Es una estimación del peso máximo que podrías levantar 1 vez, calculada con la 1ª serie de cada día (fórmula de Epley: peso × (1 + reps ÷ 30)). Ej: 40 kg × 11 ≈ 54,7 kg.</p>
     <h2>Sesiones</h2>
     <section class="card">${table}</section>`;
 }
@@ -1477,7 +1554,7 @@ function render() {
   if (screen !== 'editar') editBuf = null;
   else if (!editBuf || editBuf.editOf !== arg) editBuf = makeEditBuf(arg);
   if (screen !== 'sesion' || arg !== justFinished) justFinished = null;
-  if (screen !== 'rutina') shareResult = null;
+  if (screen !== 'rutina' && screen !== 'dieta') shareResult = null;
 
   let html, tab = null;
   switch (screen) {
@@ -1981,7 +2058,7 @@ $app.addEventListener('click', e => {
       break;
     }
     case 'range':
-      progressRange = el.dataset.r;
+      if (el.dataset.s === 'bw') bwRange = el.dataset.r; else progressRange = el.dataset.r;
       render();
       break;
     case 'toggle-rir': {
@@ -2248,8 +2325,11 @@ $app.addEventListener('click', e => {
       navigator.clipboard.writeText(shareLink(shareResult.code))
         .then(() => { el.textContent = '✓ Link copiado'; }, () => alert(`Link: ${shareLink(shareResult.code)}`));
       break;
+    case 'share-diet':
+      shareDiet(el);
+      break;
     case 'send-code': {
-      const text = shareText(curRoutine().name, shareResult.code);
+      const text = shareText(shareResult);
       if (navigator.share) navigator.share({ text }).catch(() => {});
       else window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
       break;

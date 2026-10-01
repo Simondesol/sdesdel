@@ -8,13 +8,13 @@ service cloud.firestore {
       allow read, write: if request.auth != null && request.auth.uid == uid;
     }
 
-    // Rutinas compartidas: quien tenga sesión puede abrir una si conoce el código
+    // Rutinas y dietas compartidas: quien tenga sesión puede abrir una si conoce el código
     // (no se pueden listar). Solo el dueño la crea o la borra; no se puede sobrescribir.
     match /shared/{code} {
       allow get: if request.auth != null;
       allow create: if request.auth != null
         && request.resource.data.ownerUid == request.auth.uid
-        && request.resource.data.keys().hasOnly(['ownerUid', 'ownerName', 'routine', 'createdAt']);
+        && request.resource.data.keys().hasOnly(['ownerUid', 'ownerName', 'routine', 'diet', 'createdAt']);
       allow delete: if request.auth != null && resource.data.ownerUid == request.auth.uid;
     }
   }
