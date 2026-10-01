@@ -1792,7 +1792,7 @@ function addFromMessage(id) {
 function newPRs(w) {
   const firstE1rm = ex => {
     const s = ex.sets.find(x => x.w != null);
-    return s ? toKg(epley(s.w, s.r || 1), ex.unit) : 0;
+    return s ? toKg(e1rmOf(s), ex.unit) : 0;
   };
   const prs = [];
   for (const ex of w.exercises) {
@@ -1806,7 +1806,7 @@ function newPRs(w) {
     }
     if (prev > 0 && cur > prev + 0.01) {
       const s = ex.sets.find(x => x.w != null);
-      prs.push({ name: ex.name, text: `${ex.name}: ${fmtNum(s.w)} ${ex.unit} × ${fmtNum(s.r || 1)} → 1RM ≈ ${fmtNum(round1(epley(s.w, s.r || 1)))} ${ex.unit}` });
+      prs.push({ name: ex.name, text: `${ex.name}: ${fmtNum(s.w)} ${ex.unit} × ${fmtNum(s.r || 1)}${s.rir != null ? ` · RIR ${fmtNum(s.rir)}` : ''} → 1RM ≈ ${fmtNum(round1(e1rmOf(s)))} ${ex.unit}` });
     }
   }
   return prs;
@@ -1874,8 +1874,8 @@ function myProfile() {
     for (const ex of w.exercises) {
       const st = ex.sets.find(x => x.w != null);
       if (!st) continue;
-      const e = epley(st.w, st.r || 1), kg = toKg(e, ex.unit), cur = best.get(ex.exerciseId);
-      if (!cur || kg > cur.kg || unitKind(cur.unit) !== unitKind(ex.unit)) best.set(ex.exerciseId, { kg, name: ex.name, v: round1(e), unit: ex.unit, set: `${fmtNum(st.w)} ${ex.unit} × ${fmtNum(st.r || 1)}`, date: w.date });
+      const e = e1rmOf(st), kg = toKg(e, ex.unit), cur = best.get(ex.exerciseId);
+      if (!cur || kg > cur.kg || unitKind(cur.unit) !== unitKind(ex.unit)) best.set(ex.exerciseId, { kg, name: ex.name, v: round1(e), unit: ex.unit, set: `${fmtNum(st.w)} ${ex.unit} × ${fmtNum(st.r || 1)}${st.rir != null ? ` · RIR ${fmtNum(st.rir)}` : ''}`, date: w.date });
     }
   }
   const prs = [...best.values()].sort((a, b) => b.kg - a.kg).slice(0, 15).map(({ kg, ...pr }) => pr);
@@ -1993,8 +1993,10 @@ let chart = null;   // puntos del gráfico en pantalla (para el tooltip)
 const convertWeight = (w, from, to) => (from === to || from === 'placas' || to === 'placas' ? w : from === 'lb' ? w * 0.45359237 : w / 0.45359237);
 const round1 = n => Math.round(n * 10) / 10;
 
-// Récord estimado (1RM) con la fórmula de Epley: peso × (1 + reps / 30). Con 1 rep es el mismo peso.
-const epley = (w, r) => (r > 1 ? w * (1 + r / 30) : w);
+// Récord estimado (1RM) con Epley + RIR: peso × (1 + (reps + RIR) / 30). Las reps en reserva cuentan como reps que
+// podrías haber hecho; sin RIR anotado se toma como al fallo (RIR 0). Con 1 rep al fallo es el mismo peso.
+const epley = (w, r, rir = 0) => { const n = (r || 1) + (rir || 0); return n > 1 ? w * (1 + n / 30) : w; };
+const e1rmOf = s => epley(s.w, s.r || 1, s.rir);
 
 // Un punto por sesión: el 1RM estimado de la primera serie con peso
 function progressPoints(exerciseId, days) {
@@ -2009,7 +2011,7 @@ function progressPoints(exerciseId, days) {
     const s = ex.sets.find(x => x.w != null);
     if (!s) continue;
     const set = { w: s.w, r: s.r, rir: s.rir, unit: ex.unit };
-    const y = round1(convertWeight(epley(s.w, s.r || 1), ex.unit, unit));
+    const y = round1(convertWeight(e1rmOf(s), ex.unit, unit));
     points.push({ t, date: w.date, y, set, tip: `${fmtNum(y)} ${unit} <span class="muted">(${setText(set, set.unit)})</span>` });
   }
   return { unit, points };
@@ -2384,7 +2386,7 @@ function viewProgressExercise(id) {
       ${chartSvg(points, unit, days, sub)}
       <div class="tip" hidden></div>
     </section>
-    <p class="muted hint">Es una estimación del peso máximo que podrías levantar 1 vez, calculada con la 1ª serie de cada día (fórmula de Epley: peso × (1 + reps ÷ 30)). Ej: 40 kg × 11 ≈ 54,7 kg.</p>
+    <p class="muted hint">Es una estimación del peso máximo que podrías levantar 1 vez, calculada con la 1ª serie de cada día (fórmula de Epley con RIR: peso × (1 + (reps + RIR) ÷ 30); sin RIR anotado se cuenta como al fallo). Ej: 100 kg × 8 con RIR 2 ≈ 133 kg.</p>
     <h2>Sesiones</h2>
     <section class="card">${table}</section>`;
 }
