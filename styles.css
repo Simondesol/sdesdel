@@ -370,7 +370,7 @@ a.card.hub { display: grid; }
 .hub-top strong { flex: 1; font-size: 18px; }
 .hub-icon { font-size: 22px; }
 .hub-value { font-size: 15px; color: var(--muted); }
-.hub-value strong { color: var(--text); font-size: 20px; font-variant-numeric: tabular-nums; }
+.hub .hub-value strong { display: inline; color: var(--text); font-size: 20px; font-variant-numeric: tabular-nums; }
 .hub .ex-actions .btn { flex: 1; }
 .hub.soon { opacity: .6; }
 .badge { font-size: 12px; font-weight: 600; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 2px 8px; }
