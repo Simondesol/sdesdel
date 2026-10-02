@@ -1096,12 +1096,13 @@ function viewRoutine() {
   const r = curRoutine();
   if (!r) { location.replace('#/rutinas'); return ''; }
   const last = r.exercises.length - 1;
+  const blocks = groupsOf(r), blockOf = k => blocks.findIndex(g => g.includes(k));   // ↑↓ mueven el bloque (superset) completo
   const items = r.exercises.map((ex, i) => (openEx === i ? `
     <li class="card ex-open">
       <input class="grow" data-bind="ex-name" data-i="${i}" value="${esc(ex.name)}" aria-label="Nombre del ejercicio">
       <button class="chip" data-action="toggle-unit" data-i="${i}" aria-label="Cambiar unidad">${ex.unit}</button>
-      <button class="icon" data-action="move" data-i="${i}" data-d="-1" ${i === 0 ? 'disabled' : ''} aria-label="Subir">↑</button>
-      <button class="icon" data-action="move" data-i="${i}" data-d="1" ${i === last ? 'disabled' : ''} aria-label="Bajar">↓</button>
+      <button class="icon" data-action="move" data-i="${i}" data-d="-1" ${blockOf(i) === 0 ? 'disabled' : ''} aria-label="Subir">↑</button>
+      <button class="icon" data-action="move" data-i="${i}" data-d="1" ${blockOf(i) === blocks.length - 1 ? 'disabled' : ''} aria-label="Bajar">↓</button>
       <button class="icon danger" data-action="del-ex" data-i="${i}" aria-label="Quitar">✕</button>
       <div class="ex-goals" aria-label="Objetivo (opcional)">
         <label>Series<input data-bind="ex-goal-sets" data-i="${i}" inputmode="numeric" value="${ex.goalSets || ''}" placeholder="–" autocomplete="off" aria-label="Series objetivo"></label>
@@ -2439,6 +2440,17 @@ function plannedRoutine(dateKey) {
   return db.routines.find(r => r.id === id) || null;
 }
 const trainedOn = (dateKey, routineId) => db.workouts.some(w => dayKeyOf(w.date) === dateKey && (!routineId || w.routineId === routineId));
+
+// Días del plan en que toca una rutina: ["lunes y jueves"] o ["semana 1: lunes", "semana 2: jueves"]
+function planUses(routineId) {
+  const p = db.plan;
+  if (!p) return [];
+  const join = list => (list.length > 1 ? `${list.slice(0, -1).join(', ')} y ${list[list.length - 1]}` : list[0]);
+  return p.days.slice(0, p.weeks).map((wk, w) => {
+    const days = DAY_NAMES.filter((_, d) => wk.r[d] === routineId).map(n => n.toLowerCase());
+    return days.length ? `${p.weeks > 1 ? `semana ${w + 1}: ` : ''}${join(days)}` : null;
+  }).filter(Boolean);
+}
 
 function viewPlan() {
   const p = db.plan || defaultPlan();
@@ -3956,9 +3968,15 @@ $app.addEventListener('click', e => {
       break;
     }
     case 'move': {
-      const list = curRoutine().exercises, k = i + Number(el.dataset.d);
-      [list[i], list[k]] = [list[k], list[i]];
-      if (openEx === i) openEx = k;   // el ejercicio abierto sigue abierto en su nuevo lugar
+      // Se mueve por bloques: un superset se mueve completo y sus ejercicios siguen unidos
+      const r = curRoutine(), opened = openEx != null ? r.exercises[openEx] : null;
+      const groups = groupsOf(r).map(g => g.map(k => r.exercises[k]));
+      const gi = groups.findIndex(g => g.includes(r.exercises[i])), gj = gi + Number(el.dataset.d);
+      if (gj < 0 || gj >= groups.length) return;
+      [groups[gi], groups[gj]] = [groups[gj], groups[gi]];
+      for (const g of groups) g.forEach((ex, k) => { if (k < g.length - 1) ex.ssNext = true; else delete ex.ssNext; });
+      r.exercises = groups.flat();
+      if (opened) openEx = r.exercises.indexOf(opened);   // el ejercicio abierto sigue abierto en su nuevo lugar
       save(); render();
       break;
     }
@@ -4003,9 +4021,13 @@ $app.addEventListener('click', e => {
       break;
     }
     case 'del-routine': {
-      const r = curRoutine();
-      if (!confirm(`¿Eliminar la rutina "${r.name}"? Tu historial se mantiene.`)) return;
+      const r = curRoutine(), uses = planUses(r.id);
+      const warn = uses.length ? `
+
+Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
+      if (!confirm(`¿Eliminar la rutina "${r.name}"? Tu historial se mantiene.${warn}`)) return;
       db.routines = db.routines.filter(x => x !== r);
+      if (db.plan) for (const wk of db.plan.days) wk.r = wk.r.map(id => (id === r.id ? null : id));
       save(); history.back();
       break;
     }
@@ -4015,7 +4037,8 @@ $app.addEventListener('click', e => {
     case 'prev-ex':
     case 'next-ex': {
       const d = cur(), groups = groupsOf(d), gi = groupIndex(groups, d.pos);
-      if (action === 'next-ex') {
+      const touched = groups[gi].some(k => (d.touched || {})[d.exercises[k].exerciseId]);
+      if (action === 'next-ex' || (action === 'go-ex' && touched)) {
         for (const k of groups[gi]) if (!d.done.includes(d.exercises[k].exerciseId)) d.done.push(d.exercises[k].exerciseId);
       }
       d.pos = action === 'go-ex' ? i : groups[Math.min(Math.max(gi + (action === 'next-ex' ? 1 : -1), 0), groups.length - 1)][0];
@@ -4523,6 +4546,8 @@ $app.addEventListener('input', e => {
     const exId = cur().exercises[i].exerciseId, text = el.value.trim();
     if (text) db.notes[exId] = text; else delete db.notes[exId];
   }
+  // Anotaste series en este ejercicio: al saltar a otro, queda con ✓
+  if (['w', 'r', 'rir', 'dw', 'dr'].includes(bind)) { const d = cur(); (d.touched ||= {})[d.exercises[i].exerciseId] = true; }
   save();
 });
 
