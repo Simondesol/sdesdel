@@ -1877,23 +1877,37 @@ function viewSocial() {
     </div>
     ${!chatsLoaded ? '<p class="empty">Cargando…</p>'
       : chatsError && !chats.length ? '<p class="empty">No se pudieron cargar tus chats. Revisa tu internet y vuelve a abrir la app.</p>'
-      : list || '<p class="empty">Todavía no tienes gymbros. Toca "Agregar gymbro" y mándale tu link a un amigo.</p>'}
-    ${sectionHead('social-priv', 'Privacidad y avisos')}
-    ${openSections.has('social-priv') ? `
+      : list || '<p class="empty">Todavía no tienes gymbros. Toca "Agregar gymbro" y mándale tu link a un amigo.</p>'}`;
+}
+
+// Mi perfil → Privacidad: qué ven tus gymbros y los avisos de PRs
+function viewPrivacy() {
+  const sessions = exerciseSessions(), pick = db.body.prPick || [];
+  return `${header('Privacidad', { back: true, sub: 'Lo que ven tus gymbros en tu perfil' })}
     <label class="card toggle-row" style="margin-top:0">
       <input type="checkbox" data-action="share-profile" ${shareProfile() ? 'checked' : ''}>
-      <span class="grow">Compartir mis récords y estadísticas con mis gymbros<br><span class="muted small">Solo tus gymbros los ven en tu perfil. <a href="#/perfil/yo">Ver cómo me ven ›</a></span></span>
+      <span class="grow">Compartir mi perfil con mis gymbros<br><span class="muted small">Si lo apagas, solo ven tu nombre. Nadie más que tus gymbros puede verlo.</span></span>
     </label>
-    ${shareProfile() ? `<section class="card profile-fields">
-      <span class="muted small">Mostrar en mi perfil:</span>
+    ${shareProfile() ? `
+    <h2>Mostrar en mi perfil</h2>
+    <section class="card profile-fields">
       ${PROFILE_FIELDS.map(([k, label]) => `<label class="toggle-row small-toggle">
         <input type="checkbox" data-action="profile-field" data-k="${k}" ${showInProfile(k) ? 'checked' : ''}> <span>${label}</span>
       </label>`).join('')}
-    </section>` : ''}
-    <label class="card toggle-row" style="margin-top:8px">
+    </section>
+    <h2>Récords destacados</h2>
+    <p class="muted small" style="margin:0 0 8px">Elige hasta 5 (${pick.length}/5). Si no eliges ninguno, se muestran tus 5 ejercicios más entrenados.</p>
+    ${sessions.length ? `<section class="card profile-fields">
+      ${sessions.map(x => `<label class="toggle-row small-toggle">
+        <input type="checkbox" data-action="pr-pick" data-id="${esc(x.id)}" ${pick.includes(x.id) ? 'checked' : ''} ${!pick.includes(x.id) && pick.length >= 5 ? 'disabled' : ''}>
+        <span class="grow">${esc(x.name)}</span><span class="muted small">${plural(x.n, 'sesión', 'sesiones')}</span>
+      </label>`).join('')}
+    </section>` : '<p class="muted card">Cuando guardes entrenamientos podrás elegirlos aquí.</p>'}` : ''}
+    <h2>Avisos</h2>
+    <label class="card toggle-row" style="margin-top:0">
       <input type="checkbox" data-action="auto-pr" ${autoPR() ? 'checked' : ''}>
       <span class="grow">Avisar mis PRs a mis gymbros<br><span class="muted small">Cuando superes tu récord estimado (1RM) de la 1ª serie, se envía solo a tus chats.</span></span>
-    </label>` : ''}`;
+    </label>`;
 }
 
 function viewAddGymbro() {
@@ -2252,21 +2266,40 @@ function myProfile() {
       if (!cur || kg > cur.kg || unitKind(cur.unit) !== unitKind(ex.unit)) best.set(ex.exerciseId, { kg, name: ex.name, v: round1(e), unit: ex.unit, set: `${fmtNum(st.w)} ${ex.unit} × ${fmtNum(st.r || 1)}${st.rir != null ? ` · RIR ${fmtNum(st.rir)}` : ''}`, date: w.date });
     }
   }
-  const prs = [...best.values()].sort((a, b) => b.kg - a.kg).slice(0, 15).map(({ kg, ...pr }) => pr);
+  // Récords destacados: los que elijas en Privacidad (hasta 5); si no eliges, tus 5 ejercicios más entrenados
+  const sessions = exerciseSessions();
+  const picked = (db.body.prPick || []).filter(id => best.has(id));
+  const ids = picked.length ? picked : sessions.filter(x => best.has(x.id)).slice(0, 5).map(x => x.id);
+  const prs = ids.map(id => best.get(id)).sort((a, b) => b.kg - a.kg).map(({ kg, ...pr }) => pr);
   const recent = ws.slice(-5).reverse().map(w => ({ routine: w.routineName || 'Entrenamiento', date: w.date, min: w.durationSec ? Math.round(w.durationSec / 60) : 0 }));
   const stats = { month, total: ws.length, streak };
-  // Sobre mí (cada dato con su interruptor en Social → Privacidad y avisos)
-  const b = db.body;
-  if (showInProfile('age') && b.birthYear) stats.age = new Date().getFullYear() - b.birthYear;
+  // Sobre mí (cada dato con su interruptor en Mi perfil → Privacidad)
+  const b = db.body, lastBw = db.bodyweight[db.bodyweight.length - 1];
+  if (showInProfile('age') && b.birthYear) stats.age = now.getFullYear() - b.birthYear;
   if (showInProfile('height') && b.heightCm) stats.heightCm = b.heightCm;
+  if (showInProfile('weight') && lastBw) stats.weight = lastBw.kg;
+  if (showInProfile('bf') && currentBf() != null) stats.bf = currentBf();
   const ff = showInProfile('ffmi') ? ffmiInfo() : null;
   if (ff) { stats.ffmi = ff.value; stats.ffmiLevel = ff.level; }
-  if (showInProfile('fav')) {
-    const count = new Map();
-    for (const w of ws) for (const ex of w.exercises) count.set(ex.exerciseId, { name: ex.name, n: ((count.get(ex.exerciseId) || {}).n || 0) + 1 });
-    const fav = [...count.values()].sort((a, b) => b.n - a.n)[0];
-    if (fav) { stats.fav = fav.name; stats.favN = fav.n; }
+  if (showInProfile('goal') && (b.paceMonth != null || b.pace != null)) {
+    const pm = paceMonth(b);
+    stats.goal = pm === 0 ? 'Mantener peso' : `${pm < 0 ? 'Bajando' : 'Subiendo'} ${fmtNum(Math.abs(pm))} kg al mes`;
   }
+  if (showInProfile('since') && ws.length) stats.since = ws[0].date;
+  if (showInProfile('volume')) {
+    // Kg levantados este mes: peso × reps de todas las series (y bajadas); las placas no cuentan
+    let vol = 0;
+    for (const w of ws) {
+      const d = new Date(w.date);
+      if (d.getMonth() !== now.getMonth() || d.getFullYear() !== now.getFullYear()) continue;
+      for (const ex of w.exercises) {
+        if (ex.unit === 'placas') continue;
+        for (const st of ex.sets) for (const x of [st, ...(st.drops || [])]) vol += toKg(x.w || 0, ex.unit) * (x.r || 0);
+      }
+    }
+    if (vol) stats.volume = Math.round(vol);
+  }
+  if (showInProfile('fav') && sessions.length) { stats.fav = sessions[0].name; stats.favN = sessions[0].n; }
   return { name: user.username || '', stats, prs, recent };
 }
 
@@ -2301,7 +2334,22 @@ function loadProfile(uid) {
 }
 
 // Datos del perfil que puedes ocultar (todos se muestran si no los apagas)
-const PROFILE_FIELDS = [['age', 'Mi edad'], ['height', 'Mi estatura'], ['ffmi', 'Mi FFMI'], ['fav', 'Mi ejercicio más entrenado']];
+const PROFILE_FIELDS = [
+  ['age', 'Edad'], ['height', 'Estatura'], ['weight', 'Peso'], ['bf', '% de grasa'], ['ffmi', 'FFMI'],
+  ['goal', 'Objetivo actual (subir, bajar o mantener)'], ['since', 'Entrenando desde'], ['volume', 'Kg levantados este mes'],
+  ['fav', 'Ejercicio más entrenado'],
+];
+
+// Veces que hiciste cada ejercicio, del más entrenado al menos
+function exerciseSessions() {
+  const count = new Map();
+  for (const w of db.workouts) for (const ex of w.exercises) {
+    const c = count.get(ex.exerciseId) || { id: ex.exerciseId, n: 0 };
+    c.n++; c.name = ex.name;
+    count.set(ex.exerciseId, c);
+  }
+  return [...count.values()].sort((a, b) => b.n - a.n);
+}
 const showInProfile = k => !(db.body.hide || {})[k];
 
 function profileBody(d, me) {
@@ -2309,7 +2357,12 @@ function profileBody(d, me) {
   const about = [
     st.age != null && ['Edad', `${st.age} años`],
     st.heightCm != null && ['Estatura', `${fmtNum(st.heightCm / 100)} m`],
+    st.weight != null && ['Peso', fmtKg(st.weight)],
+    st.bf != null && ['% de grasa', `${fmtNum(st.bf)} %`],
     st.ffmi != null && ['FFMI', `${st.ffmi.toFixed(1).replace('.', ',')} <span class="badge on">${FFMI_LEVELS[st.ffmiLevel] || ''}</span>`],
+    st.goal && ['Objetivo', esc(st.goal)],
+    st.since && ['Entrenando desde', new Date(st.since).toLocaleDateString('es', { month: 'long', year: 'numeric' })],
+    st.volume != null && ['Levantado este mes', `${fmtKcal(st.volume)} kg`],
     st.fav && ['Más entrenado', `${esc(st.fav)} <span class="muted small">(${plural(st.favN, 'sesión', 'sesiones')})</span>`],
   ].filter(Boolean);
   const aboutCard = about.length ? `<section class="card about">${about.map(([k, v]) => `<div class="prog-row"><span class="muted">${k}</span><span>${v}</span></div>`).join('')}</section>` : '';
@@ -2328,7 +2381,7 @@ function profileBody(d, me) {
     </div>`).join('');
   return `${aboutCard}
     ${stats}
-    <h2>Récords · 1RM estimado</h2>
+    <h2>Récords destacados · 1RM estimado</h2>
     ${prs ? `<section class="card">${prs}</section>` : `<p class="empty">${me ? 'Todavía no tienes' : 'Todavía no tiene'} récords con peso anotado.</p>`}
     <h2>Últimos entrenamientos</h2>
     ${recent ? `<section class="card">${recent}</section>` : '<p class="empty">Todavía no hay entrenamientos.</p>'}`;
@@ -2367,14 +2420,14 @@ function viewProfile(arg) {
   const head = `<section class="profile-head">
       <span class="avatar big" aria-hidden="true">${esc(name.trim().charAt(0).toUpperCase() || '?')}</span>
       <h2>${esc(name)}</h2>
-      <span class="muted small">${me ? 'Así te ven tus gymbros' : `Gymbros desde el ${fmtLongDate(c.createdAt)}`}</span>
+      ${me ? '' : `<span class="muted small">Gymbros desde el ${fmtLongDate(c.createdAt)}</span>`}
     </section>`;
   let body;
   if (!p.data && p.loading) body = '<p class="empty">Cargando…</p>';
   else if (!p.data) body = `<p class="empty">${p.error ? 'No se pudo cargar el perfil. Revisa tu internet.' : `${esc(name)} todavía no comparte sus récords ni estadísticas.`}</p>`;
   else body = profileBody(p.data, me);
   if (me && !shareProfile()) body = '<p class="empty">No estás compartiendo tus récords ni estadísticas. Actívalo en Social.</p>';
-  return `${header(me ? 'Mi perfil' : 'Perfil', { back: true })}
+  return `${header(me ? 'Mi perfil' : 'Perfil', { back: true, right: me ? '<a class="btn small-btn privacy-btn" href="#/privacidad">Privacidad</a>' : '' })}
     ${head}
     ${body}
     ${me ? '' : sharedInChat(c)}
@@ -3056,6 +3109,7 @@ function render() {
     case 'gymbro': html = viewAddGymbro(); break;
     case 'chat': html = viewChat(arg); break;
     case 'perfil': html = viewProfile(arg); break;
+    case 'privacidad': html = viewPrivacy(); break;
     default: html = viewHub();   // Inicio: sin pestañas
   }
   $app.innerHTML = html;
@@ -3990,6 +4044,13 @@ $app.addEventListener('click', e => {
     case 'auto-pr':
       localStorage.setItem(autoPRKey(), el.checked ? '1' : '0');
       break;
+    case 'pr-pick': {
+      // Récords destacados: hasta 5
+      const pick = (db.body.prPick ||= []), k = pick.indexOf(id);
+      if (k >= 0) pick.splice(k, 1); else if (pick.length < 5) pick.push(id);
+      save(); render();
+      break;
+    }
     case 'profile-field': {
       const hide = (db.body.hide ||= {});
       if (el.checked) delete hide[el.dataset.k]; else hide[el.dataset.k] = true;
@@ -3998,6 +4059,7 @@ $app.addEventListener('click', e => {
     }
     case 'share-profile':
       setShareProfile(el.checked);
+      render();   // muestra u oculta las opciones de qué mostrar
       break;
     case 'make-invite':
       inviteError = false;
