@@ -85,15 +85,17 @@ function fmtDuration(sec) {
 }
 
 // ---------- Comparación de series ----------
-// Una serie es mejor si tiene más peso; con el mismo peso, si tiene más reps.
+// Una serie es mejor si su récord estimado (1RM, Epley + RIR) es mayor, igual que en Progreso:
+// 110 × 1 no es mejor que 100 × 20. Con peso corporal se suma tu peso de ese día (bw).
 // Las libras se pasan a kg para poder comparar ejercicios que cambiaron de unidad.
 const toKg = (w, unit) => (w == null ? 0 : unit === 'lb' ? w * 0.45359237 : w);
+const setStrength = x => epley((x.bw || 0) + toKg(x.w || 0, x.unit), x.r || 1, x.rir);
 function cmpSet(a, b) {
-  const dw = toKg(a.w, a.unit) - toKg(b.w, b.unit);
-  if (Math.abs(dw) > 0.01) return dw > 0 ? 1 : -1;
-  const dr = (a.r ?? 0) - (b.r ?? 0);
-  return dr === 0 ? 0 : dr > 0 ? 1 : -1;
+  const diff = setStrength(a) - setStrength(b);
+  return Math.abs(diff) < 0.05 ? 0 : diff > 0 ? 1 : -1;
 }
+// Tu peso de ese día, solo en ejercicios con peso corporal
+const bwFor = (ex, dateIso) => (ex.unit !== 'placas' && isBwEx(ex) ? bwOn(dateIso) || 0 : 0);
 
 // Mejor serie de cada posición (serie 1, serie 2...) en los entrenamientos anteriores a `before`
 // unit: solo compara con sesiones de la misma clase (placas con placas; kg y lb entre sí)
@@ -102,8 +104,9 @@ function bestSets(exerciseId, before = db.workouts.length, unit = null) {
   for (let k = 0; k < before; k++) {
     const ex = db.workouts[k].exercises.find(e => e.exerciseId === exerciseId);
     if (!ex || (unit && unitKind(ex.unit) !== unitKind(unit))) continue;
+    const bw = bwFor(ex, db.workouts[k].date);
     ex.sets.forEach((s, j) => {
-      const c = { w: s.w, r: s.r, unit: ex.unit };
+      const c = { w: s.w, r: s.r, rir: s.rir, unit: ex.unit, bw };
       if (!best[j] || cmpSet(c, best[j]) > 0) best[j] = c;
     });
   }
@@ -111,11 +114,11 @@ function bestSets(exerciseId, before = db.workouts.length, unit = null) {
 }
 
 // Compara lo que se está escribiendo con la mejor marca (null si no hay nada que comparar)
-function liveCmp(s, unit, best) {
+function liveCmp(s, ex, best) {
   if (!best) return null;
   const w = num(s.w), r = num(s.r);
   if (w == null && r == null) return null;
-  return cmpSet({ w, r, unit }, best);
+  return cmpSet({ w, r, rir: num(s.rir), unit: ex.unit, bw: bwFor(ex, new Date().toISOString()) }, best);
 }
 
 const markSpan = c => (c == null ? '' :
@@ -1195,7 +1198,7 @@ function viewWorkout() {
         <span class="x">×</span>
         <input inputmode="numeric" data-bind="r" data-i="${i}" data-j="${j}" value="${esc(s.r)}" placeholder="reps" aria-label="Repeticiones serie ${label}">
         ${ex.rir ? `<input class="rir" inputmode="numeric" data-bind="rir" data-i="${i}" data-j="${j}" value="${esc(s.rir ?? '')}" placeholder="RIR" aria-label="RIR serie ${label}">` : ''}
-        <span class="mark-cell" data-mark="${i}-${j}">${markSpan(liveCmp(s, ex.unit, best[j]))}</span>
+        <span class="mark-cell" data-mark="${i}-${j}">${markSpan(liveCmp(s, ex, best[j]))}</span>
         <button class="icon danger" data-action="del-set" data-i="${i}" data-j="${j}" aria-label="Borrar serie">✕</button>
       </div>
       ${drops}
@@ -1242,6 +1245,7 @@ function viewWorkout() {
         <button class="btn ghost" data-action="add-set" data-i="${i}">+ serie</button>
         ${restBtn(i)}
         <button class="btn ghost ${open ? 'on' : ''}" data-action="toggle-history" data-i="${i}">Historial ${open ? '▴' : '▾'}</button>
+        ${ex.extra ? `<button class="btn ghost danger-text" data-action="del-extra" data-i="${i}">Quitar ejercicio</button>` : ''}
       </div>
       ${open ? `<div class="hist">${historyHtml(ex)}</div>` : ''}
     </section>`;
@@ -1764,7 +1768,7 @@ function viewSession(id) {
     const best = bestSets(ex.exerciseId, k, ex.unit);
     const count = { up: 0, eq: 0, down: 0 };
     const chips = ex.sets.map((s, j) => {
-      const c = best[j] ? cmpSet({ ...s, unit: ex.unit }, best[j]) : null;
+      const c = best[j] ? cmpSet({ ...s, unit: ex.unit, bw: bwFor(ex, w.date) }, best[j]) : null;
       if (c != null) count[c > 0 ? 'up' : c < 0 ? 'down' : 'eq']++;
       return `<span>${setText(s, ex.unit)} ${markSpan(c)}</span>`;
     }).join('');
@@ -1805,7 +1809,7 @@ function workoutShareText(w, forChat = false) {
   const lines = w.exercises.map(ex => {
     const best = bestSets(ex.exerciseId, k, ex.unit);
     const sets = ex.sets.map((s, j) => {
-      const c = best[j] ? cmpSet({ ...s, unit: ex.unit }, best[j]) : null;
+      const c = best[j] ? cmpSet({ ...s, unit: ex.unit, bw: bwFor(ex, w.date) }, best[j]) : null;
       if (c > 0) ups++;
       const mark = c == null ? '' : c > 0 ? ' ▲' : c < 0 ? ' ▼' : ' =';
       return `${fmtNum(s.w)}×${fmtNum(s.r)}${dropsText(s)}${mark}`;
@@ -3528,6 +3532,7 @@ function addExtraExercise(name, unit) {
     unit: found ? found.unit : unit,
     rest: found ? found.rest : 0,
     rir: found ? found.rir : false,
+    extra: true,   // agregado mientras entrenabas: se puede quitar
     sets: prefillSets(lastFor(id, before), found && found.rir),
   });
   d.pos = d.exercises.length - 1;
@@ -4049,6 +4054,17 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       if (chip) chip.scrollIntoView({ inline: 'center', block: 'nearest' });
       break;
     }
+    case 'del-extra': {
+      const d = cur(), ex = d.exercises[i];
+      if (!ex || !confirm(`¿Quitar "${ex.name}" de este entrenamiento?`)) return;
+      d.exercises.splice(i, 1);
+      d.done = (d.done || []).filter(x => x !== ex.exerciseId);
+      d.pos = Math.max(0, Math.min(i, d.exercises.length - 1));
+      // el descanso en curso sigue apuntando a su ejercicio
+      if (d.timer) { if (d.timer.i === i) d.timer = null; else if (d.timer.i > i) d.timer.i--; }
+      save(); render();
+      break;
+    }
     case 'add-set':
       cur().exercises[i].sets.push({ w: '', r: '', ...(cur().exercises[i].rir ? { rir: '' } : {}) });
       save(); render();
@@ -4534,13 +4550,12 @@ $app.addEventListener('input', e => {
     else if (key === 'goalSets') { const n = parseInt(text, 10); if (n >= 1 && n <= 20 && String(n) === text) ex.goalSets = n; }
     else { const v = parseRange(text, key === 'goalReps' ? 100 : 10); if (v) ex[key] = v; }
   }
-  else if (bind === 'w' || bind === 'r') {
+  else if (bind === 'w' || bind === 'r' || bind === 'rir') {
     const d = cur(), ex = d.exercises[i];
     ex.sets[j][bind] = el.value;
     const cell = $app.querySelector(`[data-mark="${i}-${j}"]`);
-    if (cell) cell.innerHTML = markSpan(liveCmp(ex.sets[j], ex.unit, bestSets(ex.exerciseId, beforeIndex(d), ex.unit)[j]));
+    if (cell) cell.innerHTML = markSpan(liveCmp(ex.sets[j], ex, bestSets(ex.exerciseId, beforeIndex(d), ex.unit)[j]));
   }
-  else if (bind === 'rir') cur().exercises[i].sets[j].rir = el.value;
   else if (bind === 'dw' || bind === 'dr') cur().exercises[i].sets[j].drops[+el.dataset.k][bind === 'dw' ? 'w' : 'r'] = el.value;
   else if (bind === 'note') {
     const exId = cur().exercises[i].exerciseId, text = el.value.trim();
