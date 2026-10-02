@@ -1344,11 +1344,11 @@ function viewAuth(mode) {
       </label>` : ''}
       ${reg ? `<div class="reg-optional">
         <div class="two-fields">
-          <label class="field"><span>Estatura (opcional)</span>
-            <div class="add-row" style="margin-top:0"><input name="height" inputmode="numeric" placeholder="ej. 175" autocomplete="off" aria-label="Estatura en cm"><span class="unit-label">cm</span></div>
-          </label>
           <label class="field"><span>Año nacim. (opcional)</span>
             <input name="birth" inputmode="numeric" placeholder="ej. 1998" autocomplete="bday-year" aria-label="Año de nacimiento">
+          </label>
+          <label class="field"><span>Estatura (opcional)</span>
+            <div class="add-row" style="margin-top:0"><input name="height" inputmode="numeric" placeholder="ej. 175" autocomplete="off" aria-label="Estatura en cm"><span class="unit-label">cm</span></div>
           </label>
         </div>
         <div class="field"><span>Sexo (opcional)</span>
@@ -1392,11 +1392,11 @@ function viewAccount() {
         <input name="username" value="${esc(user.username)}" maxlength="30" autocomplete="nickname">
       </label>
       <div class="two-fields">
-        <label class="field"><span>Estatura</span>
-          <div class="add-row" style="margin-top:0"><input name="height" inputmode="numeric" value="${bd.heightCm || ''}" placeholder="ej. 175" autocomplete="off" aria-label="Estatura en cm"><span class="unit-label">cm</span></div>
-        </label>
         <label class="field"><span>Año de nacimiento</span>
           <input name="birth" inputmode="numeric" value="${bd.birthYear || ''}" placeholder="ej. 1998" autocomplete="bday-year" aria-label="Año de nacimiento">
+        </label>
+        <label class="field"><span>Estatura</span>
+          <div class="add-row" style="margin-top:0"><input name="height" inputmode="numeric" value="${bd.heightCm || ''}" placeholder="ej. 175" autocomplete="off" aria-label="Estatura en cm"><span class="unit-label">cm</span></div>
         </label>
       </div>
       <div class="field"><span>Sexo</span>
@@ -2286,20 +2286,6 @@ function myProfile() {
     stats.goal = pm === 0 ? 'Mantener peso' : `${pm < 0 ? 'Bajando' : 'Subiendo'} ${fmtNum(Math.abs(pm))} kg al mes`;
   }
   if (showInProfile('since') && ws.length) stats.since = ws[0].date;
-  if (showInProfile('volume')) {
-    // Kg levantados este mes: peso × reps de todas las series (y bajadas); las placas no cuentan
-    let vol = 0;
-    for (const w of ws) {
-      const d = new Date(w.date);
-      if (d.getMonth() !== now.getMonth() || d.getFullYear() !== now.getFullYear()) continue;
-      for (const ex of w.exercises) {
-        if (ex.unit === 'placas') continue;
-        for (const st of ex.sets) for (const x of [st, ...(st.drops || [])]) vol += toKg(x.w || 0, ex.unit) * (x.r || 0);
-      }
-    }
-    if (vol) stats.volume = Math.round(vol);
-  }
-  if (showInProfile('fav') && sessions.length) { stats.fav = sessions[0].name; stats.favN = sessions[0].n; }
   return { name: user.username || '', stats, prs, recent };
 }
 
@@ -2336,8 +2322,7 @@ function loadProfile(uid) {
 // Datos del perfil que puedes ocultar (todos se muestran si no los apagas)
 const PROFILE_FIELDS = [
   ['age', 'Edad'], ['height', 'Estatura'], ['weight', 'Peso'], ['bf', '% de grasa'], ['ffmi', 'FFMI'],
-  ['goal', 'Objetivo actual (subir, bajar o mantener)'], ['since', 'Entrenando desde'], ['volume', 'Kg levantados este mes'],
-  ['fav', 'Ejercicio más entrenado'],
+  ['goal', 'Objetivo actual (subir, bajar o mantener)'], ['since', 'Entrenando desde'],
 ];
 
 // Veces que hiciste cada ejercicio, del más entrenado al menos
@@ -2357,13 +2342,11 @@ function profileBody(d, me) {
   const about = [
     st.age != null && ['Edad', `${st.age} años`],
     st.heightCm != null && ['Estatura', `${fmtNum(st.heightCm / 100)} m`],
-    st.weight != null && ['Peso', fmtKg(st.weight)],
+    st.weight != null && ['Peso hoy', fmtKg(st.weight)],
     st.bf != null && ['% de grasa', `${fmtNum(st.bf)} %`],
     st.ffmi != null && ['FFMI', `${st.ffmi.toFixed(1).replace('.', ',')} <span class="badge on">${FFMI_LEVELS[st.ffmiLevel] || ''}</span>`],
     st.goal && ['Objetivo', esc(st.goal)],
     st.since && ['Entrenando desde', new Date(st.since).toLocaleDateString('es', { month: 'long', year: 'numeric' })],
-    st.volume != null && ['Levantado este mes', `${fmtKcal(st.volume)} kg`],
-    st.fav && ['Más entrenado', `${esc(st.fav)} <span class="muted small">(${plural(st.favN, 'sesión', 'sesiones')})</span>`],
   ].filter(Boolean);
   const aboutCard = about.length ? `<section class="card about">${about.map(([k, v]) => `<div class="prog-row"><span class="muted">${k}</span><span>${v}</span></div>`).join('')}</section>` : '';
   const stats = `<div class="stats">
