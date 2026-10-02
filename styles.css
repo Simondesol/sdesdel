@@ -669,3 +669,10 @@ input.readonly { color: var(--muted); background: transparent; }
 .sec-arrow { color: var(--muted); }
 /* Resumen del entrenamiento: leyenda en una línea */
 .legend-line { margin-top: 6px; }
+
+/* Perfil: sobre mí y qué datos mostrar */
+.about { margin-bottom: 12px; }
+.about .prog-row { padding: 8px 0; }
+.about .badge { margin-left: 6px; }
+.profile-fields { display: grid; gap: 4px; margin-top: 8px; }
+.small-toggle { margin: 0; padding: 6px 0; font-size: 14px; align-items: center; }

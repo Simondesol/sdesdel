@@ -1874,6 +1874,12 @@ function viewSocial() {
       <input type="checkbox" data-action="share-profile" ${shareProfile() ? 'checked' : ''}>
       <span class="grow">Compartir mis récords y estadísticas con mis gymbros<br><span class="muted small">Solo tus gymbros los ven en tu perfil. <a href="#/perfil/yo">Ver cómo me ven ›</a></span></span>
     </label>
+    ${shareProfile() ? `<section class="card profile-fields">
+      <span class="muted small">Mostrar en mi perfil:</span>
+      ${PROFILE_FIELDS.map(([k, label]) => `<label class="toggle-row small-toggle">
+        <input type="checkbox" data-action="profile-field" data-k="${k}" ${showInProfile(k) ? 'checked' : ''}> <span>${label}</span>
+      </label>`).join('')}
+    </section>` : ''}
     <label class="card toggle-row" style="margin-top:8px">
       <input type="checkbox" data-action="auto-pr" ${autoPR() ? 'checked' : ''}>
       <span class="grow">Avisar mis PRs a mis gymbros<br><span class="muted small">Cuando superes tu récord estimado (1RM) de la 1ª serie, se envía solo a tus chats.</span></span>
@@ -2238,7 +2244,20 @@ function myProfile() {
   }
   const prs = [...best.values()].sort((a, b) => b.kg - a.kg).slice(0, 15).map(({ kg, ...pr }) => pr);
   const recent = ws.slice(-5).reverse().map(w => ({ routine: w.routineName || 'Entrenamiento', date: w.date, min: w.durationSec ? Math.round(w.durationSec / 60) : 0 }));
-  return { name: user.username || '', stats: { month, total: ws.length, streak }, prs, recent };
+  const stats = { month, total: ws.length, streak };
+  // Sobre mí (cada dato con su interruptor en Social → Privacidad y avisos)
+  const b = db.body;
+  if (showInProfile('age') && b.birthYear) stats.age = new Date().getFullYear() - b.birthYear;
+  if (showInProfile('height') && b.heightCm) stats.heightCm = b.heightCm;
+  const ff = showInProfile('ffmi') ? ffmiInfo() : null;
+  if (ff) { stats.ffmi = ff.value; stats.ffmiLevel = ff.level; }
+  if (showInProfile('fav')) {
+    const count = new Map();
+    for (const w of ws) for (const ex of w.exercises) count.set(ex.exerciseId, { name: ex.name, n: ((count.get(ex.exerciseId) || {}).n || 0) + 1 });
+    const fav = [...count.values()].sort((a, b) => b.n - a.n)[0];
+    if (fav) { stats.fav = fav.name; stats.favN = fav.n; }
+  }
+  return { name: user.username || '', stats, prs, recent };
 }
 
 // Se publica unos segundos después de cada cambio, solo si cambió algo y si tienes gymbros
@@ -2271,8 +2290,19 @@ function loadProfile(uid) {
     .then(() => { if (routeParts()[0] === 'perfil') refresh(); });
 }
 
+// Datos del perfil que puedes ocultar (todos se muestran si no los apagas)
+const PROFILE_FIELDS = [['age', 'Mi edad'], ['height', 'Mi estatura'], ['ffmi', 'Mi FFMI'], ['fav', 'Mi ejercicio más entrenado']];
+const showInProfile = k => !(db.body.hide || {})[k];
+
 function profileBody(d, me) {
   const st = d.stats || {};
+  const about = [
+    st.age != null && ['Edad', `${st.age} años`],
+    st.heightCm != null && ['Estatura', `${fmtNum(st.heightCm / 100)} m`],
+    st.ffmi != null && ['FFMI', `${st.ffmi.toFixed(1).replace('.', ',')} <span class="badge on">${FFMI_LEVELS[st.ffmiLevel] || ''}</span>`],
+    st.fav && ['Más entrenado', `${esc(st.fav)} <span class="muted small">(${plural(st.favN, 'sesión', 'sesiones')})</span>`],
+  ].filter(Boolean);
+  const aboutCard = about.length ? `<section class="card about">${about.map(([k, v]) => `<div class="prog-row"><span class="muted">${k}</span><span>${v}</span></div>`).join('')}</section>` : '';
   const stats = `<div class="stats">
       <div class="stat"><span class="muted">Este mes</span><strong>${st.month || 0}</strong><span class="muted">${st.month === 1 ? 'entrenamiento' : 'entrenamientos'}</span></div>
       <div class="stat"><span class="muted">Total</span><strong>${st.total || 0}</strong><span class="muted">${st.total === 1 ? 'entrenamiento' : 'entrenamientos'}</span></div>
@@ -2286,7 +2316,8 @@ function profileBody(d, me) {
       <span>${esc(w.routine)}</span>
       <span class="muted">${dayLabel(Date.parse(w.date))}${w.min ? ` · ${w.min} min` : ''}</span>
     </div>`).join('');
-  return `${stats}
+  return `${aboutCard}
+    ${stats}
     <h2>Récords · 1RM estimado</h2>
     ${prs ? `<section class="card">${prs}</section>` : `<p class="empty">${me ? 'Todavía no tienes' : 'Todavía no tiene'} récords con peso anotado.</p>`}
     <h2>Últimos entrenamientos</h2>
@@ -3947,6 +3978,12 @@ $app.addEventListener('click', e => {
     case 'auto-pr':
       localStorage.setItem(autoPRKey(), el.checked ? '1' : '0');
       break;
+    case 'profile-field': {
+      const hide = (db.body.hide ||= {});
+      if (el.checked) delete hide[el.dataset.k]; else hide[el.dataset.k] = true;
+      save();   // el perfil se vuelve a publicar solo
+      break;
+    }
     case 'share-profile':
       setShareProfile(el.checked);
       break;
