@@ -2416,9 +2416,8 @@ function viewPlan() {
   const nowWeek = planWeekIndex(p, new Date()), nowDay = (new Date().getDay() + 6) % 7;
   const options = sel => `<option value="">Descanso</option>${db.routines.map(r =>
     `<option value="${r.id}" ${r.id === sel ? 'selected' : ''}>${esc(r.name || '(sin nombre)')}</option>`).join('')}`;
-  const weeks = p.days.map((wk, w) => `
-    <h2 class="plan-week-title">Semana ${w + 1}${p.weeks > 1 && w === nowWeek ? ' · esta semana' : ''}
-      ${p.weeks > 1 && w !== nowWeek ? `<button class="link" data-action="plan-this-week" data-w="${w}">Es esta semana</button>` : ''}</h2>
+  const weeks = p.days.slice(0, p.weeks).map((wk, w) => `
+    <h2>Semana ${w + 1}${p.weeks > 1 && w === nowWeek ? ' · esta semana' : ''}</h2>
     <section class="card plan-week">${DAY_NAMES.map((name, d) => `
       <label class="plan-row ${w === nowWeek && d === nowDay ? 'today' : ''}">
         <span>${name}${w === nowWeek && d === nowDay ? ' <span class="badge on">Hoy</span>' : ''}</span>
@@ -4285,19 +4284,10 @@ $app.addEventListener('click', e => {
       if (confirm('¿Quitar tu foto de perfil?')) setMyPhoto(null);
       break;
     case 'plan-weeks': {
+      // Si bajas el número, las semanas que sobran se ocultan pero no se borran (vuelven si lo subes de nuevo)
       const p = (db.plan ||= defaultPlan()), n = Number(el.dataset.v);
       while (p.days.length < n) p.days.push({ r: Array(7).fill(null) });
-      p.days.length = n;
       p.weeks = n;
-      save(); render();
-      break;
-    }
-    case 'plan-this-week': {
-      // La semana elegida pasa a ser la actual: el ciclo parte desde ahí
-      const p = (db.plan ||= defaultPlan()), w = Number(el.dataset.w);
-      const start = mondayOf(new Date());
-      start.setDate(start.getDate() - 7 * w);
-      p.start = dayKeyOf(start);
       save(); render();
       break;
     }
