@@ -725,3 +725,8 @@ img.avatar { object-fit: cover; padding: 0; }
 .cal-legend .lg.planned { outline: 1px dashed var(--accent); outline-offset: -1px; }
 .cal-legend .lg.missed { box-shadow: inset 0 -3px 0 var(--danger); background: var(--surface2); }
 .plan-day-note { margin: 0 0 10px; }
+
+/* Mi plan: "Se repite cada [2] semanas" */
+.plan-n { min-width: 56px; }
+.plan-week-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.plan-week-title .link { font-size: 12px; }

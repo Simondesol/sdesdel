@@ -2417,7 +2417,8 @@ function viewPlan() {
   const options = sel => `<option value="">Descanso</option>${db.routines.map(r =>
     `<option value="${r.id}" ${r.id === sel ? 'selected' : ''}>${esc(r.name || '(sin nombre)')}</option>`).join('')}`;
   const weeks = p.days.map((wk, w) => `
-    <h2>Semana ${w + 1}${p.weeks > 1 && w === nowWeek ? ' · esta semana' : ''}</h2>
+    <h2 class="plan-week-title">Semana ${w + 1}${p.weeks > 1 && w === nowWeek ? ' · esta semana' : ''}
+      ${p.weeks > 1 && w !== nowWeek ? `<button class="link" data-action="plan-this-week" data-w="${w}">Es esta semana</button>` : ''}</h2>
     <section class="card plan-week">${DAY_NAMES.map((name, d) => `
       <label class="plan-row ${w === nowWeek && d === nowDay ? 'today' : ''}">
         <span>${name}${w === nowWeek && d === nowDay ? ' <span class="badge on">Hoy</span>' : ''}</span>
@@ -2425,11 +2426,14 @@ function viewPlan() {
       </label>`).join('')}
     </section>`).join('');
   return `${header('Mi plan', { back: true, sub: 'Qué rutina te toca cada día' })}
-    <h2>Se repite cada</h2>
-    <div class="plan-weeks">${[1, 2, 3, 4].map(n => `<button class="chip toggle ${n === p.weeks ? 'on' : ''}" data-action="plan-weeks" data-v="${n}">${plural(n, 'semana')}</button>`).join('')}</div>
-    ${p.weeks > 1 ? `<label class="field" style="margin-top:12px"><span>La semana 1 empieza el lunes</span>
-      <input type="date" data-bind="plan-start" value="${p.start}" aria-label="Lunes en que empieza la semana 1"></label>
-      <p class="muted small" style="margin:6px 0 0">Hoy estás en la <strong>semana ${nowWeek + 1}</strong> del ciclo.</p>` : ''}
+    <section class="card stack">
+      <div class="pace-sentence">
+        <span>Se repite cada</span>
+        <button class="btn pace-dir plan-n" data-action="plan-weeks" data-v="${(p.weeks % 4) + 1}" aria-label="Cambiar cada cuántas semanas se repite">${p.weeks}</button>
+        <span>${p.weeks === 1 ? 'semana' : 'semanas'}</span>
+      </div>
+      <span class="muted small">Toca el número para cambiarlo (de 1 a 4).</span>
+    </section>
     ${weeks}
     ${db.plan ? '<button class="btn ghost block danger-text" data-action="plan-del" style="margin-top:20px">Quitar plan</button>' : ''}`;
 }
@@ -4288,6 +4292,15 @@ $app.addEventListener('click', e => {
       save(); render();
       break;
     }
+    case 'plan-this-week': {
+      // La semana elegida pasa a ser la actual: el ciclo parte desde ahí
+      const p = (db.plan ||= defaultPlan()), w = Number(el.dataset.w);
+      const start = mondayOf(new Date());
+      start.setDate(start.getDate() - 7 * w);
+      p.start = dayKeyOf(start);
+      save(); render();
+      break;
+    }
     case 'plan-del':
       if (!confirm('¿Quitar tu plan? Tus rutinas no se borran.')) return;
       db.plan = null;
@@ -4446,12 +4459,6 @@ $app.addEventListener('input', e => {
     const p = (db.plan ||= defaultPlan());
     p.days[+el.dataset.w].r[+el.dataset.d] = el.value || null;
     save();
-    return;
-  }
-  if (bind === 'plan-start') {
-    if (!el.value) return;
-    (db.plan ||= defaultPlan()).start = dayKeyOf(mondayOf(`${el.value}T12:00:00`));   // siempre un lunes
-    save(); render();
     return;
   }
   if (bind === 'wq-ml') setQuick(el);
