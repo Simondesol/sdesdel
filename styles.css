@@ -698,3 +698,30 @@ img.avatar { object-fit: cover; padding: 0; }
 /* Editor de rutina: RIR, Dropset y Peso corporal en una fila, del mismo ancho */
 .ex-toggles { flex: 1 1 100%; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
 .ex-toggles .chip { min-width: 0; padding: 0 4px; font-size: 13px; white-space: nowrap; }
+
+/* Ajustar foto */
+.crop-modal { justify-items: center; }
+.crop-box { position: relative; overflow: hidden; border-radius: 12px; background: #000; touch-action: none; cursor: grab; }
+.crop-img { position: absolute; top: 0; left: 0; max-width: none; user-select: none; -webkit-user-drag: none; }
+.crop-ring { position: absolute; inset: 0; border-radius: 50%; box-shadow: 0 0 0 999px rgba(0, 0, 0, .55); border: 2px solid var(--accent); pointer-events: none; }
+.crop-zoom { display: flex; align-items: center; gap: 10px; width: 100%; }
+.crop-zoom input { flex: 1; accent-color: var(--accent); }
+.crop-modal .ex-actions { width: 100%; }
+.crop-modal .ex-actions .btn { flex: 1; }
+/* Mi plan */
+.plan-card { display: flex; align-items: center; gap: 12px; border-color: var(--accent); }
+.plan-card .grow { display: grid; gap: 2px; }
+.plan-weeks { display: flex; flex-wrap: wrap; gap: 8px; }
+.plan-week { display: grid; gap: 0; padding-top: 4px; padding-bottom: 4px; }
+.plan-row { display: grid; grid-template-columns: 110px minmax(0, 1fr); align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+.plan-row:last-child { border-bottom: 0; }
+.plan-row.today span:first-child { color: var(--accent); font-weight: 700; }
+.plan-row select { width: 100%; min-width: 0; }
+.cal-cell.planned { outline: 1px dashed var(--accent); outline-offset: -3px; }
+.cal-cell.missed { box-shadow: inset 0 -3px 0 var(--danger); }
+.cal-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 10px; }
+.cal-legend .lg { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: -4px; }
+.cal-legend .lg.trained { background: var(--accent); }
+.cal-legend .lg.planned { outline: 1px dashed var(--accent); outline-offset: -1px; }
+.cal-legend .lg.missed { box-shadow: inset 0 -3px 0 var(--danger); background: var(--surface2); }
+.plan-day-note { margin: 0 0 10px; }

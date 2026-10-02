@@ -11,7 +11,7 @@ const $tabs = document.getElementById('tabs');
 const emptyWater = () => ({ goalMl: null, days: {} });   // days: { 'AAAA-MM-DD': [{ at, ml }] }
 // Nutrición: alimentos (valores por 100 g), dietas con comidas y el registro de comidas marcadas por día
 const emptyNutrition = () => ({ foods: [], diets: [], activeDietId: null, log: {} });
-const emptyDb = () => ({ routines: [], workouts: [], draft: null, notes: {}, bodyweight: [], body: {}, sleep: [], water: emptyWater(), nutrition: emptyNutrition() });
+const emptyDb = () => ({ routines: [], workouts: [], draft: null, notes: {}, bodyweight: [], body: {}, sleep: [], plan: null, water: emptyWater(), nutrition: emptyNutrition() });
 const emptySynced = () => ({ main: null, w: {} });
 let db = emptyDb();
 let user = null;                 // { uid, email, username }
@@ -139,16 +139,28 @@ const GEAR = `<a class="icon gear" href="#/cuenta" aria-label="Cuenta y configur
 const bar = (value, goal) => `<div class="meter" role="progressbar" aria-valuemin="0" aria-valuemax="${goal}" aria-valuenow="${value}">
   <span style="width:${Math.min(100, goal ? (value / goal) * 100 : 0)}%"></span></div>`;
 
+function entrenoCard() {
+  const d = db.draft, t = todayKey(), plan = plannedRoutine(t);
+  let body;
+  if (d) body = `<a class="muted" href="#/entrenar">Entrenamiento en curso: ${esc(d.routineName)} ›</a>`;
+  else if (plan === undefined) body = '<span class="muted">Rutinas · Historial · Progreso</span>';
+  else if (plan === null) body = '<span class="muted">Hoy: descanso</span>';
+  else if (trainedOn(t, plan.id)) body = `<span class="muted">Hoy ya entrenaste <strong>${esc(plan.name)}</strong></span>`;
+  else body = `<div class="hub-value">Hoy te toca: <strong>${esc(plan.name)}</strong></div>
+      <button class="btn primary" data-action="start" data-id="${plan.id}" ${plan.exercises.length ? '' : 'disabled'}>Empezar</button>`;
+  return `<div class="card hub">
+      <a class="hub-top" href="#/rutinas"><span class="hub-icon">🏋️</span><strong>Entreno</strong><span class="chev">›</span></a>
+      ${body}
+    </div>`;
+}
+
 function viewHub() {
   maybeAskSleep();
   const d = db.draft;
   const ml = waterToday(), goal = waterGoal().ml, streak = waterStreak();
   return `${header('Desdel', { sub: 'Entrena. Anota. Supera.', right: GEAR })}
     <div class="hub-wrap">
-    <a class="card hub" href="#/rutinas">
-      <div class="hub-top"><span class="hub-icon">🏋️</span><strong>Entreno</strong><span class="chev">›</span></div>
-      <span class="muted">${d ? `Entrenamiento en curso: ${esc(d.routineName)}` : 'Rutinas · Historial · Progreso'}</span>
-    </a>
+    ${entrenoCard()}
 
     ${nutritionCard()}
 
@@ -951,11 +963,17 @@ function viewHome() {
       <div class="grow"><strong>Entrenamiento en curso</strong><span class="muted">${esc(d.routineName)}</span></div>
       <span class="chev">›</span>
     </a>` : '';
-  const last = db.routines.length - 1;
+  const last = db.routines.length - 1, todays = plannedRoutine(todayKey());
+  const planCard = `<a class="card plan-card" href="#/plan">
+      <div class="grow"><strong>Mi plan</strong>
+        <span class="muted small">${todays === undefined ? 'Arma tu calendario: qué rutina te toca cada día'
+          : `${todays ? `Hoy te toca: ${esc(todays.name)}` : 'Hoy: descanso'} · se repite cada ${plural(db.plan.weeks, 'semana')}`}</span></div>
+      <span class="chev">›</span>
+    </a>`;
   const routines = db.routines.map((r, i) => `
     <div class="card routine">
       <a href="#/rutina/${r.id}">
-        <strong>${esc(r.name) || '(sin nombre)'}</strong>
+        <strong>${esc(r.name) || '(sin nombre)'}${todays && todays.id === r.id ? ' <span class="badge on">Hoy</span>' : ''}</strong>
         <span class="muted">${plural(r.exercises.length, 'ejercicio')} · editar</span>
       </a>
       ${last > 0 ? `<div class="order">
@@ -966,6 +984,7 @@ function viewHome() {
     </div>`).join('');
   return `${header('Rutinas', { home: true })}
     ${resume}
+    ${planCard}
     ${routines || '<p class="empty">Aún no tienes rutinas. Crea la primera abajo.</p>'}
     <form class="add-row" data-form="new-routine">
       <input name="title" placeholder="Nueva rutina (ej. Brazo)" autocomplete="off" required>
@@ -1299,8 +1318,9 @@ function viewHistory() {
   for (let k = 0; k < lead; k++) cells.push('<span class="cal-cell empty"></span>');
   for (let d = 1; d <= daysInMonth; d++) {
     const key = `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-    const n = (byDay.get(key) || []).length;
-    const cls = ['cal-cell', n ? 'trained' : '', key === today ? 'today' : '', key === histDay ? 'selected' : ''].join(' ');
+    const n = (byDay.get(key) || []).length, pl = plannedRoutine(key);
+    const planned = !n && pl && key >= today, missed = !n && pl && key < today && (!db.plan || key >= db.plan.start);
+    const cls = ['cal-cell', n ? 'trained' : '', planned ? 'planned' : '', missed ? 'missed' : '', key === today ? 'today' : '', key === histDay ? 'selected' : ''].join(' ');
     cells.push(`<button class="${cls}" data-action="hist-day" data-date="${key}" aria-label="${d}${n ? `, ${plural(n, 'entrenamiento')}` : ''}">
       ${d}${n > 1 ? `<small>${n}</small>` : ''}</button>`);
   }
@@ -1318,13 +1338,15 @@ function viewHistory() {
       <div class="cal-head">
         <button class="icon" data-action="hist-month" data-d="-1" aria-label="Mes anterior">‹</button>
         <strong>${monthName(y, m)}</strong>
-        <button class="icon" data-action="hist-month" data-d="1" ${isCurrent ? 'disabled' : ''} aria-label="Mes siguiente">›</button>
+        <button class="icon" data-action="hist-month" data-d="1" ${isCurrent && !db.plan ? 'disabled' : ''} aria-label="Mes siguiente">›</button>
       </div>
       <div class="cal-grid cal-week">${['L', 'M', 'M', 'J', 'V', 'S', 'D'].map(d => `<span>${d}</span>`).join('')}</div>
       <div class="cal-grid">${cells.join('')}</div>
+      ${db.plan ? '<div class="cal-legend muted small"><span class="lg trained"></span>Entrenaste <span class="lg planned"></span>Te toca <span class="lg missed"></span>No hecho</div>' : ''}
     </section>
     <h2 class="hist-title">${title}${histDay ? ' <button class="link" data-action="hist-day" data-date="">Ver todo el mes</button>' : ''}</h2>
-    ${shown.map(sessionCard).join('') || `<p class="empty">${histDay ? 'Ese día no entrenaste.' : 'No hay entrenamientos este mes.'}</p>`}`;
+    ${histDay && plannedRoutine(histDay) !== undefined ? `<p class="muted plan-day-note">${plannedRoutine(histDay) ? `Según tu plan, ese día toca <strong>${esc(plannedRoutine(histDay).name)}</strong>` : 'Según tu plan, ese día es de descanso'}</p>` : ''}
+    ${shown.map(sessionCard).join('') || `<p class="empty">${histDay ? (histDay > todayKey() ? 'Todavía no llega ese día.' : 'Ese día no entrenaste.') : 'No hay entrenamientos este mes.'}</p>`}`;
 }
 
 // ---------- Cuenta ----------
@@ -2261,23 +2283,6 @@ async function loadMyPhoto(uid) {
   } catch (e) { /* sin internet: se intenta la próxima vez */ }
 }
 
-// Recorta al centro, achica y comprime la imagen elegida
-function shrinkPhoto(file) {
-  return new Promise((resolve, reject) => {
-    const img = new Image(), src = URL.createObjectURL(file);
-    img.onload = () => {
-      const side = Math.min(img.width, img.height), size = 256;
-      const canvas = document.createElement('canvas');
-      canvas.width = canvas.height = size;
-      canvas.getContext('2d').drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, size, size);
-      URL.revokeObjectURL(src);
-      resolve(canvas.toDataURL('image/jpeg', 0.8));
-    };
-    img.onerror = () => { URL.revokeObjectURL(src); reject(new Error('imagen')); };
-    img.src = src;
-  });
-}
-
 async function setMyPhoto(url) {
   const prev = myPhoto;
   myPhoto = url;
@@ -2292,6 +2297,141 @@ async function setMyPhoto(url) {
     render();
     alert('No se pudo guardar la foto. Revisa tu internet e intenta de nuevo.');
   }
+}
+
+// Ajustar la foto antes de usarla: arrastrar para moverla y barra de zoom (se guarda el cuadrado del círculo)
+const CROP_BOX = 240;
+let photoEdit = null;   // { img, src, base, zoom, ox, oy, drag }
+function openPhotoEditor(file) {
+  const src = URL.createObjectURL(file), img = new Image();
+  img.onload = () => {
+    const base = Math.max(CROP_BOX / img.width, CROP_BOX / img.height);   // la foto cubre todo el cuadro
+    photoEdit = { img, src, base, zoom: 1, ox: (CROP_BOX - img.width * base) / 2, oy: (CROP_BOX - img.height * base) / 2 };
+    render();
+  };
+  img.onerror = () => { URL.revokeObjectURL(src); alert('No se pudo usar esa imagen. Prueba con otra.'); };
+  img.src = src;
+}
+const cropScale = () => photoEdit.base * photoEdit.zoom;
+function clampCrop() {
+  const e = photoEdit, w = e.img.width * cropScale(), h = e.img.height * cropScale();
+  e.ox = Math.min(0, Math.max(CROP_BOX - w, e.ox));
+  e.oy = Math.min(0, Math.max(CROP_BOX - h, e.oy));
+}
+// Mueve la foto en pantalla sin redibujar todo
+function paintCrop() {
+  const el = $app.querySelector('.crop-img');
+  if (!el || !photoEdit) return;
+  el.style.width = `${photoEdit.img.width * cropScale()}px`;
+  el.style.height = `${photoEdit.img.height * cropScale()}px`;
+  el.style.transform = `translate(${photoEdit.ox}px, ${photoEdit.oy}px)`;
+}
+function setCropZoom(z) {
+  const e = photoEdit, old = cropScale(), c = CROP_BOX / 2;
+  const cx = (c - e.ox) / old, cy = (c - e.oy) / old;   // el centro del cuadro se mantiene
+  e.zoom = z;
+  e.ox = c - cx * cropScale();
+  e.oy = c - cy * cropScale();
+  clampCrop();
+  paintCrop();
+}
+function closePhotoEditor() {
+  if (photoEdit) URL.revokeObjectURL(photoEdit.src);
+  photoEdit = null;
+  render();
+}
+function photoEditorHtml() {
+  if (!photoEdit) return '';
+  const e = photoEdit;
+  return `<div class="modal-wrap">
+    <div class="modal-back" data-action="crop-cancel"></div>
+    <section class="modal card crop-modal" role="dialog" aria-modal="true" aria-label="Ajustar foto">
+      <h2>Ajusta tu foto</h2>
+      <div class="crop-box" style="width:${CROP_BOX}px;height:${CROP_BOX}px">
+        <img class="crop-img" src="${e.src}" alt="" draggable="false"
+          style="width:${e.img.width * cropScale()}px;height:${e.img.height * cropScale()}px;transform:translate(${e.ox}px, ${e.oy}px)">
+        <span class="crop-ring" aria-hidden="true"></span>
+      </div>
+      <label class="crop-zoom"><span class="muted small">Zoom</span>
+        <input type="range" min="1" max="3" step="0.01" value="${e.zoom}" data-bind="crop-zoom" aria-label="Zoom"></label>
+      <span class="muted small" style="text-align:center">Arrastra la foto para moverla</span>
+      <div class="ex-actions">
+        <button class="btn ghost" data-action="crop-cancel">Cancelar</button>
+        <button class="btn primary" data-action="crop-use">Usar foto</button>
+      </div>
+    </section>
+  </div>`;
+}
+function cropToDataUrl() {
+  const e = photoEdit, sc = cropScale(), canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 256;
+  canvas.getContext('2d').drawImage(e.img, -e.ox / sc, -e.oy / sc, CROP_BOX / sc, CROP_BOX / sc, 0, 0, 256, 256);
+  return canvas.toDataURL('image/jpeg', 0.8);
+}
+// Arrastrar la foto (mouse o dedo)
+$app.addEventListener('pointerdown', e => {
+  const box = e.target.closest('.crop-box');
+  if (!box || !photoEdit) return;
+  e.preventDefault();
+  photoEdit.drag = { x: e.clientX, y: e.clientY, ox: photoEdit.ox, oy: photoEdit.oy };
+  box.setPointerCapture(e.pointerId);
+});
+$app.addEventListener('pointermove', e => {
+  if (!photoEdit || !photoEdit.drag) return;
+  const dr = photoEdit.drag;
+  photoEdit.ox = dr.ox + (e.clientX - dr.x);
+  photoEdit.oy = dr.oy + (e.clientY - dr.y);
+  clampCrop();
+  paintCrop();
+});
+const endCropDrag = () => { if (photoEdit) photoEdit.drag = null; };
+$app.addEventListener('pointerup', endCropDrag);
+$app.addEventListener('pointercancel', endCropDrag);
+
+// ---------- Mi plan (calendario de entrenos) ----------
+// db.plan = { weeks: 1 a 4, start: 'AAAA-MM-DD' (lunes de la semana 1), days: [{ r: [id de rutina o null ×7] } × weeks] }
+// Se repite cada `weeks` semanas: la app sabe qué semana del ciclo es y qué rutina toca cada día.
+const DAY_NAMES = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+const mondayOf = date => { const d = new Date(date); d.setHours(12, 0, 0, 0); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d; };
+const defaultPlan = () => ({ weeks: 1, start: dayKeyOf(mondayOf(new Date())), days: [{ r: Array(7).fill(null) }] });
+function planWeekIndex(plan, date) {
+  const diff = Math.round((mondayOf(date) - mondayOf(`${plan.start}T12:00:00`)) / (7 * 86400000));
+  return ((diff % plan.weeks) + plan.weeks) % plan.weeks;
+}
+// Rutina que toca ese día: la rutina, null si es descanso, undefined si no tienes plan
+function plannedRoutine(dateKey) {
+  const p = db.plan;
+  if (!p) return undefined;
+  const d = new Date(`${dateKey}T12:00:00`);
+  const id = ((p.days[planWeekIndex(p, d)] || {}).r || [])[(d.getDay() + 6) % 7];
+  return db.routines.find(r => r.id === id) || null;
+}
+const trainedOn = (dateKey, routineId) => db.workouts.some(w => dayKeyOf(w.date) === dateKey && (!routineId || w.routineId === routineId));
+
+function viewPlan() {
+  const p = db.plan || defaultPlan();
+  if (!db.routines.length) {
+    return `${header('Mi plan', { back: true })}<p class="empty">Primero crea tus rutinas en <a href="#/rutinas">Rutinas</a>; después eliges qué día toca cada una.</p>`;
+  }
+  const nowWeek = planWeekIndex(p, new Date()), nowDay = (new Date().getDay() + 6) % 7;
+  const options = sel => `<option value="">Descanso</option>${db.routines.map(r =>
+    `<option value="${r.id}" ${r.id === sel ? 'selected' : ''}>${esc(r.name || '(sin nombre)')}</option>`).join('')}`;
+  const weeks = p.days.map((wk, w) => `
+    <h2>Semana ${w + 1}${p.weeks > 1 && w === nowWeek ? ' · esta semana' : ''}</h2>
+    <section class="card plan-week">${DAY_NAMES.map((name, d) => `
+      <label class="plan-row ${w === nowWeek && d === nowDay ? 'today' : ''}">
+        <span>${name}${w === nowWeek && d === nowDay ? ' <span class="badge on">Hoy</span>' : ''}</span>
+        <select data-bind="plan-day" data-w="${w}" data-d="${d}" aria-label="${name} de la semana ${w + 1}">${options(wk.r[d])}</select>
+      </label>`).join('')}
+    </section>`).join('');
+  return `${header('Mi plan', { back: true, sub: 'Qué rutina te toca cada día' })}
+    <h2>Se repite cada</h2>
+    <div class="plan-weeks">${[1, 2, 3, 4].map(n => `<button class="chip toggle ${n === p.weeks ? 'on' : ''}" data-action="plan-weeks" data-v="${n}">${plural(n, 'semana')}</button>`).join('')}</div>
+    ${p.weeks > 1 ? `<label class="field" style="margin-top:12px"><span>La semana 1 empieza el lunes</span>
+      <input type="date" data-bind="plan-start" value="${p.start}" aria-label="Lunes en que empieza la semana 1"></label>
+      <p class="muted small" style="margin:6px 0 0">Hoy estás en la <strong>semana ${nowWeek + 1}</strong> del ciclo.</p>` : ''}
+    ${weeks}
+    ${db.plan ? '<button class="btn ghost block danger-text" data-action="plan-del" style="margin-top:20px">Quitar plan</button>' : ''}`;
 }
 
 // ---------- Perfil de gymbro ----------
@@ -2490,7 +2630,8 @@ function viewProfile(arg) {
     ${head}
     ${body}
     ${me ? '' : sharedInChat(c)}
-    ${me ? '' : '<button class="btn ghost block danger-text" data-action="gymbro-del" style="margin-top:24px">Eliminar gymbro</button>'}`;
+    ${me ? '' : '<button class="btn ghost block danger-text" data-action="gymbro-del" style="margin-top:24px">Eliminar gymbro</button>'}
+    ${me ? photoEditorHtml() : ''}`;
 }
 
 // ---------- Progreso ----------
@@ -3165,6 +3306,7 @@ function render() {
   if (screen !== 'agua') waterEditing = null;
   if (screen !== 'peso') goalEditing = false;
   if (screen !== 'rutina') openEx = null;
+  if (screen !== 'perfil' && photoEdit) { URL.revokeObjectURL(photoEdit.src); photoEdit = null; }
   if (screen !== 'nutricion') extraMode = null;
   if (screen !== 'chat' && screen !== 'perfil') closeMessages();   // el perfil muestra lo compartido en el chat
 
@@ -3194,6 +3336,7 @@ function render() {
     case 'chat': html = viewChat(arg); break;
     case 'perfil': html = viewProfile(arg); break;
     case 'privacidad': html = viewPrivacy(); break;
+    case 'plan': html = viewPlan(); break;
     default: html = viewHub();   // Inicio: sin pestañas
   }
   $app.innerHTML = html;
@@ -3422,6 +3565,7 @@ const mainData = () => ({
   ...(db.bodyweight.length ? { bodyweight: db.bodyweight } : {}),
   ...(db.sleep.length ? { sleep: db.sleep } : {}),
   ...(hasBody(db.body) ? { body: db.body } : {}),
+  ...(db.plan ? { plan: db.plan } : {}),
   ...(hasWater(db.water) ? { water: db.water } : {}),
   ...(hasNutrition(db.nutrition) ? { nutrition: db.nutrition } : {}),
 });
@@ -3475,20 +3619,21 @@ async function sync() {
 
 // Cambios que llegan desde otro dispositivo. Si aquí hay cambios sin subir, ganan los de aquí.
 function applyRemoteMain(data) {
-  const bw = data.bodyweight || [], sl = data.sleep || [], body = data.body || {};
+  const bw = data.bodyweight || [], sl = data.sleep || [], body = data.body || {}, plan = data.plan || null;
   const water = hasWater(data.water) ? { ...emptyWater(), ...data.water } : emptyWater();
   const remote = {
     routines: data.routines || [], notes: data.notes || {},
     ...(bw.length ? { bodyweight: bw } : {}),
     ...(sl.length ? { sleep: sl } : {}),
     ...(hasBody(body) ? { body } : {}),
+    ...(plan ? { plan } : {}),
     ...(hasWater(water) ? { water } : {}),
     ...(hasNutrition(data.nutrition) ? { nutrition: data.nutrition } : {}),
   };
   const r = stable(remote), local = stable(mainData());
   if (local !== synced.main) return;
   synced.main = r;
-  if (r !== local) { db.routines = remote.routines; db.notes = remote.notes; db.bodyweight = bw; db.sleep = sl; db.body = body; db.water = water; db.nutrition = hasNutrition(data.nutrition) ? { ...emptyNutrition(), ...data.nutrition } : emptyNutrition(); refresh(); }
+  if (r !== local) { db.routines = remote.routines; db.notes = remote.notes; db.bodyweight = bw; db.sleep = sl; db.body = body; db.plan = plan; db.water = water; db.nutrition = hasNutrition(data.nutrition) ? { ...emptyNutrition(), ...data.nutrition } : emptyNutrition(); refresh(); }
   persistLocal();
 }
 
@@ -3534,6 +3679,7 @@ async function loadFromCloud() {
     db.bodyweight = main.bodyweight || [];
     db.sleep = main.sleep || [];
     db.body = main.body || {};
+    db.plan = main.plan || null;
     db.water = hasWater(main.water) ? { ...emptyWater(), ...main.water } : emptyWater();
     db.nutrition = hasNutrition(main.nutrition) ? { ...emptyNutrition(), ...main.nutrition } : emptyNutrition();
     synced.main = stable(mainData());
@@ -4134,6 +4280,28 @@ $app.addEventListener('click', e => {
     case 'photo-del':
       if (confirm('¿Quitar tu foto de perfil?')) setMyPhoto(null);
       break;
+    case 'plan-weeks': {
+      const p = (db.plan ||= defaultPlan()), n = Number(el.dataset.v);
+      while (p.days.length < n) p.days.push({ r: Array(7).fill(null) });
+      p.days.length = n;
+      p.weeks = n;
+      save(); render();
+      break;
+    }
+    case 'plan-del':
+      if (!confirm('¿Quitar tu plan? Tus rutinas no se borran.')) return;
+      db.plan = null;
+      save(); render();
+      break;
+    case 'crop-cancel':
+      closePhotoEditor();
+      break;
+    case 'crop-use': {
+      const url = cropToDataUrl();
+      closePhotoEditor();
+      setMyPhoto(url);
+      break;
+    }
     case 'pr-pick': {
       // Récords destacados: hasta 5
       const pick = (db.body.prPick ||= []), k = pick.indexOf(id);
@@ -4245,7 +4413,8 @@ $app.addEventListener('click', e => {
 // Foto de perfil elegida
 $app.addEventListener('change', async e => {
   if (e.target.dataset.bind !== 'photo' || !e.target.files || !e.target.files[0]) return;
-  try { await setMyPhoto(await shrinkPhoto(e.target.files[0])); } catch (err) { alert('No se pudo usar esa imagen. Prueba con otra.'); }
+  openPhotoEditor(e.target.files[0]);
+  e.target.value = '';   // permite elegir la misma foto otra vez
 });
 
 $app.addEventListener('input', e => {
@@ -4272,6 +4441,19 @@ $app.addEventListener('input', e => {
     return;
   }
   const i = +el.dataset.i, j = +el.dataset.j;
+  if (bind === 'crop-zoom') { if (photoEdit) setCropZoom(Number(el.value)); return; }
+  if (bind === 'plan-day') {
+    const p = (db.plan ||= defaultPlan());
+    p.days[+el.dataset.w].r[+el.dataset.d] = el.value || null;
+    save();
+    return;
+  }
+  if (bind === 'plan-start') {
+    if (!el.value) return;
+    (db.plan ||= defaultPlan()).start = dayKeyOf(mondayOf(`${el.value}T12:00:00`));   // siempre un lunes
+    save(); render();
+    return;
+  }
   if (bind === 'wq-ml') setQuick(el);
   else if (bind === 'pace-amt') setPaceAmount(el);
   else if (bind === 'routine-name') curRoutine().name = el.value;
