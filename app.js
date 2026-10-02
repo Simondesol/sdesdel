@@ -1346,6 +1346,9 @@ function viewAuth(mode) {
         <label class="field"><span>Estatura (opcional)</span>
           <div class="add-row" style="margin-top:0"><input name="height" inputmode="numeric" placeholder="ej. 175" autocomplete="off" aria-label="Estatura en cm"><span class="unit-label">cm</span></div>
         </label>
+        <label class="field"><span>Año de nacimiento (opcional)</span>
+          <input name="birth" inputmode="numeric" placeholder="ej. 1998" autocomplete="bday-year" aria-label="Año de nacimiento">
+        </label>
         <div class="field"><span>Sexo (opcional)</span>
           <div class="per-choice">
             <label><input type="radio" name="sex" value="h"> Hombre</label>
@@ -1356,7 +1359,7 @@ function viewAuth(mode) {
       <label class="field"><span>Contraseña${reg ? ' (mínimo 6 caracteres)' : ''}</span>
         <input name="password" type="password" autocomplete="${reg ? 'new-password' : 'current-password'}" required>
       </label>
-      ${reg ? '<p class="muted small" style="margin:0">La estatura y el sexo se usan para calcular tu FFMI. Puedes cambiarlos después en ⚙️ Cuenta.</p>' : ''}
+      ${reg ? '<p class="muted small" style="margin:0">Se usan para calcular tu FFMI y tus calorías objetivo. Puedes cambiarlos después en ⚙️ Cuenta.</p>' : ''}
       <p class="auth-error" hidden></p>
       <button class="btn primary block">${reg ? 'Crear cuenta' : 'Entrar'}</button>
     </form>
@@ -3498,6 +3501,8 @@ async function submitAuth(f) {
   if (!password) return showError('Escribe tu contraseña.');
   const hText = reg ? f.elements.height.value.trim() : '', h = num(hText), sex = reg ? f.elements.sex.value : '';
   if (hText && (h == null || h < 100 || h > 250)) return showError('Escribe tu estatura en cm (ej. 175) o déjala vacía.');
+  const yText = reg ? f.elements.birth.value.trim() : '', year = num(yText), thisYear = new Date().getFullYear();
+  if (yText && (year == null || year < thisYear - 100 || year > thisYear - 10)) return showError('Escribe tu año de nacimiento (ej. 1998) o déjalo vacío.');
 
   $err.hidden = true;
   $btn.disabled = true;
@@ -3505,7 +3510,7 @@ async function submitAuth(f) {
   try {
     if (reg) {
       pendingUsername = username;
-      pendingBody = { ...(hText ? { heightCm: Math.round(h) } : {}), ...(sex ? { sex } : {}) };
+      pendingBody = { ...(hText ? { heightCm: Math.round(h) } : {}), ...(yText ? { birthYear: Math.round(year) } : {}), ...(sex ? { sex } : {}) };
       await cloud.register(email, password, username);
     }
     else await cloud.login(email, password);
