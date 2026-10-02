@@ -406,7 +406,7 @@ function targetBanner() {
       <div class="grow">${ct.target
         ? `<span class="muted small">Tus calorías objetivo</span>
            <div class="target-kcal"><strong>${fmtKcal(ct.target)} kcal</strong> al día</div>
-           <span class="muted small">${ct.pace === 0 ? 'Mantener' : `${paceLabel(ct.pace)} al mes`} · Proteína ${Math.round(ct.kg * 1.6)}–${Math.round(ct.kg * 2.2)} g</span>`
+           <span class="muted small">${ct.pace === 0 ? 'Mantener' : `${paceLabel(ct.pace)} al mes`} · Proteína ${Math.round(ct.kg * 1.6)}–${Math.round(ct.kg * 2)} g</span>`
         : `<strong>Calcula tus calorías objetivo</strong>
            <span class="muted small">Para saber cuántas calorías debe tener tu dieta</span>`}</div>
       <span class="chev">›</span>
@@ -609,7 +609,7 @@ function viewTarget() {
         <div class="water-big"><strong>${fmtKcal(ct.target)}</strong> kcal al día</div>
         <span class="muted">${ct.pace === 0 ? 'Para mantener tu peso' : `Para ${paceLabel(ct.pace).toLowerCase()} al mes`}</span>
         ${ct.low ? '<p class="goal-hint" style="color:var(--danger)">Ojo: queda bajo tu metabolismo basal. Mejor elige un ritmo más lento.</p>' : ''}
-        <div class="prog-row"><span class="muted">Proteína sugerida</span><span>${Math.round(ct.kg * 1.6)}–${Math.round(ct.kg * 2.2)} g al día</span></div>
+        <div class="prog-row"><span class="muted">Proteína sugerida</span><span>${Math.round(ct.kg * 1.6)}–${Math.round(ct.kg * 2)} g al día</span></div>
       </section>
       <h2>Cómo se calcula</h2>
       <section class="card breakdown">
