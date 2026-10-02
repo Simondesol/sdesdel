@@ -1343,12 +1343,14 @@ function viewAuth(mode) {
         <input name="username" autocomplete="nickname" maxlength="30" required>
       </label>` : ''}
       ${reg ? `<div class="reg-optional">
-        <label class="field"><span>Estatura (opcional)</span>
-          <div class="add-row" style="margin-top:0"><input name="height" inputmode="numeric" placeholder="ej. 175" autocomplete="off" aria-label="Estatura en cm"><span class="unit-label">cm</span></div>
-        </label>
-        <label class="field"><span>Año de nacimiento (opcional)</span>
-          <input name="birth" inputmode="numeric" placeholder="ej. 1998" autocomplete="bday-year" aria-label="Año de nacimiento">
-        </label>
+        <div class="two-fields">
+          <label class="field"><span>Estatura (opcional)</span>
+            <div class="add-row" style="margin-top:0"><input name="height" inputmode="numeric" placeholder="ej. 175" autocomplete="off" aria-label="Estatura en cm"><span class="unit-label">cm</span></div>
+          </label>
+          <label class="field"><span>Año nacim. (opcional)</span>
+            <input name="birth" inputmode="numeric" placeholder="ej. 1998" autocomplete="bday-year" aria-label="Año de nacimiento">
+          </label>
+        </div>
         <div class="field"><span>Sexo (opcional)</span>
           <div class="per-choice">
             <label><input type="radio" name="sex" value="h"> Hombre</label>
@@ -1389,12 +1391,14 @@ function viewAccount() {
       <label class="field"><span>Nombre de usuario</span>
         <input name="username" value="${esc(user.username)}" maxlength="30" autocomplete="nickname">
       </label>
-      <label class="field"><span>Estatura</span>
-        <div class="add-row" style="margin-top:0"><input name="height" inputmode="numeric" value="${bd.heightCm || ''}" placeholder="ej. 175" autocomplete="off" aria-label="Estatura en cm"><span class="unit-label">cm</span></div>
-      </label>
-      <label class="field"><span>Año de nacimiento</span>
-        <input name="birth" inputmode="numeric" value="${bd.birthYear || ''}" placeholder="ej. 1998" autocomplete="bday-year" aria-label="Año de nacimiento">
-      </label>
+      <div class="two-fields">
+        <label class="field"><span>Estatura</span>
+          <div class="add-row" style="margin-top:0"><input name="height" inputmode="numeric" value="${bd.heightCm || ''}" placeholder="ej. 175" autocomplete="off" aria-label="Estatura en cm"><span class="unit-label">cm</span></div>
+        </label>
+        <label class="field"><span>Año de nacimiento</span>
+          <input name="birth" inputmode="numeric" value="${bd.birthYear || ''}" placeholder="ej. 1998" autocomplete="bday-year" aria-label="Año de nacimiento">
+        </label>
+      </div>
       <div class="field"><span>Sexo</span>
         <div class="per-choice">
           <label><input type="radio" name="sex" value="h" ${bd.sex === 'h' ? 'checked' : ''}> Hombre</label>
@@ -1867,7 +1871,10 @@ function viewSocial() {
     </a>`;
   }).join('');
   return `${header('Social', { home: true, sub: 'Chatea con tus gymbros' })}
-    <a class="btn primary block center" href="#/gymbro" style="margin:0 0 12px">+ Agregar gymbro</a>
+    <div class="social-top">
+      <a class="btn primary center" href="#/gymbro">+ Agregar gymbro</a>
+      <a class="btn center" href="#/perfil/yo">Mi perfil</a>
+    </div>
     ${!chatsLoaded ? '<p class="empty">Cargando…</p>'
       : chatsError && !chats.length ? '<p class="empty">No se pudieron cargar tus chats. Revisa tu internet y vuelve a abrir la app.</p>'
       : list || '<p class="empty">Todavía no tienes gymbros. Toca "Agregar gymbro" y mándale tu link a un amigo.</p>'}

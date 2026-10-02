@@ -676,3 +676,8 @@ input.readonly { color: var(--muted); background: transparent; }
 .about .badge { margin-left: 6px; }
 .profile-fields { display: grid; gap: 4px; margin-top: 8px; }
 .small-toggle { margin: 0; padding: 6px 0; font-size: 14px; align-items: center; }
+
+/* Social: Agregar gymbro y Mi perfil lado a lado; Cuenta: estatura y año juntos */
+.social-top { display: grid; grid-template-columns: 1.4fr 1fr; gap: 8px; margin: 0 0 12px; }
+.two-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.two-fields input { min-width: 0; text-align: center; }
