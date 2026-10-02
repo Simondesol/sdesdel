@@ -163,9 +163,7 @@ function viewHub() {
       </div>
     </div>
 
-    ${bodyweightCard()}
-
-    ${sleepCard()}
+    <div class="hub-pair">${bodyweightCard()}${sleepCard()}</div>
     </div>
     ${sleepAsk ? sleepModal() : ''}`;
 }
@@ -258,7 +256,7 @@ function setTodayLog(dietId, done) {
   for (const k of Object.keys(N().log)) if (k < min) delete N().log[k];
 }
 
-const nutriTabs = active => `<div class="range" role="tablist">${[['', 'Hoy'], ['alimentos', 'Mis alimentos'], ['dietas', 'Mis dietas']]
+const nutriTabs = active => `<div class="range" role="tablist">${[['', 'Hoy'], ['dietas', 'Mis dietas'], ['alimentos', 'Mis alimentos']]
   .map(([k, label]) => `<a class="${k === active ? 'on' : ''}" href="#/nutricion${k ? `/${k}` : ''}" role="tab">${label}</a>`).join('')}</div>`;
 
 function viewNutrition(section) {
@@ -832,6 +830,8 @@ function viewWater() {
     <h2>Últimos 7 días</h2>
     <section class="card">${days.join('')}</section>
 
+    ${sectionHead('agua-ajustes', 'Ajustes: botones rápidos y meta diaria')}
+    ${openSections.has('agua-ajustes') ? `
     <h2>Botones rápidos</h2>
     <section class="card stack">
       <p class="muted small" style="margin:0">Pon los ml de tu vaso, botella o shaker para anotar de un toque.</p>
@@ -847,7 +847,7 @@ function viewWater() {
     <h2>Meta diaria</h2>
     <form class="stack card" data-form="water-goal" novalidate>
       <p class="muted" style="margin:0">${g.auto
-        ? (g.kg ? `Calculada con tu peso: 35 ml × ${fmtNum(g.kg)} kg = ${fmtL(g.ml)} L` : 'Anota tu peso en Progreso para calcularla. Por ahora: 2,5 L')
+        ? (g.kg ? `Calculada con tu peso: 35 ml × ${fmtNum(g.kg)} kg = ${fmtL(g.ml)} L` : 'Anota tu peso en Peso para calcularla. Por ahora: 2,5 L')
         : `Meta personalizada: ${fmtL(g.ml)} L`}</p>
       <div class="add-row" style="margin-top:0">
         <input name="liters" inputmode="decimal" placeholder="Litros (ej. 3)" value="${g.auto ? '' : fmtL(g.ml)}" autocomplete="off" aria-label="Meta en litros">
@@ -855,7 +855,7 @@ function viewWater() {
       </div>
       ${g.auto ? '' : '<button type="button" class="btn ghost" data-action="water-auto">Usar la meta calculada con mi peso</button>'}
       <p class="form-msg" hidden></p>
-    </form>`;
+    </form>` : ''}`;
 }
 
 // Última vez que se hizo un ejercicio (antes de la posición `before` del historial)
@@ -1013,12 +1013,39 @@ async function pasteImport() {
   importRoutine(f);
 }
 
+// Secciones plegables (quedan abiertas o cerradas mientras usas la app)
+const openSections = new Set();
+const sectionHead = (key, title) => {
+  const open = openSections.has(key);
+  return `<button class="sec-head ${open ? 'open' : ''}" data-action="toggle-sec" data-k="${key}" aria-expanded="${open}">
+    <span>${title}</span><span class="sec-arrow">${open ? '▴' : '▾'}</span></button>`;
+};
+
+const moreBtn = (key, total) => (total > 7
+  ? `<button class="btn ghost block" data-action="toggle-sec" data-k="${key}">${openSections.has(key) ? 'Ver menos' : `Ver todos (${total})`}</button>` : '');
+
+let openEx = null;   // ejercicio abierto en el editor de rutina (los demás se ven como resumen)
+
+// "4 × 8-10 · RIR 2 · Dropset · Rest 1:30"
+function exSummary(ex) {
+  const parts = [];
+  if (ex.goalSets && ex.goalReps) parts.push(`${ex.goalSets} × ${ex.goalReps}`);
+  else if (ex.goalSets) parts.push(plural(ex.goalSets, 'serie'));
+  else if (ex.goalReps) parts.push(`${ex.goalReps} reps`);
+  if (ex.rir) parts.push(ex.goalRir ? `RIR ${ex.goalRir}` : 'Con RIR');
+  else if (ex.goalSets || ex.goalReps) parts.push('Al fallo');
+  if (ex.dropset) parts.push('Dropset');
+  if (ex.rest) parts.push(`Rest ${fmtRest(ex.rest)}`);
+  if (ex.unit !== 'kg') parts.push(ex.unit);
+  return parts.join(' · ') || 'Toca para configurar';
+}
+
 function viewRoutine() {
   const r = curRoutine();
   if (!r) { location.replace('#/rutinas'); return ''; }
   const last = r.exercises.length - 1;
-  const items = r.exercises.map((ex, i) => `
-    <li class="card">
+  const items = r.exercises.map((ex, i) => (openEx === i ? `
+    <li class="card ex-open">
       <input class="grow" data-bind="ex-name" data-i="${i}" value="${esc(ex.name)}" aria-label="Nombre del ejercicio">
       <button class="chip" data-action="toggle-unit" data-i="${i}" aria-label="Cambiar unidad">${ex.unit}</button>
       <button class="icon" data-action="move" data-i="${i}" data-d="-1" ${i === 0 ? 'disabled' : ''} aria-label="Subir">↑</button>
@@ -1038,8 +1065,15 @@ function viewRoutine() {
           ? `<label>RIR obj.<input data-bind="ex-goal-rir" data-i="${i}" inputmode="decimal" value="${esc(ex.goalRir || '')}" placeholder="–" autocomplete="off" aria-label="RIR objetivo"></label>`
           : '<div class="goal-fixed-wrap"><span>Hasta</span><span class="goal-fixed" title="Activa RIR para poner un RIR objetivo">Fallo</span></div>'}
       </div>
-    </li>
-    ${i < last ? `<li class="ss-link"><button class="chip toggle ${ex.ssNext ? 'on' : ''}" data-action="toggle-ss" data-i="${i}" aria-pressed="${!!ex.ssNext}">🔗 ${ex.ssNext ? 'En superset con el siguiente' : 'Hacer superset con el siguiente'}</button></li>` : ''}`).join('');
+      ${i < last ? `<button class="chip toggle ss-toggle ${ex.ssNext ? 'on' : ''}" data-action="toggle-ss" data-i="${i}" aria-pressed="${!!ex.ssNext}">🔗 ${ex.ssNext ? 'En superset con el siguiente' : 'Hacer superset con el siguiente'}</button>` : ''}
+      <button class="btn block ex-done" data-action="ex-close">Listo</button>
+    </li>`
+    : `
+    <li class="card ex-closed" data-action="ex-open" data-i="${i}" role="button" tabindex="0">
+      <div class="grow"><strong>${esc(ex.name) || '(sin nombre)'}</strong><span class="muted small">${exSummary(ex)}</span></div>
+      <span class="chev">›</span>
+    </li>`)
+    + (i < last && ex.ssNext ? '<li class="ss-join">🔗 Superset</li>' : '')).join('');
   return `${header('Editar rutina', { back: true })}
     <label class="field"><span>Nombre de la rutina</span>
       <input data-bind="routine-name" value="${esc(r.name)}" autocomplete="off">
@@ -1690,11 +1724,7 @@ function viewSession(id) {
     <section class="card summary">
       ${justFinished === id ? '<strong class="saved">¡Entrenamiento guardado!</strong>' : ''}
       ${w.durationSec ? `<div>Duración total: <strong>${fmtDuration(w.durationSec)}</strong></div>` : ''}
-      <div class="legend">
-        <div><span class="mark up">▲</span> Superaste tu récord</div>
-        <div><span class="mark eq">=</span> Igualaste tu récord</div>
-        <div><span class="mark down">▼</span> Quedaste por debajo de tu récord</div>
-      </div>
+      <div class="legend-line muted small"><span class="mark up">▲</span> superaste · <span class="mark eq">=</span> igualaste · <span class="mark down">▼</span> bajo tu récord</div>
     </section>`;
 
   return `${header(w.routineName, { back: true, sub: fmtLongDate(w.date) })}
@@ -1838,14 +1868,16 @@ function viewSocial() {
     ${!chatsLoaded ? '<p class="empty">Cargando…</p>'
       : chatsError && !chats.length ? '<p class="empty">No se pudieron cargar tus chats. Revisa tu internet y vuelve a abrir la app.</p>'
       : list || '<p class="empty">Todavía no tienes gymbros. Toca "Agregar gymbro" y mándale tu link a un amigo.</p>'}
-    <label class="card toggle-row">
+    ${sectionHead('social-priv', 'Privacidad y avisos')}
+    ${openSections.has('social-priv') ? `
+    <label class="card toggle-row" style="margin-top:0">
       <input type="checkbox" data-action="share-profile" ${shareProfile() ? 'checked' : ''}>
       <span class="grow">Compartir mis récords y estadísticas con mis gymbros<br><span class="muted small">Solo tus gymbros los ven en tu perfil. <a href="#/perfil/yo">Ver cómo me ven ›</a></span></span>
     </label>
     <label class="card toggle-row" style="margin-top:8px">
       <input type="checkbox" data-action="auto-pr" ${autoPR() ? 'checked' : ''}>
       <span class="grow">Avisar mis PRs a mis gymbros<br><span class="muted small">Cuando superes tu récord estimado (1RM) de la 1ª serie, se envía solo a tus chats.</span></span>
-    </label>`;
+    </label>` : ''}`;
 }
 
 function viewAddGymbro() {
@@ -2665,7 +2697,8 @@ function viewBodyweight() {
     </section>`
     : `<section class="card stack">${bfForm}<p class="muted small" style="margin:0">Para ver tu FFMI falta ${ffmiMissing()}</p></section>`;
 
-  const list = db.bodyweight.slice().reverse().map(e => `
+  const allBw = openSections.has('peso-lista');
+  const list = db.bodyweight.slice().reverse().slice(0, allBw ? undefined : 7).map(e => `
     <div class="prog-row">
       <span class="muted">${bwDate(e.date)}</span>
       <span class="bw-right">${fmtKg(e.kg)}
@@ -2680,7 +2713,7 @@ function viewBodyweight() {
     ${body}
     <h2>FFMI · masa libre de grasa</h2>
     ${ffmi}
-    ${list ? `<h2>Registros</h2><section class="card">${list}</section>` : ''}`;
+    ${list ? `<h2>Registros</h2><section class="card">${list}</section>${moreBtn('peso-lista', db.bodyweight.length)}` : ''}`;
 }
 
 function saveBodyweight(f) {
@@ -2834,7 +2867,8 @@ function viewSleep() {
       </section>`;
   }
 
-  const list = db.sleep.slice().reverse().map(e => `
+  const allSl = openSections.has('sueno-lista');
+  const list = db.sleep.slice().reverse().slice(0, allSl ? undefined : 7).map(e => `
     <div class="prog-row">
       <span class="muted">${bwDate(e.date)}</span>
       <span class="bw-right">${fmtH(e.h)}
@@ -2846,7 +2880,7 @@ function viewSleep() {
     ${form}
     ${rangeButtons(RANGES, sleepRange, 'sl')}
     ${body}
-    ${list ? `<h2>Registros</h2><section class="card">${list}</section>` : ''}`;
+    ${list ? `<h2>Registros</h2><section class="card">${list}</section>${moreBtn('sueno-lista', db.sleep.length)}` : ''}`;
 }
 
 function viewProgressExercise(id) {
@@ -2952,6 +2986,7 @@ function render() {
   if (screen !== 'chat') { attach = null; editingMsg = null; selectedMsg = null; }
   if (screen !== 'agua') waterEditing = null;
   if (screen !== 'peso') goalEditing = false;
+  if (screen !== 'rutina') openEx = null;
   if (screen !== 'nutricion') extraMode = null;
   if (screen !== 'chat' && screen !== 'perfil') closeMessages();   // el perfil muestra lo compartido en el chat
 
@@ -3558,13 +3593,28 @@ $app.addEventListener('click', e => {
     case 'move': {
       const list = curRoutine().exercises, k = i + Number(el.dataset.d);
       [list[i], list[k]] = [list[k], list[i]];
+      if (openEx === i) openEx = k;   // el ejercicio abierto sigue abierto en su nuevo lugar
       save(); render();
       break;
     }
+    case 'ex-open':
+      openEx = i;
+      render();
+      { const card = $app.querySelector('.ex-open'); if (card) card.scrollIntoView({ block: 'nearest' }); }
+      break;
+    case 'ex-close':
+      openEx = null;
+      render();
+      break;
+    case 'toggle-sec':
+      if (!openSections.delete(el.dataset.k)) openSections.add(el.dataset.k);
+      render();
+      break;
     case 'del-ex': {
       const r = curRoutine();
       if (!confirm(`¿Quitar "${r.exercises[i].name}" de la rutina? Su historial se mantiene.`)) return;
       r.exercises.splice(i, 1);
+      openEx = null;
       save(); render();
       break;
     }
@@ -4151,6 +4201,7 @@ $app.addEventListener('submit', e => {
   } else if (f.dataset.form === 'new-ex') {
     lastUnit = f.elements.unit.value;
     curRoutine().exercises.push({ id: uid(), name: title, unit: lastUnit, rest: 0 });
+    openEx = curRoutine().exercises.length - 1;   // el nuevo queda abierto para configurarlo
     save(); render();
     $app.querySelector('[data-form="new-ex"] input').focus();
   } else if (f.dataset.form === 'extra-ex') {

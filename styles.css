@@ -646,3 +646,26 @@ input.readonly { color: var(--muted); background: transparent; }
   flex: none; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center;
   background: var(--surface2); color: var(--accent); font-weight: 700;
 }
+
+/* Inicio: Peso y Sueño lado a lado */
+.hub-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.hub-pair .card.hub { margin: 0; min-width: 0; }
+.hub-pair .hub-value strong { font-size: 22px; }
+/* Editor de rutina: ejercicios cerrados con resumen */
+.ex-edit li.ex-closed { display: flex; align-items: center; gap: 10px; padding: 12px 14px; cursor: pointer; flex-wrap: nowrap; }
+.ex-closed .grow { display: grid; gap: 2px; min-width: 0; }
+.ex-closed strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ex-edit li.ex-open { border-color: var(--accent); }
+.ex-open .ss-toggle { flex: 1 1 100%; font-size: 13px; }
+.ex-open .ex-done { flex: 1 1 100%; margin: 4px 0 0; }
+.ex-edit li.ss-join { display: block; padding: 0; margin: -4px 0; text-align: center; font-size: 12px; font-weight: 700; color: var(--accent); }
+/* Secciones plegables */
+.sec-head {
+  display: flex; justify-content: space-between; align-items: center; width: 100%;
+  margin: 20px 0 8px; padding: 12px 14px; font: inherit; font-weight: 600; color: var(--text);
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); cursor: pointer;
+}
+.sec-head.open { border-color: var(--accent); }
+.sec-arrow { color: var(--muted); }
+/* Resumen del entrenamiento: leyenda en una línea */
+.legend-line { margin-top: 6px; }
