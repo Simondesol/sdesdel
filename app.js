@@ -904,7 +904,7 @@ function parseRange(text, maxV) {
 }
 const rangeTop = t => +String(t).split('-').pop();
 // Plan del ejercicio en la rutina: objetivo, dropset y superset con el siguiente
-const planFields = ex => ({ ...goalFields(ex), ...(ex.dropset ? { dropset: true } : {}), ...(ex.ssNext ? { ssNext: true } : {}) });
+const planFields = ex => ({ ...goalFields(ex), ...(ex.dropset ? { dropset: true } : {}), ...(ex.ssNext ? { ssNext: true } : {}), ...(ex.bw ? { bw: true } : {}) });
 const goalFields = ex => ({
   ...(ex.goalSets ? { goalSets: ex.goalSets } : {}),
   ...(ex.goalReps ? { goalReps: ex.goalReps } : {}),
@@ -1035,6 +1035,7 @@ function exSummary(ex) {
   if (ex.rir) parts.push(ex.goalRir ? `RIR ${ex.goalRir}` : 'Con RIR');
   else if (ex.goalSets || ex.goalReps) parts.push('Al fallo');
   if (ex.dropset) parts.push('Dropset');
+  if (ex.bw) parts.push('Peso corporal');
   if (ex.rest) parts.push(`Rest ${fmtRest(ex.rest)}`);
   if (ex.unit !== 'kg') parts.push(ex.unit);
   return parts.join(' · ') || 'Toca para configurar';
@@ -1057,6 +1058,7 @@ function viewRoutine() {
         </label>
         <button class="chip toggle ${ex.rir ? 'on' : ''}" data-action="toggle-rir" data-i="${i}" aria-pressed="${!!ex.rir}">RIR</button>
         <button class="chip toggle ${ex.dropset ? 'on' : ''}" data-action="toggle-drop" data-i="${i}" aria-pressed="${!!ex.dropset}">Dropset</button>
+        <button class="chip toggle ${ex.bw ? 'on' : ''}" data-action="toggle-bw" data-i="${i}" aria-pressed="${!!ex.bw}" title="Dominadas, dips…: lo que anotas es el lastre">Peso corporal</button>
       </div>
       <div class="ex-goals" aria-label="Objetivo (opcional)">
         <label>Series<input data-bind="ex-goal-sets" data-i="${i}" inputmode="numeric" value="${ex.goalSets || ''}" placeholder="–" autocomplete="off" aria-label="Series objetivo"></label>
@@ -1138,7 +1140,7 @@ function viewWorkout() {
     return `
       <div class="set ${ex.rir ? 'has-rir' : ''}">
         <span class="n">${label}</span>
-        <input inputmode="decimal" data-bind="w" data-i="${i}" data-j="${j}" value="${esc(s.w)}" placeholder="${ex.unit === 'placas' ? 'placas' : 'peso'}" aria-label="${ex.unit === 'placas' ? 'Placas' : 'Peso'} serie ${label}">
+        <input inputmode="decimal" data-bind="w" data-i="${i}" data-j="${j}" value="${esc(s.w)}" placeholder="${ex.unit === 'placas' ? 'placas' : isBwEx(ex) ? 'lastre' : 'peso'}" aria-label="${ex.unit === 'placas' ? 'Placas' : isBwEx(ex) ? 'Lastre' : 'Peso'} serie ${label}">
         <span class="u">${unitShort(ex.unit)}</span>
         <span class="x">×</span>
         <input inputmode="numeric" data-bind="r" data-i="${i}" data-j="${j}" value="${esc(s.r)}" placeholder="reps" aria-label="Repeticiones serie ${label}">
@@ -2180,23 +2182,24 @@ function addFromMessage(id) {
 
 // PRs del entrenamiento recién guardado: 1RM estimado de la 1ª serie mayor que el mejor anterior
 function newPRs(w) {
-  const firstE1rm = ex => {
+  const firstE1rm = (ex, date) => {
     const s = ex.sets.find(x => x.w != null);
-    return s ? toKg(e1rmOf(s), ex.unit) : 0;
+    return s ? toKg(e1rmEx(ex, s, date), ex.unit) : 0;
   };
   const prs = [];
   for (const ex of w.exercises) {
-    const cur = firstE1rm(ex);
+    const cur = firstE1rm(ex, w.date);
     if (!cur) continue;
     let prev = 0;
     for (const o of db.workouts) {
       if (o === w) continue;
       const oe = o.exercises.find(e => e.exerciseId === ex.exerciseId);
-      if (oe && unitKind(oe.unit) === unitKind(ex.unit)) prev = Math.max(prev, firstE1rm(oe));
+      if (oe && unitKind(oe.unit) === unitKind(ex.unit)) prev = Math.max(prev, firstE1rm(oe, o.date));
     }
     if (prev > 0 && cur > prev + 0.01) {
       const s = ex.sets.find(x => x.w != null);
-      prs.push({ id: ex.exerciseId, name: ex.name, text: `${ex.name}: ${fmtNum(s.w)} ${ex.unit} × ${fmtNum(s.r || 1)}${s.rir != null ? ` · RIR ${fmtNum(s.rir)}` : ''} → 1RM ≈ ${fmtNum(round1(e1rmOf(s)))} ${ex.unit}` });
+      const bw = isBwEx(ex);
+      prs.push({ id: ex.exerciseId, name: ex.name, text: `${ex.name}: ${fmtNum(s.w)} ${ex.unit} × ${fmtNum(s.r || 1)}${s.rir != null ? ` · RIR ${fmtNum(s.rir)}` : ''}${bw ? ' + peso corporal' : ''} → ${bw ? 'lastre máx.' : '1RM'} ≈ ${bw ? '+' : ''}${fmtNum(round1(e1rmEx(ex, s, w.date)))} ${ex.unit}` });
     }
   }
   return prs;
@@ -2322,8 +2325,8 @@ function myProfile() {
     for (const ex of w.exercises) {
       const st = ex.sets.find(x => x.w != null);
       if (!st) continue;
-      const e = e1rmOf(st), kg = toKg(e, ex.unit), cur = best.get(ex.exerciseId);
-      if (!cur || kg > cur.kg || unitKind(cur.unit) !== unitKind(ex.unit)) best.set(ex.exerciseId, { kg, name: ex.name, v: round1(e), unit: ex.unit, set: `${fmtNum(st.w)} ${ex.unit} × ${fmtNum(st.r || 1)}${st.rir != null ? ` · RIR ${fmtNum(st.rir)}` : ''}`, date: w.date });
+      const e = e1rmEx(ex, st, w.date), kg = toKg(e, ex.unit), cur = best.get(ex.exerciseId), bw = isBwEx(ex);
+      if (!cur || kg > cur.kg || unitKind(cur.unit) !== unitKind(ex.unit)) best.set(ex.exerciseId, { kg, name: ex.name, v: round1(e), unit: ex.unit, ...(bw ? { bw: true } : {}), set: `${fmtNum(st.w)} ${ex.unit} × ${fmtNum(st.r || 1)}${st.rir != null ? ` · RIR ${fmtNum(st.rir)}` : ''}${bw ? ' + peso corporal' : ''}`, date: w.date });
     }
   }
   // Récords destacados: los que elijas en Privacidad (hasta 5); si no eliges, tus 5 ejercicios más entrenados
@@ -2424,7 +2427,7 @@ function profileBody(d, me) {
     </div>`;
   const prs = (d.prs || []).map(pr => `<div class="prog-row">
       <span>${esc(pr.name)}</span>
-      <span class="pr-val"><strong>${fmtNum(pr.v)} ${esc(pr.unit)}</strong><span class="muted small">${esc(pr.set)}</span></span>
+      <span class="pr-val"><strong>${pr.bw ? '+' : ''}${fmtNum(pr.v)} ${esc(pr.unit)}</strong><span class="muted small">${esc(pr.set)}</span></span>
     </div>`).join('');
   const recent = (d.recent || []).map(w => `<div class="prog-row">
       <span>${esc(w.routine)}</span>
@@ -2508,6 +2511,28 @@ const round1 = n => Math.round(n * 10) / 10;
 const epley = (w, r, rir = 0) => { const n = (r || 1) + (rir || 0); return n > 1 ? w * (1 + n / 30) : w; };
 const e1rmOf = s => epley(s.w, s.r || 1, s.rir);
 
+// Ejercicios con peso corporal (dominadas, dips…): lo que anotas es el lastre.
+// Se marca en la rutina; vale también para tu historial de ese ejercicio.
+const isBwEx = ex => !!ex.bw || db.routines.some(r => r.exercises.some(e => e.id === ex.exerciseId && e.bw));
+// Tu peso de ese día (el último anotado hasta esa fecha; si no hay, el primero que anotaste)
+function bwOn(dateIso) {
+  const key = dayKeyOf(dateIso);
+  let found = null;
+  for (const e of db.bodyweight) { if (e.date <= key) found = e; else break; }
+  return (found || db.bodyweight[0] || {}).kg ?? null;
+}
+// 1RM estimado de una serie. Con peso corporal: lastre máximo = (tu peso + lastre) × fórmula − tu peso
+function e1rmEx(ex, s, dateIso) {
+  if (ex.unit !== 'placas' && isBwEx(ex)) {
+    let bw = bwOn(dateIso);
+    if (bw != null) {
+      if (ex.unit === 'lb') bw /= 0.45359237;
+      return epley(bw + (s.w || 0), s.r || 1, s.rir) - bw;
+    }
+  }
+  return e1rmOf(s);
+}
+
 // Un punto por sesión: el 1RM estimado de la primera serie con peso
 function progressPoints(exerciseId, days) {
   const rows = historyFor(exerciseId).reverse();          // de la más antigua a la más reciente
@@ -2521,7 +2546,7 @@ function progressPoints(exerciseId, days) {
     const s = ex.sets.find(x => x.w != null);
     if (!s) continue;
     const set = { w: s.w, r: s.r, rir: s.rir, unit: ex.unit };
-    const y = round1(convertWeight(e1rmOf(s), ex.unit, unit));
+    const y = round1(convertWeight(e1rmEx(ex, s, w.date), ex.unit, unit));
     points.push({ t, date: w.date, y, set, tip: `${fmtNum(y)} ${unit} <span class="muted">(${setText(set, set.unit)})</span>` });
   }
   return { unit, points };
@@ -3044,7 +3069,8 @@ function viewProgressExercise(id) {
   chart = null;
 
   const range = rangeButtons(EX_RANGES, progressRange, 'ex');
-  const sub = 'Récord estimado (1RM) de la 1ª serie';
+  const bwEx = isBwEx({ exerciseId: id, bw: rows[0].ex.bw });
+  const sub = bwEx ? 'Lastre máximo estimado de la 1ª serie' : 'Récord estimado (1RM) de la 1ª serie';
 
   if (!points.length) {
     return `${header(name, { back: true, sub })}${range}
@@ -3055,12 +3081,12 @@ function viewProgressExercise(id) {
   const first = points[0], last = points[points.length - 1];
   const diff = round1(last.y - first.y);
   const stats = `<div class="stats">
-    <div class="stat"><span class="muted">Mejor 1RM del período</span><strong>${fmtNum(max.y)} ${unit}</strong><span class="muted">${fmtDate(max.date)}</span></div>
+    <div class="stat"><span class="muted">${bwEx ? 'Mejor lastre del período' : 'Mejor 1RM del período'}</span><strong>${bwEx ? '+' : ''}${fmtNum(max.y)} ${unit}</strong><span class="muted">${fmtDate(max.date)}</span></div>
     ${points.length > 1 ? `<div class="stat"><span class="muted">Cambio</span><strong>${diff > 0 ? '+' : ''}${fmtNum(diff)} ${unit}</strong><span class="muted">desde ${fmtDate(first.date)}</span></div>` : ''}
   </div>`;
 
   const table = points.slice().reverse().map(p => `
-    <div class="prog-row"><span class="muted">${fmtDate(p.date)}</span><span>${setText(p.set, p.set.unit)} <span class="muted">→ ${fmtNum(p.y)} ${unit}</span></span></div>`).join('');
+    <div class="prog-row"><span class="muted">${fmtDate(p.date)}</span><span>${setText(p.set, p.set.unit)} <span class="muted">→ ${bwEx ? '+' : ''}${fmtNum(p.y)} ${unit}</span></span></div>`).join('');
 
   return `${header(name, { back: true, sub })}
     ${range}
@@ -3069,7 +3095,9 @@ function viewProgressExercise(id) {
       ${chartSvg(points, unit, days, sub)}
       <div class="tip" hidden></div>
     </section>
-    <p class="muted hint">Es una estimación del peso máximo que podrías levantar, calculada con la 1ª serie.<br>Ej: 100 kg × 8 con RIR 2 ≈ 133 kg</p>
+    <p class="muted hint">${bwEx
+      ? 'Es el lastre máximo que podrías levantar 1 vez, calculado con la 1ª serie y tu peso de ese día.<br>Ej: pesando 90 kg, 30 kg × 7 ≈ +58 kg de lastre'
+      : 'Es una estimación del peso máximo que podrías levantar, calculada con la 1ª serie.<br>Ej: 100 kg × 8 con RIR 2 ≈ 133 kg'}</p>
     <h2>Sesiones</h2>
     <section class="card">${table}</section>`;
 }
@@ -3232,6 +3260,7 @@ const cleanExercises = d => d.exercises
     name: ex.name,
     unit: ex.unit,
     ...(ex.rir ? { rir: true } : {}),
+    ...(ex.bw ? { bw: true } : {}),
     sets: ex.sets
       .map(s => {
         const set = { w: num(s.w), r: num(s.r) }; const rir = num(s.rir); if (ex.rir && rir != null) set.rir = rir;
@@ -3728,8 +3757,9 @@ $app.addEventListener('click', e => {
       render();
       break;
     case 'toggle-drop':
+    case 'toggle-bw':
     case 'toggle-ss': {
-      const ex = curRoutine().exercises[i], key = action === 'toggle-drop' ? 'dropset' : 'ssNext';
+      const ex = curRoutine().exercises[i], key = { 'toggle-drop': 'dropset', 'toggle-bw': 'bw', 'toggle-ss': 'ssNext' }[action];
       if (ex[key]) delete ex[key]; else ex[key] = true;
       save(); render();
       break;
