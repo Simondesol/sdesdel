@@ -515,7 +515,7 @@ a.card.hub { display: grid; }
 .edit-banner .btn { margin: 0; min-height: 32px; font-size: 13px; padding: 0 10px; }
 
 /* Objetivo por ejercicio (opcional): series, reps, RIR */
-.ex-goals { flex: 1 1 100%; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.ex-goals { flex: 1 1 100%; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
 .ex-goals label { display: grid; gap: 4px; color: var(--muted); font-size: 13px; }
 .ex-goals input { width: 100%; min-width: 0; text-align: center; padding: 0 6px; }
 .goal-chips { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 8px; margin: 8px 0 4px; }
@@ -694,3 +694,7 @@ img.avatar { object-fit: cover; padding: 0; }
 .profile-head .small-btn { min-height: 30px; padding: 0 10px; font-size: 12px; }
 .bar .titles { display: flex; align-items: center; gap: 10px; }
 .bar .titles-text { min-width: 0; }
+
+/* Editor de rutina: RIR, Dropset y Peso corporal en una fila, del mismo ancho */
+.ex-toggles { flex: 1 1 100%; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.ex-toggles .chip { min-width: 0; padding: 0 4px; font-size: 13px; white-space: nowrap; }
