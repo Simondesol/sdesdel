@@ -121,8 +121,8 @@ function liveCmp(s, unit, best) {
 const markSpan = c => (c == null ? '' :
   `<span class="mark ${c > 0 ? 'up' : c < 0 ? 'down' : 'eq'}">${c > 0 ? '▲' : c < 0 ? '▼' : '='}</span>`);
 
-function header(title, { back = false, home = false, sub = '', right = '', href = '' } = {}) {
-  const titles = `<h1>${esc(title)}</h1>${sub ? `<div class="sub">${esc(sub)}</div>` : ''}`;
+function header(title, { back = false, home = false, sub = '', right = '', href = '', avatar = '' } = {}) {
+  const titles = `${avatar}<div class="titles-text"><h1>${esc(title)}</h1>${sub ? `<div class="sub">${esc(sub)}</div>` : ''}</div>`;
   return `<header class="bar">
     ${back ? '<button class="icon" data-action="back" aria-label="Volver">‹</button>' : ''}
     ${home ? '<a class="icon home" href="#/" aria-label="Volver al inicio">‹</a>' : ''}
@@ -1863,8 +1863,9 @@ function viewSocial() {
   const when = c => (c.last ? c.last.at : c.createdAt || 0);
   const list = chats.slice().sort((a, b) => when(b) - when(a)).map(c => {
     const name = gymbroName(c);
+    loadProfile(otherUid(c));
     return `<a class="card chat-item" href="#/chat/${c.id}">
-      <span class="avatar" aria-hidden="true">${esc(name.trim().charAt(0).toUpperCase() || '?')}</span>
+      ${avatarHtml(name, gymbroPhoto(c))}
       <div class="grow"><strong>${esc(name)}</strong>
         <span class="muted small">${c.last ? esc(`${c.last.from === user.uid ? 'Tú: ' : ''}${c.last.text}`) : 'Saluda a tu gymbro 👋'}</span></div>
       ${isUnread(c) ? '<span class="dot-new" aria-label="Mensajes nuevos"></span>' : `<span class="muted small">${c.last ? fmtWhen(c.last.at) : ''}</span>`}
@@ -1906,7 +1907,7 @@ function viewPrivacy() {
     <h2>Avisos</h2>
     <label class="card toggle-row" style="margin-top:0">
       <input type="checkbox" data-action="auto-pr" ${autoPR() ? 'checked' : ''}>
-      <span class="grow">Avisar mis PRs a mis gymbros<br><span class="muted small">Cuando superes tu récord estimado (1RM) de la 1ª serie, se envía solo a tus chats.</span></span>
+      <span class="grow">Avisar mis PRs a mis gymbros<br><span class="muted small">Cuando superes el récord estimado (1RM) de uno de tus récords destacados, se envía solo a tus chats.</span></span>
     </label>`;
 }
 
@@ -1997,7 +1998,8 @@ function viewChat(id) {
     return `${header('Chat', { back: true })}<p class="empty">Cargando…</p>`;
   }
   openMessages(id);
-  return `${header(gymbroName(c), { back: true, sub: 'Ver perfil ›', href: `#/perfil/${c.id}` })}
+  loadProfile(otherUid(c));
+  return `${header(gymbroName(c), { back: true, sub: 'Ver perfil ›', href: `#/perfil/${c.id}`, avatar: avatarHtml(gymbroName(c), gymbroPhoto(c), 'small') })}
     <div class="chat-msgs">${msgsHtml()}</div>
     ${attachPanel()}
     <form class="chat-bar ${editingMsg ? 'editing' : ''}" data-form="chat-send" novalidate>
@@ -2194,14 +2196,15 @@ function newPRs(w) {
     }
     if (prev > 0 && cur > prev + 0.01) {
       const s = ex.sets.find(x => x.w != null);
-      prs.push({ name: ex.name, text: `${ex.name}: ${fmtNum(s.w)} ${ex.unit} × ${fmtNum(s.r || 1)}${s.rir != null ? ` · RIR ${fmtNum(s.rir)}` : ''} → 1RM ≈ ${fmtNum(round1(e1rmOf(s)))} ${ex.unit}` });
+      prs.push({ id: ex.exerciseId, name: ex.name, text: `${ex.name}: ${fmtNum(s.w)} ${ex.unit} × ${fmtNum(s.r || 1)}${s.rir != null ? ` · RIR ${fmtNum(s.rir)}` : ''} → 1RM ≈ ${fmtNum(round1(e1rmOf(s)))} ${ex.unit}` });
     }
   }
   return prs;
 }
 
 function announcePRs(w) {
-  const prs = newPRs(w);
+  const featured = featuredExerciseIds();
+  const prs = newPRs(w).filter(pr => featured.includes(pr.id));   // solo de tus récords destacados
   if (!prs.length || !autoPR() || !chats.length) return;
   const text = prs.map(p => p.text).join('\n');
   const preview = `🔥 Nuevo PR: ${prs[0].name}${prs.length > 1 ? ` y ${prs.length - 1} más` : ''}`;
@@ -2232,6 +2235,63 @@ $app.addEventListener('pointermove', e => {
 });
 // Sin el menú del navegador al mantener apretado
 $app.addEventListener('contextmenu', e => { if (e.target.closest('.msg.mine')) e.preventDefault(); });
+
+// ---------- Foto de perfil ----------
+// Se achica a 256×256 (JPEG, ~20 KB) y se guarda en users/{uid}/data/photo (tus teléfonos) y en tu perfil (tus gymbros).
+// Si pones foto, la ven tus gymbros; si no, se ve tu inicial.
+const photoKey = () => `desdel-foto-${user.uid}`;
+let myPhoto = null;
+const safePhoto = url => (typeof url === 'string' && /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(url) ? url : null);
+function avatarHtml(name, photo, cls = '') {
+  const url = safePhoto(photo);
+  return url
+    ? `<img class="avatar ${cls}" src="${url}" alt="">`
+    : `<span class="avatar ${cls}" aria-hidden="true">${esc((name || '').trim().charAt(0).toUpperCase() || '?')}</span>`;
+}
+const gymbroPhoto = c => ((profiles.get(otherUid(c)) || {}).data || {}).stats?.photo || null;
+
+// Al entrar: la foto guardada en este teléfono, o la de la nube
+async function loadMyPhoto(uid) {
+  myPhoto = localStorage.getItem(`desdel-foto-${uid}`);
+  if (myPhoto) return;
+  try {
+    const url = safePhoto(await cloud.getPhoto(uid));
+    if (url && user && user.uid === uid) { myPhoto = url; localStorage.setItem(photoKey(), url); refresh(); }
+  } catch (e) { /* sin internet: se intenta la próxima vez */ }
+}
+
+// Recorta al centro, achica y comprime la imagen elegida
+function shrinkPhoto(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image(), src = URL.createObjectURL(file);
+    img.onload = () => {
+      const side = Math.min(img.width, img.height), size = 256;
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = size;
+      canvas.getContext('2d').drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, size, size);
+      URL.revokeObjectURL(src);
+      resolve(canvas.toDataURL('image/jpeg', 0.8));
+    };
+    img.onerror = () => { URL.revokeObjectURL(src); reject(new Error('imagen')); };
+    img.src = src;
+  });
+}
+
+async function setMyPhoto(url) {
+  const prev = myPhoto;
+  myPhoto = url;
+  if (url) localStorage.setItem(photoKey(), url); else localStorage.removeItem(photoKey());
+  render();
+  try {
+    await withTimeout(url ? cloud.putPhoto(user.uid, url) : cloud.deletePhoto(user.uid));
+    scheduleProfile();   // tus gymbros la ven en tu perfil
+  } catch (e) {
+    myPhoto = prev;
+    if (prev) localStorage.setItem(photoKey(), prev); else localStorage.removeItem(photoKey());
+    render();
+    alert('No se pudo guardar la foto. Revisa tu internet e intenta de nuevo.');
+  }
+}
 
 // ---------- Perfil de gymbro ----------
 // Cada uno publica un resumen (récords, estadísticas, últimos entrenamientos) en profiles/{uid}; solo sus gymbros lo pueden leer.
@@ -2268,8 +2328,7 @@ function myProfile() {
   }
   // Récords destacados: los que elijas en Privacidad (hasta 5); si no eliges, tus 5 ejercicios más entrenados
   const sessions = exerciseSessions();
-  const picked = (db.body.prPick || []).filter(id => best.has(id));
-  const ids = picked.length ? picked : sessions.filter(x => best.has(x.id)).slice(0, 5).map(x => x.id);
+  const ids = featuredExerciseIds().filter(id => best.has(id));
   const prs = ids.map(id => best.get(id)).sort((a, b) => b.kg - a.kg).map(({ kg, ...pr }) => pr);
   const recent = ws.slice(-5).reverse().map(w => ({ routine: w.routineName || 'Entrenamiento', date: w.date, min: w.durationSec ? Math.round(w.durationSec / 60) : 0 }));
   const stats = { month, total: ws.length, streak };
@@ -2286,6 +2345,7 @@ function myProfile() {
     stats.goal = pm === 0 ? 'Mantener peso' : `${pm < 0 ? 'Bajando' : 'Subiendo'} ${fmtNum(Math.abs(pm))} kg al mes`;
   }
   if (showInProfile('since') && ws.length) stats.since = ws[0].date;
+  if (myPhoto) stats.photo = myPhoto;
   return { name: user.username || '', stats, prs, recent };
 }
 
@@ -2295,8 +2355,10 @@ function scheduleProfile() {
   profileTimer = setTimeout(publishProfile, 4000);
 }
 async function publishProfile() {
-  if (!user || status !== 'ready' || !shareProfile() || !chats.length) return;
-  const data = myProfile(), json = stable(data);
+  if (!user || status !== 'ready' || !chats.length) return;
+  // Sin compartir: tus gymbros solo ven tu nombre y tu foto
+  const data = shareProfile() ? myProfile() : { name: user.username || '', stats: { hidden: true, ...(myPhoto ? { photo: myPhoto } : {}) }, prs: [], recent: [] };
+  const json = stable(data);
   if (localStorage.getItem(profilePubKey()) === json) return;
   try {
     await cloud.putProfile(user.uid, data);
@@ -2306,8 +2368,7 @@ async function publishProfile() {
 function setShareProfile(on) {
   localStorage.setItem(shareProfileKey(), on ? '1' : '0');
   localStorage.removeItem(profilePubKey());
-  if (on) publishProfile();
-  else cloud.deleteProfile(user.uid).catch(() => {});
+  publishProfile();
 }
 
 function loadProfile(uid) {
@@ -2316,7 +2377,7 @@ function loadProfile(uid) {
   profiles.set(uid, { ...(p || {}), loading: true });
   cloud.getProfile(uid)
     .then(data => profiles.set(uid, { data, at: Date.now() }), () => profiles.set(uid, { error: true, at: Date.now() }))
-    .then(() => { if (routeParts()[0] === 'perfil') refresh(); });
+    .then(() => { if (['perfil', 'social', 'chat'].includes(routeParts()[0])) refresh(); });
 }
 
 // Datos del perfil que puedes ocultar (todos se muestran si no los apagas)
@@ -2324,6 +2385,13 @@ const PROFILE_FIELDS = [
   ['age', 'Edad'], ['height', 'Estatura'], ['weight', 'Peso'], ['bf', '% de grasa'], ['ffmi', 'FFMI'],
   ['goal', 'Objetivo actual (subir, bajar o mantener)'], ['since', 'Entrenando desde'],
 ];
+
+// Récords destacados: los que elegiste en Privacidad (hasta 5) o, si no elegiste, tus 5 ejercicios más entrenados
+function featuredExerciseIds() {
+  const done = new Set(db.workouts.flatMap(w => w.exercises.map(ex => ex.exerciseId)));
+  const picked = (db.body.prPick || []).filter(id => done.has(id));
+  return picked.length ? picked : exerciseSessions().slice(0, 5).map(x => x.id);
+}
 
 // Veces que hiciste cada ejercicio, del más entrenado al menos
 function exerciseSessions() {
@@ -2400,16 +2468,23 @@ function viewProfile(arg) {
     p = profiles.get(otherUid(c)) || { loading: true };
   }
   const name = me ? (user.username || 'Tú') : gymbroName(c);
+  const photo = me ? myPhoto : p.data && p.data.stats && p.data.stats.photo;
   const head = `<section class="profile-head">
-      <span class="avatar big" aria-hidden="true">${esc(name.trim().charAt(0).toUpperCase() || '?')}</span>
+      ${me ? `<label class="photo-pick" aria-label="Cambiar foto de perfil">
+          ${avatarHtml(name, photo, 'big')}
+          <input type="file" accept="image/*" data-bind="photo" hidden>
+          <span class="small photo-hint">${photo ? 'Cambiar foto' : 'Poner foto'}</span>
+        </label>
+        ${photo ? '<button class="btn ghost small-btn" data-action="photo-del">Quitar foto</button>' : ''}`
+      : avatarHtml(name, photo, 'big')}
       <h2>${esc(name)}</h2>
       ${me ? '' : `<span class="muted small">Gymbros desde el ${fmtLongDate(c.createdAt)}</span>`}
     </section>`;
   let body;
   if (!p.data && p.loading) body = '<p class="empty">Cargando…</p>';
-  else if (!p.data) body = `<p class="empty">${p.error ? 'No se pudo cargar el perfil. Revisa tu internet.' : `${esc(name)} todavía no comparte sus récords ni estadísticas.`}</p>`;
+  else if (!p.data || (p.data.stats && p.data.stats.hidden)) body = `<p class="empty">${p.error ? 'No se pudo cargar el perfil. Revisa tu internet.' : `${esc(name)} todavía no comparte sus récords ni estadísticas.`}</p>`;
   else body = profileBody(p.data, me);
-  if (me && !shareProfile()) body = '<p class="empty">No estás compartiendo tus récords ni estadísticas. Actívalo en Social.</p>';
+  if (me && !shareProfile()) body = '<p class="empty">No estás compartiendo tus récords ni estadísticas. Actívalo en Privacidad.</p>';
   return `${header(me ? 'Mi perfil' : 'Perfil', { back: true, right: me ? '<a class="btn small-btn privacy-btn" href="#/privacidad">Privacidad</a>' : '' })}
     ${head}
     ${body}
@@ -3497,6 +3572,7 @@ async function handleUser(u) {
   persistLocal();
   stopListening = cloud.listen(u.uid, applyRemoteMain, applyRemoteWorkouts);
   startSocial(u.uid);
+  loadMyPhoto(u.uid);
   sync();
   render();
   if (db.draft && db.draft.timer) keepScreenOn(true);
@@ -4027,6 +4103,9 @@ $app.addEventListener('click', e => {
     case 'auto-pr':
       localStorage.setItem(autoPRKey(), el.checked ? '1' : '0');
       break;
+    case 'photo-del':
+      if (confirm('¿Quitar tu foto de perfil?')) setMyPhoto(null);
+      break;
     case 'pr-pick': {
       // Récords destacados: hasta 5
       const pick = (db.body.prPick ||= []), k = pick.indexOf(id);
@@ -4135,6 +4214,12 @@ $app.addEventListener('click', e => {
 });
 
 // Escritura en campos: se guarda al instante, sin redibujar (para no perder el foco)
+// Foto de perfil elegida
+$app.addEventListener('change', async e => {
+  if (e.target.dataset.bind !== 'photo' || !e.target.files || !e.target.files[0]) return;
+  try { await setMyPhoto(await shrinkPhoto(e.target.files[0])); } catch (err) { alert('No se pudo usar esa imagen. Prueba con otra.'); }
+});
+
 $app.addEventListener('input', e => {
   const el = e.target, bind = el.dataset.bind;
   if (!bind) return;

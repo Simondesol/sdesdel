@@ -685,3 +685,12 @@ input.readonly { color: var(--muted); background: transparent; }
 /* Mi perfil: botón Privacidad en el encabezado */
 .bar .privacy-btn { flex: none; display: inline-flex; align-items: center; justify-content: center; align-self: center; min-height: 36px; padding: 0 12px; font-size: 14px; line-height: 1; margin: 0; }
 .profile-fields .small-toggle input:disabled + .grow { color: var(--muted); }
+
+/* Foto de perfil */
+img.avatar { object-fit: cover; padding: 0; }
+.avatar.small { width: 36px; height: 36px; font-size: 15px; flex: none; }
+.photo-pick { display: grid; justify-items: center; gap: 4px; cursor: pointer; }
+.photo-hint { color: var(--accent); font-weight: 600; }
+.profile-head .small-btn { min-height: 30px; padding: 0 10px; font-size: 12px; }
+.bar .titles { display: flex; align-items: center; gap: 10px; }
+.bar .titles-text { min-width: 0; }

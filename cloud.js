@@ -147,3 +147,12 @@ export async function getProfile(uid) {
   const snap = await getDoc(doc(fs, 'profiles', uid));
   return snap.exists() ? snap.data() : null;
 }
+
+// Foto de perfil (solo tú la lees aquí; tus gymbros la ven en tu perfil)
+const photoRef = uid => doc(fs, 'users', uid, 'data', 'photo');
+export const putPhoto = (uid, url) => setDoc(photoRef(uid), { url });
+export const deletePhoto = uid => deleteDoc(photoRef(uid));
+export async function getPhoto(uid) {
+  const snap = await getDoc(photoRef(uid));
+  return snap.exists() ? snap.data().url : null;
+}
