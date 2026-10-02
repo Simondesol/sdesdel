@@ -730,3 +730,10 @@ img.avatar { object-fit: cover; padding: 0; }
 .plan-n { min-width: 56px; }
 .plan-week-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .plan-week-title .link { font-size: 12px; }
+
+/* Dieta según tu plan */
+.plan-diets { margin-bottom: 12px; }
+a.plan-diets { display: flex; align-items: center; gap: 12px; }
+a.plan-diets .grow { display: grid; gap: 2px; }
+.plan-diets .plan-row { grid-template-columns: 130px minmax(0, 1fr); }
+.plan-diet-note { margin: 0 0 10px; }

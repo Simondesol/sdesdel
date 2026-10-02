@@ -247,16 +247,27 @@ const dietMacros = diet => sumM(diet.meals.map(mealMacros));
 const macroLine = m => `P ${fmtG(m.p)} g · C ${fmtG(m.c)} g · G ${fmtG(m.f)} g`;
 
 // Hoy: qué dieta se usa y qué comidas están marcadas
+// Dieta según tu plan: días de entreno (o si entrenaste hoy) → dieta "on"; días de descanso → dieta "off"
+function planDietToday() {
+  const pd = N().planDiets;
+  if (!pd || !db.plan) return null;
+  const t = todayKey(), training = !!plannedRoutine(t) || trainedOn(t);
+  const id = training ? pd.on : pd.off;
+  return dietById(id) ? { id, training } : null;
+}
+
 function todayNutrition() {
-  const log = N().log[todayKey()];
-  const diet = dietById(log && log.dietId) || dietById(N().activeDietId) || N().diets[0] || null;
+  const log = N().log[todayKey()], auto = planDietToday();
+  // Si hoy elegiste una dieta a mano, se respeta solo hoy; si no, la del plan
+  const manual = !!(log && log.manual && dietById(log.dietId));
+  const diet = (manual && dietById(log.dietId)) || (auto && dietById(auto.id)) || dietById(log && log.dietId) || dietById(N().activeDietId) || N().diets[0] || null;
   // Cada dieta recuerda sus comidas marcadas del día, aunque cambies de una a otra
   const done = !diet || !log ? [] : (log.byDiet && log.byDiet[diet.id]) || (log.dietId === diet.id ? log.done || [] : []);
   const eaten = sumM([
     ...(diet ? diet.meals.filter(m => done.includes(m.id)).map(mealMacros) : []),
     ...todayExtras().map(extraMacros),   // lo que comiste fuera de la dieta
   ]);
-  return { diet, done, eaten, goal: diet ? dietMacros(diet) : { ...ZERO } };
+  return { diet, done, eaten, goal: diet ? dietMacros(diet) : { ...ZERO }, auto, manual };
 }
 
 // Guarda el registro de hoy (y borra los de hace más de 90 días para no acumular)
@@ -274,7 +285,7 @@ const nutriTabs = active => `<div class="range" role="tablist">${[['', 'Hoy'], [
 function viewNutrition(section) {
   if (section === 'alimentos') return viewFoods();
   if (section === 'dietas') return viewDiets();
-  const { diet, done, eaten, goal } = todayNutrition();
+  const { diet, done, eaten, goal, auto, manual } = todayNutrition();
   const head = `${header('Nutrición', { home: true })}${nutriTabs('')}`;
   if (!diet) {
     const ct = calorieTarget();
@@ -302,7 +313,11 @@ function viewNutrition(section) {
       </div>
     </section>`;
   }).join('');
-  return `${head}${chooser}
+  // "Hoy: Día ON · día de entreno" (según tu plan)
+  const planNote = auto ? `<p class="muted small plan-diet-note">${manual
+      ? `Hoy elegiste <strong>${esc(diet.name)}</strong> a mano · <button class="link" data-action="nutri-auto">volver a la del plan</button>`
+      : `Hoy: <strong>${esc(diet.name)}</strong> · ${auto.training ? 'día de entreno' : 'día de descanso'}`}</p>` : '';
+  return `${head}${planNote}${chooser}
     <section class="card nutri-sum">
       <div class="water-big"><strong>${fmtKcal(eaten.kcal)}</strong> / ${fmtKcal(goal.kcal)} kcal</div>
       ${bar(eaten.kcal, goal.kcal)}
@@ -411,6 +426,22 @@ function saveFood(f) {
   history.back();
 }
 
+// Tarjeta "Dieta según tu plan": qué dieta usar los días de entreno y los de descanso
+function planDietsCard() {
+  if (!N().diets.length) return '';
+  if (!db.plan) return `<a class="card plan-diets" href="#/plan"><div class="grow"><strong>Dieta según tu plan</strong>
+      <span class="muted small">Arma tu plan de entrenos y la app elegirá sola tu dieta de los días de entreno y de descanso</span></div><span class="chev">›</span></a>`;
+  const pd = N().planDiets || {};
+  const sel = k => `<select data-bind="plan-diet" data-k="${k}" aria-label="${k === 'on' ? 'Dieta de los días de entreno' : 'Dieta de los días de descanso'}">
+      <option value="">Elige una dieta</option>${N().diets.map(d => `<option value="${d.id}" ${d.id === pd[k] ? 'selected' : ''}>${esc(d.name)}</option>`).join('')}</select>`;
+  return `<section class="card plan-diets stack">
+      <strong>Dieta según tu plan</strong>
+      <label class="plan-row"><span>Días de entreno</span>${sel('on')}</label>
+      <label class="plan-row"><span>Días de descanso</span>${sel('off')}</label>
+      <span class="muted small">Cada día se usa la que corresponde según <a href="#/plan">Mi plan</a>. Si entrenas un día de descanso, cambia sola a la de entreno.</span>
+    </section>`;
+}
+
 // Tarjeta "Tus calorías objetivo: 2.750 kcal" (lleva a la pantalla del cálculo)
 function targetBanner() {
   const ct = calorieTarget();
@@ -437,6 +468,7 @@ function viewDiets() {
   }).join('');
   return `${header('Nutrición', { home: true })}${nutriTabs('dietas')}
     ${targetBanner()}
+    ${planDietsCard()}
     <button class="btn primary block" data-action="diet-new" style="margin:0 0 12px">+ Crear dieta</button>
     ${list || `<p class="empty">${N().foods.length ? 'Crea tu primera dieta.' : 'Primero agrega tus alimentos en <a href="#/nutricion/alimentos">Mis alimentos</a>.'}</p>`}
     ${importForm('Importar dieta con código')}`;
@@ -4119,6 +4151,13 @@ $app.addEventListener('click', e => {
       const log = N().log[todayKey()];
       N().activeDietId = id;
       setTodayLog(id, (log && log.byDiet && log.byDiet[id]) || []);
+      if (planDietToday()) N().log[todayKey()].manual = true;   // elegida a mano: solo por hoy
+      save(); render();
+      break;
+    }
+    case 'nutri-auto': {
+      const log = N().log[todayKey()];
+      if (log) delete log.manual;
       save(); render();
       break;
     }
@@ -4445,6 +4484,11 @@ $app.addEventListener('input', e => {
   }
   const i = +el.dataset.i, j = +el.dataset.j;
   if (bind === 'crop-zoom') { if (photoEdit) setCropZoom(Number(el.value)); return; }
+  if (bind === 'plan-diet') {
+    (N().planDiets ||= {})[el.dataset.k] = el.value || null;
+    save();
+    return;
+  }
   if (bind === 'plan-day') {
     const p = (db.plan ||= defaultPlan());
     p.days[+el.dataset.w].r[+el.dataset.d] = el.value || null;
