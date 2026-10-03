@@ -598,7 +598,7 @@ function nutritionCard() {
   return `<a class="card hub" href="#/nutricion">
     <div class="hub-top"><span class="hub-icon">🍽️</span><strong>Nutrición</strong><span class="chev">›</span></div>
     ${t.diet
-      ? `<div class="hub-value"><strong>${fmtKcal(t.eaten.kcal)} / ${fmtKcal(t.goal.kcal)}</strong> calorías</div>${bar(t.eaten.kcal, t.goal.kcal)}`
+      ? `<div class="hub-value"><strong>${fmtKcal(t.eaten.kcal)} / ${fmtKcal(t.goal.kcal)}</strong> kcal</div>${bar(t.eaten.kcal, t.goal.kcal)}`
       : '<span class="muted">Crea tus alimentos y tu dieta</span>'}
   </a>`;
 }
