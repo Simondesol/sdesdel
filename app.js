@@ -248,6 +248,8 @@ function itemMacros(it) {
 const mealMacros = meal => sumM(meal.items.map(itemMacros));
 const dietMacros = diet => sumM(diet.meals.map(mealMacros));
 const macroLine = m => `P ${fmtG(m.p)} g · C ${fmtG(m.c)} g · G ${fmtG(m.f)} g`;
+// Macros de un alimento en la dieta, en corto: "P 17 · C 86 · G 9"
+const itemMacroText = m => `P ${fmtNum(Math.round(m.p))} · C ${fmtNum(Math.round(m.c))} · G ${fmtNum(Math.round(m.f))}`;
 
 // Hoy: qué dieta se usa y qué comidas están marcadas
 // Dietas vinculadas a días: N().dietLinks = { rest: dietId, [id de rutina]: dietId } (cada día con una sola dieta).
@@ -504,7 +506,8 @@ function viewDietEditor(id) {
     const items = meal.items.map((it, ii) => {
       const food = foodById(it.foodId), im = itemMacros(it);
       return `<div class="item-row">
-        <span class="grow">${esc(food ? food.name : '(alimento borrado)')}</span>
+        <span class="grow">${esc(food ? food.name : '(alimento borrado)')}
+          <span class="item-macros muted" data-item-macros="${mi}-${ii}">${itemMacroText(im)}</span></span>
         <input class="grams" inputmode="decimal" data-bind="item-g" data-m="${mi}" data-i="${ii}" value="${toField(food && byPortion(food, it) ? it.n : it.g)}" aria-label="${food && (isUnit(food) || byPortion(food, it)) ? 'Cantidad' : 'Gramos'}">
         ${food && food.unitG
           ? `<button type="button" class="chip mode-chip" data-action="item-mode" data-m="${mi}" data-i="${ii}" title="${portionHint(food)}" aria-label="Cambiar entre gramos y unidades">${byPortion(food, it) ? 'u' : 'g'}</button>`
@@ -580,6 +583,8 @@ function paintDietTotals(diet) {
     meal.items.forEach((it, ii) => {
       const el = $app.querySelector(`[data-item-kcal="${mi}-${ii}"]`);
       if (el) el.textContent = `${fmtKcal(itemMacros(it).kcal)} kcal`;
+      const mac = $app.querySelector(`[data-item-macros="${mi}-${ii}"]`);
+      if (mac) mac.textContent = itemMacroText(itemMacros(it));
     });
     const m = mealMacros(meal), el = $app.querySelector(`[data-meal-total="${mi}"]`);
     if (el) el.innerHTML = `<strong>${fmtKcal(m.kcal)} kcal</strong> · ${macroLine(m)}`;
