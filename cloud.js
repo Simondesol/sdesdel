@@ -3,6 +3,7 @@
 //   users/{uid}                 → { username, email, createdAt }
 //   users/{uid}/data/main       → { routines, notes }
 //   users/{uid}/workouts/{id}   → un entrenamiento guardado
+//   users/{uid}/progressThumbs/{id} y progress/{id} → fotos de progreso (miniatura + grande)
 //   shared/{código}             → rutina o dieta compartida { ownerUid, ownerName, routine | diet, createdAt }
 //   invites/{código}            → código de gymbro { ownerUid, ownerName, createdAt }
 //   chats/{uidA_uidB}           → chat entre dos gymbros { members, names, via, last, createdAt }
@@ -155,4 +156,28 @@ export const deletePhoto = uid => deleteDoc(photoRef(uid));
 export async function getPhoto(uid) {
   const snap = await getDoc(photoRef(uid));
   return snap.exists() ? snap.data().url : null;
+}
+
+// Fotos de progreso (privadas): miniatura con fecha y pose, y la foto grande aparte
+const progThumbs = uid => collection(fs, 'users', uid, 'progressThumbs');
+const progFullRef = (uid, id) => doc(fs, 'users', uid, 'progress', id);
+export async function listProgress(uid) {
+  const snap = await getDocs(progThumbs(uid));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+export async function getProgressFull(uid, id) {
+  const snap = await getDoc(progFullRef(uid, id));
+  return snap.exists() ? snap.data().url : null;
+}
+export function putProgress(uid, id, meta, thumb, full) {
+  const batch = writeBatch(fs);
+  batch.set(doc(progThumbs(uid), id), { ...meta, url: thumb });
+  batch.set(progFullRef(uid, id), { url: full });
+  return batch.commit();
+}
+export function deleteProgress(uid, id) {
+  const batch = writeBatch(fs);
+  batch.delete(doc(progThumbs(uid), id));
+  batch.delete(progFullRef(uid, id));
+  return batch.commit();
 }

@@ -771,3 +771,45 @@ button.link { color: var(--accent); font-weight: 600; background: none; border: 
 
 /* Promedio diario según el plan */
 .avg-card { gap: 4px; margin-bottom: 12px; }
+
+/* Medidas */
+.measure-inputs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; }
+.measure-inputs .field span { margin-bottom: 4px; }
+.measure-inputs input { min-width: 0; width: 100%; }
+.measure-sum { text-align: right; }
+.body-links .hub-top strong { font-size: 16px; }
+
+/* Fotos de progreso */
+.prog-add { display: flex; align-items: center; justify-content: center; margin-bottom: 4px; cursor: pointer; }
+.cmp-side > .muted:last-child { text-align: center; }
+.prog-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.prog-thumb { display: grid; gap: 4px; padding: 0; border: 0; background: none; color: var(--muted); font: inherit; font-size: 12px; text-align: center; cursor: pointer; }
+.prog-thumb img { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 10px; background: var(--surface2); }
+.prog-modal { max-height: calc(100vh - 32px); overflow-y: auto; }
+.prog-preview { width: 100%; max-height: 45vh; object-fit: contain; border-radius: 10px; background: #000; }
+.prog-modal .ex-actions .btn { flex: 1; }
+.cmp-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.cmp-side { display: grid; gap: 6px; min-width: 0; }
+.cmp-side select { min-width: 0; width: 100%; }
+.cmp-img { padding: 0; border: 0; background: none; cursor: zoom-in; }
+.cmp-img img { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 10px; background: var(--surface2); display: block; }
+.cmp-diff { text-align: center; }
+.prog-viewer { align-content: center; gap: 12px; }
+.prog-viewer img { position: relative; width: auto; max-width: 100%; max-height: calc(100vh - 140px); aspect-ratio: auto; object-fit: contain; border-radius: 12px; }
+.prog-viewer-bar { position: relative; display: grid; gap: 8px; justify-items: center; color: #fff; font-size: 14px; text-align: center; cursor: default; }
+.prog-viewer-bar .ex-actions { justify-content: center; }
+
+/* Tu semana (Inicio) */
+.week-card { gap: 10px; margin-top: 12px; }
+.wk-range { margin: 0 0 0 auto; flex: none; }
+.wk-range button { min-height: 30px; padding: 0 10px; font-size: 13px; }
+.wk-train { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.wk-days { display: flex; gap: 4px; }
+.wk-day { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 700; color: var(--muted); background: var(--surface2); }
+.wk-day.done { background: var(--accent); color: var(--accent-ink); }
+.wk-day.planned { box-shadow: inset 0 0 0 1.5px var(--accent); color: var(--accent); background: none; }
+.wk-day.missed { box-shadow: inset 0 0 0 1.5px var(--danger, #e5484d); color: var(--danger, #e5484d); background: none; }
+.wk-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.wk-stat { display: grid; align-content: start; gap: 2px; padding: 8px 10px; background: var(--surface2); border-radius: 10px; min-width: 0; }
+.wk-stat strong { font-size: 17px; font-variant-numeric: tabular-nums; }
+.wk-prs { color: var(--accent); }

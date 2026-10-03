@@ -11,7 +11,7 @@ const $tabs = document.getElementById('tabs');
 const emptyWater = () => ({ goalMl: null, days: {} });   // days: { 'AAAA-MM-DD': [{ at, ml }] }
 // Nutrición: alimentos (valores por 100 g), dietas con comidas y el registro de comidas marcadas por día
 const emptyNutrition = () => ({ foods: [], diets: [], activeDietId: null, log: {} });
-const emptyDb = () => ({ routines: [], workouts: [], draft: null, notes: {}, bodyweight: [], body: {}, sleep: [], skinfolds: [], plan: null, water: emptyWater(), nutrition: emptyNutrition() });
+const emptyDb = () => ({ routines: [], workouts: [], draft: null, notes: {}, bodyweight: [], body: {}, sleep: [], skinfolds: [], measures: [], plan: null, water: emptyWater(), nutrition: emptyNutrition() });
 const emptySynced = () => ({ main: null, w: {} });
 let db = emptyDb();
 let user = null;                 // { uid, email, username }
@@ -157,6 +157,65 @@ function entrenoCard() {
     </div>`;
 }
 
+
+// ---------- Resumen semanal (Inicio) ----------
+// Lunes a domingo: entrenos (y lo que tocaba según Mi plan), peso, sueño, agua, dieta y récords
+let weekOffset = 0;   // 0 = esta semana, 1 = la pasada
+const WEEK_LETTERS = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
+function weekSummary(offset) {
+  const mon = mondayOf(new Date());
+  mon.setDate(mon.getDate() - 7 * offset);
+  const keys = Array.from({ length: 7 }, (_, k) => { const d = new Date(mon); d.setDate(d.getDate() + k); return dayKeyOf(d); });
+  const today = todayKey(), past = keys.filter(k => k <= today);
+  const prevKeys = keys.map(k => { const d = new Date(bwIso(k)); d.setDate(d.getDate() - 7); return dayKeyOf(d); });
+  const inWeek = (list, ks) => list.filter(e => e.date >= ks[0] && e.date <= ks[6]);
+
+  // Entrenos: cada día, entrenado / tocaba y no fue / descanso o futuro
+  const days = keys.map(k => {
+    const plan = plannedRoutine(k), trained = trainedOn(k);
+    return { k, trained, planned: !!plan, future: k >= today };   // hoy todavía no cuenta como perdido
+  });
+  const done = db.workouts.filter(w => dayKeyOf(w.date) >= keys[0] && dayKeyOf(w.date) <= keys[6]);
+  const planned = db.plan ? days.filter(d => d.planned).length : null;
+
+  const avg = list => (list.length ? list.reduce((a, v) => a + v, 0) / list.length : null);
+  const kg = avg(inWeek(db.bodyweight, keys).map(e => e.kg)), kgPrev = avg(inWeek(db.bodyweight, prevKeys).map(e => e.kg));
+  const sleep = avg(inWeek(db.sleep, keys).map(e => e.h));
+  const goal = waterGoal().ml;
+  const water = past.filter(k => waterDay(k).reduce((a, e) => a + e.ml, 0) >= goal).length;
+  // Dieta cumplida: marcaste todas las comidas de la dieta de ese día
+  const dietOk = past.filter(k => {
+    const log = N().log[k], diet = log && dietById(log.dietId);
+    return diet && diet.meals.length && diet.meals.every(m => (log.done || []).includes(m.id));
+  }).length;
+  const prs = [];
+  for (const w of done) for (const pr of newPRs(w)) if (!prs.includes(pr.name)) prs.push(pr.name);
+  return { keys, days, done: done.length, planned, kg, kgPrev, sleep, water, dietOk, past: past.length, prs };
+}
+
+function weekCard() {
+  const s = weekSummary(weekOffset);
+  const stat = (label, value, sub = '') => `<div class="wk-stat"><span class="muted small">${label}</span><strong>${value}</strong>${sub ? `<span class="muted small">${sub}</span>` : ''}</div>`;
+  const stats = [
+    stat('Peso promedio', s.kg != null ? fmtKg(s.kg) : '—', s.kg != null && s.kgPrev != null ? (Math.abs(s.kg - s.kgPrev) < 0.05 ? 'igual que la anterior' : `${signed(s.kg - s.kgPrev)} kg vs la anterior`) : ''),
+    stat('Sueño promedio', s.sleep != null ? fmtH(s.sleep) : '—'),
+    stat('Meta de agua', `${s.water} de ${s.past} días`),
+    ...(N().diets.length ? [stat('Dieta completa', `${s.dietOk} de ${s.past} días`)] : []),
+  ];
+  return `<section class="card hub week-card">
+      <div class="hub-top"><span class="hub-icon">📅</span><strong>Tu semana</strong>
+        <div class="range wk-range" role="group" aria-label="Semana">${[[0, 'Esta'], [1, 'Pasada']].map(([w, label]) =>
+          `<button class="${w === weekOffset ? 'on' : ''}" data-action="week-sum" data-w="${w}">${label}</button>`).join('')}</div></div>
+      <div class="wk-train">
+        <span><strong>${s.planned != null ? `${s.done} de ${s.planned}` : s.done}</strong> ${s.planned != null ? 'entrenos del plan' : s.done === 1 ? 'entreno' : 'entrenos'}</span>
+        <div class="wk-days" aria-hidden="true">${s.days.map((d, k) =>
+          `<span class="wk-day ${d.trained ? 'done' : d.planned && !d.future ? 'missed' : d.planned ? 'planned' : ''}">${WEEK_LETTERS[k]}</span>`).join('')}</div>
+      </div>
+      <div class="wk-stats">${stats.join('')}</div>
+      ${s.prs.length ? `<span class="muted small">${s.prs.length === 1 ? 'Récord' : `${s.prs.length} récords`}: <strong class="wk-prs">${s.prs.map(esc).join(', ')}</strong></span>` : ''}
+    </section>`;
+}
+
 function viewHub() {
   maybeAskSleep();
   const d = db.draft;
@@ -179,6 +238,8 @@ function viewHub() {
     </div>
 
     <div class="hub-pair">${bodyweightCard()}${sleepCard()}</div>
+
+    ${weekCard()}
     </div>
     ${sleepAsk ? sleepModal() : ''}`;
 }
@@ -3146,6 +3207,13 @@ function viewBodyweight() {
     ${body}
     <h2>FFMI · masa libre de grasa</h2>
     ${ffmi}
+    <h2>Medidas y fotos</h2>
+    <div class="hub-pair body-links">
+      <a class="card hub" href="#/medidas"><div class="hub-top"><strong>Medidas</strong><span class="chev">›</span></div>
+        <span class="muted small">${db.measures.length ? `Última: ${bwDate(db.measures[db.measures.length - 1].date)}` : 'Cintura, brazo, pecho… con huincha'}</span></a>
+      <a class="card hub" href="#/fotos"><div class="hub-top"><strong>Fotos</strong><span class="chev">›</span></div>
+        <span class="muted small">Fotos de progreso para comparar</span></a>
+    </div>
     ${list ? `<h2>Registros</h2><section class="card">${list}</section>${moreBtn('peso-lista', db.bodyweight.length)}` : ''}`;
 }
 
@@ -3298,6 +3366,297 @@ function saveSkinfolds(f) {
   save();
   render();
   formMsg($app.querySelector('[data-form="skin"]'), `Guardado: ${fmtNum(bf)} % de grasa`, true);
+}
+
+
+// ---------- Medidas con huincha ----------
+// db.measures = [{ date: 'AAAA-MM-DD', m: { cintura: 82.5, … } }] en cm; cada medida es opcional
+const MEASURE_SITES = [
+  ['cuello', 'Cuello', 'Justo debajo de la manzana de Adán'],
+  ['hombros', 'Hombros', 'En la parte más ancha, con los brazos relajados'],
+  ['pecho', 'Pecho', 'A la altura de los pezones, después de botar el aire normal'],
+  ['brazo', 'Brazo', 'En la parte más gruesa, con el bíceps flexionado'],
+  ['cintura', 'Cintura', 'A la altura del ombligo, sin meter el estómago'],
+  ['cadera', 'Cadera', 'En la parte más ancha de los glúteos'],
+  ['muslo', 'Muslo', 'En la parte más gruesa, justo debajo del glúteo'],
+  ['pantorrilla', 'Pantorrilla', 'En la parte más gruesa'],
+];
+let measureView = 'cintura', measureRange = '3m';
+// Último valor anotado de una medida (para mostrarlo de ejemplo)
+const lastMeasure = k => { for (let n = db.measures.length - 1; n >= 0; n--) if (db.measures[n].m[k] != null) return db.measures[n].m[k]; return null; };
+
+function viewMeasures() {
+  const today = db.measures.find(e => e.date === todayKey());
+  const form = `<form class="stack card" data-form="measures" novalidate>
+      <span class="muted small">${today ? 'Hoy ya mediste; puedes corregirlo.' : 'Medidas de hoy, en centímetros. Anota solo las que quieras.'}</span>
+      <div class="measure-inputs">${MEASURE_SITES.map(([k, name]) => {
+        const last = lastMeasure(k);
+        return `<label class="field"><span>${name}</span>
+          <input name="${k}" inputmode="decimal" value="${today && today.m[k] != null ? toField(today.m[k]) : ''}" placeholder="${last != null ? toField(last) : 'cm'}" autocomplete="off" aria-label="${name} en cm">
+        </label>`;
+      }).join('')}</div>
+      <button class="btn primary block">Guardar</button>
+      <p class="form-msg" hidden></p>
+    </form>`;
+  const howTo = `${sectionHead('medidas-como', 'Cómo medir')}
+    ${openSections.has('medidas-como') ? `<section class="card stack">
+      ${MEASURE_SITES.map(([, name, how]) => `<div><strong>${name}:</strong> <span class="muted">${how}.</span></div>`).join('')}
+      <span class="muted small">La huincha debe quedar recta y pegada a la piel, sin apretar. Mide el lado derecho, en ayunas y antes de entrenar, siempre a la misma hora.</span>
+    </section>` : ''}`;
+
+  // Evolución de una medida a la vez (solo las que has anotado)
+  const used = MEASURE_SITES.filter(([k]) => db.measures.some(e => e.m[k] != null));
+  if (used.length && !used.some(([k]) => k === measureView)) measureView = used[0][0];
+  const days = EX_RANGES.find(r => r[0] === measureRange)[2], since = Date.now() - days * 86400000;
+  const name = (MEASURE_SITES.find(([k]) => k === measureView) || [])[1];
+  const points = db.measures.filter(e => e.m[measureView] != null && Date.parse(bwIso(e.date)) >= since).map(e => ({
+    t: Date.parse(bwIso(e.date)), date: bwIso(e.date), y: e.m[measureView], tip: `${fmtNum(e.m[measureView])} cm`,
+  }));
+  chart = null;
+  let body;
+  if (!used.length) body = '<p class="empty">Cuando guardes tus primeras medidas verás aquí su evolución.</p>';
+  else if (!points.length) body = '<p class="empty">No hay mediciones en este período.</p>';
+  else {
+    const first = points[0], last = points[points.length - 1], h = db.body.heightCm;
+    // Cintura / estatura: menos de 0,5 se considera saludable
+    const whtr = measureView === 'cintura' && h ? last.y / h : null;
+    body = `<div class="stats">
+        <div class="stat"><span class="muted">Última</span><strong>${fmtNum(last.y)} cm</strong><span class="muted">${bwDate(dayKeyOf(last.date))}</span></div>
+        ${points.length > 1 ? `<div class="stat"><span class="muted">Cambio</span><strong>${signed(last.y - first.y)} cm</strong><span class="muted">desde ${bwDate(dayKeyOf(first.date))}</span></div>` : ''}
+        ${whtr ? `<div class="stat"><span class="muted">Cintura / estatura</span><strong>${whtr.toFixed(2).replace('.', ',')}</strong><span class="muted">${whtr < 0.5 ? 'saludable (bajo 0,5)' : 'sobre 0,5'}</span></div>` : ''}
+      </div>
+      <section class="card chart-card">
+        ${chartSvg(points, 'cm', days, `${name} por medición`)}
+        <div class="tip" hidden></div>
+      </section>`;
+  }
+  const views = used.length > 1 ? `<div class="skin-views">${used.map(([k, n]) =>
+    `<button class="chip toggle ${k === measureView ? 'on' : ''}" data-action="measure-view" data-k="${k}">${n}</button>`).join('')}</div>` : '';
+  const all = openSections.has('medidas-lista');
+  const list = db.measures.slice().reverse().slice(0, all ? undefined : 7).map(e => `
+    <div class="prog-row">
+      <span class="muted">${bwDate(e.date)}</span>
+      <span class="bw-right"><span class="muted small measure-sum">${MEASURE_SITES.filter(([k]) => e.m[k] != null).map(([k, n]) => `${n} ${fmtNum(e.m[k])}`).join(' · ')}</span>
+        <button class="icon small danger" data-action="del-measure" data-date="${e.date}" aria-label="Borrar medición">✕</button></span>
+    </div>`).join('');
+
+  return `${header('Medidas', { back: true, sub: 'Con huincha, en centímetros' })}
+    ${form}
+    ${howTo}
+    <h2>Evolución</h2>
+    ${views}
+    ${rangeButtons(EX_RANGES, measureRange, 'ms')}
+    ${body}
+    ${list ? `<h2>Mediciones</h2><section class="card">${list}</section>${moreBtn('medidas-lista', db.measures.length)}` : ''}`;
+}
+
+function saveMeasures(f) {
+  const vals = {};
+  for (const [k, name] of MEASURE_SITES) {
+    const t = f.elements[k].value.trim();
+    if (!t) continue;
+    const v = num(t);
+    if (v == null || v < 10 || v > 250) return formMsg(f, `Escribe ${name.toLowerCase()} en cm (entre 10 y 250).`);
+    vals[k] = round1(v);
+  }
+  const date = todayKey(), k = db.measures.findIndex(e => e.date === date);
+  if (!Object.keys(vals).length) {
+    if (k < 0) return formMsg(f, 'Anota al menos una medida.');
+    db.measures.splice(k, 1);   // dejaste todo vacío: se borra la de hoy
+  } else if (k >= 0) db.measures[k].m = vals;
+  else { db.measures.push({ date, m: vals }); db.measures.sort((a, b) => (a.date < b.date ? -1 : 1)); }
+  save();
+  render();
+  formMsg($app.querySelector('[data-form="measures"]'), 'Medidas guardadas', true);
+}
+
+// ---------- Fotos de progreso ----------
+// Privadas (solo tú). Cada foto: miniatura con fecha y pose en users/{uid}/progressThumbs/{id}
+// y la foto grande en users/{uid}/progress/{id}. No van en los datos principales para no hacerlos pesados.
+const POSES = [['frente', 'Frente'], ['perfil', 'Perfil'], ['espalda', 'Espalda']];
+const poseName = k => (POSES.find(p => p[0] === k) || [])[1] || '';
+let progList = null;          // [{ id, date, pose, url (miniatura) }] o null si no se ha cargado
+let progLoading = false, progError = false;
+const progFull = new Map();   // id → foto grande (o 'loading' / 'error')
+let progNew = null;           // foto nueva antes de guardarla: { src, img, pose, date }
+let progOpen = null;          // id de la foto abierta en grande
+let progPose = '';            // filtro de pose ('' = todas)
+let progCmp = null;           // [idAntes, idDespués] elegidos para comparar
+let progUid = null;           // dueño de lo cargado (por si cambia la sesión)
+
+async function loadProgress(force = false) {
+  if (progUid !== user.uid) { progList = null; progFull.clear(); progUid = user.uid; }
+  if ((progList && !force) || progLoading) return;
+  progLoading = true; progError = false;
+  const uid = user.uid;
+  try {
+    const list = await withTimeout(cloud.listProgress(uid));
+    if (!user || user.uid !== uid) { progLoading = false; return; }
+    progList = list.filter(x => safePhoto(x.url)).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.id < b.id ? -1 : 1));
+  } catch (e) { progError = true; }
+  progLoading = false;
+  if (routeParts()[0] === 'fotos') refresh();
+}
+function needFull(id) {
+  if (progFull.has(id)) return;
+  progFull.set(id, 'loading');
+  const uid = user.uid;
+  cloud.getProgressFull(uid, id).then(url => {
+    progFull.set(id, safePhoto(url) || 'error');
+  }, () => progFull.set(id, 'error')).then(() => { if (user && user.uid === uid && routeParts()[0] === 'fotos') refresh(); });
+}
+// La foto grande si ya llegó; mientras, la miniatura
+const progSrc = x => { needFull(x.id); const f = progFull.get(x.id); return f && f !== 'loading' && f !== 'error' ? f : x.url; };
+// Tu peso ese día (o el último anotado antes)
+function weightOn(date) {
+  let found = null;
+  for (const e of db.bodyweight) { if (e.date <= date) found = e; else break; }
+  return found && found.date >= dayKeyOf(new Date(Date.parse(bwIso(date)) - 7 * 86400000)) ? found.kg : null;
+}
+// "3 sept" (con el año si no es este año)
+const shortDate = date => new Date(bwIso(date)).toLocaleDateString('es', { day: 'numeric', month: 'short', ...(date.slice(0, 4) !== todayKey().slice(0, 4) ? { year: 'numeric' } : {}) });
+const daysBetween = (a, b) => Math.round((Date.parse(bwIso(b)) - Date.parse(bwIso(a))) / 86400000);
+
+function openProgressNew(file) {
+  const src = URL.createObjectURL(file), img = new Image();
+  img.onload = () => { progNew = { src, img, pose: progPose || 'frente', date: todayKey() }; render(); };
+  img.onerror = () => { URL.revokeObjectURL(src); alert('No se pudo usar esa imagen. Prueba con otra.'); };
+  img.src = src;
+}
+function closeProgressNew() {
+  if (progNew) URL.revokeObjectURL(progNew.src);
+  progNew = null;
+}
+// Achica la foto: lado largo `max` px, en JPEG
+function shrink(img, max, q) {
+  const sc = Math.min(1, max / Math.max(img.width, img.height)), c = document.createElement('canvas');
+  c.width = Math.round(img.width * sc); c.height = Math.round(img.height * sc);
+  c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+  return c.toDataURL('image/jpeg', q);
+}
+async function saveProgressNew(btn) {
+  const n = progNew, date = n.date;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || date > todayKey()) return alert('Elige una fecha válida (hoy o antes).');
+  const full = shrink(n.img, 1080, 0.8), thumb = shrink(n.img, 320, 0.7), id = uid();
+  const meta = { date, pose: n.pose };
+  await busy(btn, 'Subiendo…', async () => {
+    try {
+      await withTimeout(cloud.putProgress(user.uid, id, meta, thumb, full));
+    } catch (e) {
+      alert('No se pudo subir la foto. Revisa tu internet e intenta de nuevo.');
+      return;
+    }
+    progFull.set(id, full);
+    if (progList) {
+      progList.push({ id, ...meta, url: thumb });
+      progList.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    }
+    progCmp = null;
+    closeProgressNew();
+    render();
+  });
+}
+async function deleteProgress(id) {
+  if (!confirm('¿Borrar esta foto? No se puede recuperar.')) return;
+  try {
+    await withTimeout(cloud.deleteProgress(user.uid, id));
+  } catch (e) { alert('No se pudo borrar. Revisa tu internet e intenta de nuevo.'); return; }
+  progList = progList.filter(x => x.id !== id);
+  progFull.delete(id);
+  progOpen = null;
+  progCmp = null;
+  render();
+}
+
+function progressNewHtml() {
+  const n = progNew;
+  return `<div class="modal-wrap">
+    <div class="modal-back" data-action="prog-cancel"></div>
+    <section class="modal card prog-modal" role="dialog" aria-modal="true" aria-label="Nueva foto de progreso">
+      <h2>Nueva foto</h2>
+      <img class="prog-preview" src="${n.src}" alt="">
+      <div class="link-chips" role="group" aria-label="Pose">${POSES.map(([k, label]) =>
+        `<button class="chip toggle ${n.pose === k ? 'on' : ''}" data-action="prog-pose-new" data-k="${k}" aria-pressed="${n.pose === k}">${label}</button>`).join('')}</div>
+      <label class="field"><span>Fecha de la foto</span>
+        <input type="date" data-bind="prog-date" value="${n.date}" max="${todayKey()}"></label>
+      <div class="ex-actions">
+        <button class="btn ghost" data-action="prog-cancel">Cancelar</button>
+        <button class="btn primary" data-action="prog-save">Guardar</button>
+      </div>
+    </section>
+  </div>`;
+}
+
+function progressViewerHtml() {
+  const x = progList && progList.find(p => p.id === progOpen);
+  if (!x) return '';
+  const kg = weightOn(x.date);
+  return `<div class="modal-wrap photo-viewer prog-viewer" role="dialog" aria-label="Foto de progreso">
+    <div class="modal-back" data-action="prog-close"></div>
+    <img src="${progSrc(x)}" alt="Foto del ${bwDate(x.date)}" data-action="prog-close">
+    <div class="prog-viewer-bar">
+      <span>${esc(poseName(x.pose))} · ${fmtLongDate(bwIso(x.date))}${kg != null ? ` · ${fmtKg(kg)}` : ''}</span>
+      <div class="ex-actions">
+        <button class="btn ghost danger-text" data-action="prog-del" data-id="${x.id}">Borrar</button>
+        <button class="btn" data-action="prog-close">Cerrar</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function viewProgressPhotos() {
+  loadProgress();
+  const add = `<label class="btn primary block prog-add">Agregar foto
+      <input type="file" accept="image/*" data-bind="prog-file" hidden></label>`;
+  let body;
+  if (!progList) {
+    body = progError
+      ? '<p class="empty">No se pudieron cargar tus fotos. Revisa tu internet. <button class="link" data-action="prog-retry">Reintentar</button></p>'
+      : '<p class="empty">Cargando…</p>';
+  } else if (!progList.length) {
+    body = '<p class="empty">Todavía no tienes fotos. Sácate una de frente, de perfil y de espalda, con la misma luz y a la misma hora, y repítelo cada 2 a 4 semanas.</p>';
+  } else {
+    const poses = POSES.filter(([k]) => progList.some(x => x.pose === k));
+    if (progPose && !poses.some(([k]) => k === progPose)) progPose = '';
+    const list = progList.filter(x => !progPose || x.pose === progPose);
+    const filter = poses.length > 1 ? `<div class="skin-views">${[['', 'Todas'], ...poses].map(([k, label]) =>
+      `<button class="chip toggle ${k === progPose ? 'on' : ''}" data-action="prog-filter" data-k="${k}">${label}</button>`).join('')}</div>` : '';
+
+    // Comparar: por defecto la última foto y la primera con la misma pose
+    let cmp = '';
+    if (list.length >= 2) {
+      const ids = list.map(x => x.id), last = list[list.length - 1];
+      const first = list.find(x => x.pose === last.pose && x !== last) || list[0];
+      if (!progCmp || !ids.includes(progCmp[0]) || !ids.includes(progCmp[1])) progCmp = [first.id, last.id];
+      const pick = (k, label) => `<select data-bind="prog-cmp" data-k="${k}" aria-label="${label}">${list.map(x =>
+        `<option value="${x.id}" ${x.id === progCmp[k] ? 'selected' : ''}>${shortDate(x.date)}${progPose ? '' : ` · ${poseName(x.pose)}`}</option>`).join('')}</select>`;
+      const [a, b] = progCmp.map(id => list.find(x => x.id === id));
+      const side = (x, k, label) => {
+        const kg = weightOn(x.date);
+        return `<div class="cmp-side">
+          <span class="muted small">${label}</span>
+          ${pick(k, `Foto ${label.toLowerCase()}`)}
+          <button class="cmp-img" data-action="prog-open" data-id="${x.id}" aria-label="Ver en grande"><img src="${progSrc(x)}" alt=""></button>
+          <span class="muted small">${kg != null ? fmtKg(kg) : 'Sin peso ese día'}</span>
+        </div>`;
+      };
+      const ka = weightOn(a.date), kb = weightOn(b.date), d = Math.abs(daysBetween(a.date, b.date));
+      cmp = `<h2>Comparar</h2>
+        <section class="card stack">
+          <div class="cmp-row">${side(a, 0, 'Antes')}${side(b, 1, 'Después')}</div>
+          <span class="muted small cmp-diff">${d ? `${plural(d, 'día')} entre las fotos` : 'Mismo día'}${ka != null && kb != null && d ? ` · ${signed(b.date >= a.date ? kb - ka : ka - kb)} kg` : ''}</span>
+        </section>`;
+    }
+    const grid = list.slice().reverse().map(x => `<button class="prog-thumb" data-action="prog-open" data-id="${x.id}" aria-label="Foto del ${bwDate(x.date)}">
+        <img src="${x.url}" alt="" loading="lazy"><span>${shortDate(x.date)}${progPose ? '' : ` · ${esc(poseName(x.pose))}`}</span>
+      </button>`).join('');
+    body = `${filter}${cmp}<h2>Todas (${list.length})</h2><div class="prog-grid">${grid}</div>`;
+  }
+  return `${header('Fotos de progreso', { back: true, sub: 'Privadas: solo tú las ves' })}
+    ${add}
+    ${body}
+    ${progNew ? progressNewHtml() : ''}
+    ${progOpen ? progressViewerHtml() : ''}`;
 }
 
 // ---------- Sueño ----------
@@ -3538,6 +3897,7 @@ function render() {
   if (screen !== 'rutina') openEx = null;
   if (screen !== 'perfil' && photoEdit) { URL.revokeObjectURL(photoEdit.src); photoEdit = null; }
   if (screen !== 'perfil') photoView = false;
+  if (screen !== 'fotos') { closeProgressNew(); progOpen = null; }
   if (screen !== 'nutricion') extraMode = null;
   if (screen !== 'chat' && screen !== 'perfil') closeMessages();   // el perfil muestra lo compartido en el chat
 
@@ -3569,6 +3929,8 @@ function render() {
     case 'privacidad': html = viewPrivacy(); break;
     case 'plan': html = viewPlan(); break;
     case 'pliegues': html = viewSkinfolds(); break;
+    case 'medidas': html = viewMeasures(); break;
+    case 'fotos': html = viewProgressPhotos(); break;
     default: html = viewHub();   // Inicio: sin pestañas
   }
   $app.innerHTML = html;
@@ -3798,6 +4160,7 @@ const mainData = () => ({
   ...(db.bodyweight.length ? { bodyweight: db.bodyweight } : {}),
   ...(db.sleep.length ? { sleep: db.sleep } : {}),
   ...(db.skinfolds.length ? { skinfolds: db.skinfolds } : {}),
+  ...(db.measures.length ? { measures: db.measures } : {}),
   ...(hasBody(db.body) ? { body: db.body } : {}),
   ...(db.plan ? { plan: db.plan } : {}),
   ...(hasWater(db.water) ? { water: db.water } : {}),
@@ -3853,13 +4216,14 @@ async function sync() {
 
 // Cambios que llegan desde otro dispositivo. Si aquí hay cambios sin subir, ganan los de aquí.
 function applyRemoteMain(data) {
-  const bw = data.bodyweight || [], sl = data.sleep || [], body = data.body || {}, plan = data.plan || null, sk = data.skinfolds || [];
+  const bw = data.bodyweight || [], sl = data.sleep || [], body = data.body || {}, plan = data.plan || null, sk = data.skinfolds || [], ms = data.measures || [];
   const water = hasWater(data.water) ? { ...emptyWater(), ...data.water } : emptyWater();
   const remote = {
     routines: data.routines || [], notes: data.notes || {},
     ...(bw.length ? { bodyweight: bw } : {}),
     ...(sl.length ? { sleep: sl } : {}),
     ...(sk.length ? { skinfolds: sk } : {}),
+    ...(ms.length ? { measures: ms } : {}),
     ...(hasBody(body) ? { body } : {}),
     ...(plan ? { plan } : {}),
     ...(hasWater(water) ? { water } : {}),
@@ -3868,7 +4232,7 @@ function applyRemoteMain(data) {
   const r = stable(remote), local = stable(mainData());
   if (local !== synced.main) return;
   synced.main = r;
-  if (r !== local) { db.routines = remote.routines; db.notes = remote.notes; db.bodyweight = bw; db.sleep = sl; db.skinfolds = sk; db.body = body; db.plan = plan; db.water = water; db.nutrition = hasNutrition(data.nutrition) ? { ...emptyNutrition(), ...data.nutrition } : emptyNutrition(); refresh(); }
+  if (r !== local) { db.routines = remote.routines; db.notes = remote.notes; db.bodyweight = bw; db.sleep = sl; db.skinfolds = sk; db.measures = ms; db.body = body; db.plan = plan; db.water = water; db.nutrition = hasNutrition(data.nutrition) ? { ...emptyNutrition(), ...data.nutrition } : emptyNutrition(); refresh(); }
   persistLocal();
 }
 
@@ -3914,6 +4278,7 @@ async function loadFromCloud() {
     db.bodyweight = main.bodyweight || [];
     db.sleep = main.sleep || [];
     db.skinfolds = main.skinfolds || [];
+    db.measures = main.measures || [];
     db.body = main.body || {};
     db.plan = main.plan || null;
     db.water = hasWater(main.water) ? { ...emptyWater(), ...main.water } : emptyWater();
@@ -3949,6 +4314,7 @@ async function handleUser(u) {
   stopSocial();
   if (!u) {
     user = null;
+    progList = null; progFull.clear(); progUid = null;
     db = emptyDb();
     synced = emptySynced();
     status = 'signed-out';
@@ -4134,6 +4500,7 @@ $app.addEventListener('click', e => {
       if (el.dataset.s === 'bw') bwRange = el.dataset.r;
       else if (el.dataset.s === 'sl') sleepRange = el.dataset.r;
       else if (el.dataset.s === 'sk') skinRange = el.dataset.r;
+      else if (el.dataset.s === 'ms') measureRange = el.dataset.r;
       else progressRange = el.dataset.r;
       render();
       break;
@@ -4383,6 +4750,57 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
     }
     case 'skin-view':
       skinView = el.dataset.k;
+      render();
+      break;
+    case 'measure-view':
+      measureView = el.dataset.k;
+      render();
+      break;
+    case 'del-measure': {
+      const k = db.measures.findIndex(e => e.date === el.dataset.date);
+      if (k < 0) return;
+      const [removed] = db.measures.splice(k, 1);
+      save(); render();
+      showUndo(`Medición de ${bwDate(removed.date)} borrada`, () => {
+        db.measures.push(removed);
+        db.measures.sort((a, b) => (a.date < b.date ? -1 : 1));
+        save(); render();
+      });
+      break;
+    }
+    case 'prog-cancel':
+      closeProgressNew();
+      render();
+      break;
+    case 'prog-pose-new':
+      progNew.pose = el.dataset.k;
+      render();
+      break;
+    case 'prog-save':
+      saveProgressNew(el);
+      break;
+    case 'prog-open':
+      progOpen = el.dataset.id;
+      render();
+      break;
+    case 'prog-close':
+      progOpen = null;
+      render();
+      break;
+    case 'prog-del':
+      deleteProgress(el.dataset.id);
+      break;
+    case 'prog-filter':
+      progPose = el.dataset.k;
+      progCmp = null;
+      render();
+      break;
+    case 'prog-retry':
+      loadProgress(true);
+      render();
+      break;
+    case 'week-sum':
+      weekOffset = +el.dataset.w;
       render();
       break;
     case 'del-skin': {
@@ -4711,6 +5129,10 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
 // Escritura en campos: se guarda al instante, sin redibujar (para no perder el foco)
 // Foto de perfil elegida
 $app.addEventListener('change', async e => {
+  const b = e.target.dataset.bind;
+  if (b === 'prog-cmp') { progCmp[+e.target.dataset.k] = e.target.value; render(); return; }
+  if (b === 'prog-date') { if (progNew) progNew.date = e.target.value; return; }
+  if (b === 'prog-file' && e.target.files && e.target.files[0]) { openProgressNew(e.target.files[0]); e.target.value = ''; return; }
   if (e.target.dataset.bind !== 'photo' || !e.target.files || !e.target.files[0]) return;
   openPhotoEditor(e.target.files[0]);
   e.target.value = '';   // permite elegir la misma foto otra vez
@@ -4836,6 +5258,7 @@ $app.addEventListener('submit', e => {
     case 'goal': saveGoal(f); return;
     case 'bf': saveBf(f); return;
     case 'skin': saveSkinfolds(f); return;
+    case 'measures': saveMeasures(f); return;
     case 'sleep': saveSleep(parseHours(f.elements.h.value), f); return;
     case 'food': saveFood(f); return;
     case 'add-item': {
