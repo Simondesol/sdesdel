@@ -2358,6 +2358,7 @@ async function setMyPhoto(url) {
 // Ajustar la foto antes de usarla: arrastrar para moverla y barra de zoom (se guarda el cuadrado del círculo)
 const CROP_BOX = 240;
 let photoEdit = null;   // { img, src, base, zoom, ox, oy, drag }
+let photoView = false;  // foto de perfil abierta en grande
 function openPhotoEditor(file) {
   const src = URL.createObjectURL(file), img = new Image();
   img.onload = () => {
@@ -2420,8 +2421,8 @@ function photoEditorHtml() {
 }
 function cropToDataUrl() {
   const e = photoEdit, sc = cropScale(), canvas = document.createElement('canvas');
-  canvas.width = canvas.height = 256;
-  canvas.getContext('2d').drawImage(e.img, -e.ox / sc, -e.oy / sc, CROP_BOX / sc, CROP_BOX / sc, 0, 0, 256, 256);
+  canvas.width = canvas.height = 512;   // nítida también al verla en grande (~50 KB)
+  canvas.getContext('2d').drawImage(e.img, -e.ox / sc, -e.oy / sc, CROP_BOX / sc, CROP_BOX / sc, 0, 0, 512, 512);
   return canvas.toDataURL('image/jpeg', 0.8);
 }
 // Arrastrar la foto (mouse o dedo)
@@ -2680,14 +2681,18 @@ function viewProfile(arg) {
   }
   const name = me ? (user.username || 'Tú') : gymbroName(c);
   const photo = me ? myPhoto : p.data && p.data.stats && p.data.stats.photo;
+  // Con foto: tocarla la abre en grande. En tu perfil, "Cambiar foto" (o tocar tu inicial si aún no tienes)
+  const bigPhoto = safePhoto(photo)
+    ? `<button class="photo-open" data-action="photo-view" aria-label="Ver foto en grande">${avatarHtml(name, photo, 'big')}</button>` : '';
   const head = `<section class="profile-head">
-      ${me ? `<label class="photo-pick" aria-label="Cambiar foto de perfil">
-          ${avatarHtml(name, photo, 'big')}
+      ${me ? `${bigPhoto}
+        <label class="photo-pick" aria-label="${photo ? 'Cambiar foto de perfil' : 'Poner foto de perfil'}">
+          ${bigPhoto ? '' : avatarHtml(name, photo, 'big')}
           <input type="file" accept="image/*" data-bind="photo" hidden>
           <span class="small photo-hint">${photo ? 'Cambiar foto' : 'Poner foto'}</span>
         </label>
         ${photo ? '<button class="btn ghost small-btn" data-action="photo-del">Quitar foto</button>' : ''}`
-      : avatarHtml(name, photo, 'big')}
+      : bigPhoto || avatarHtml(name, photo, 'big')}
       <h2>${esc(name)}</h2>
       ${me ? '' : `<span class="muted small">Gymbros desde el ${fmtLongDate(c.createdAt)}</span>`}
     </section>`;
@@ -2701,7 +2706,10 @@ function viewProfile(arg) {
     ${body}
     ${me ? '' : sharedInChat(c)}
     ${me ? '' : '<button class="btn ghost block danger-text" data-action="gymbro-del" style="margin-top:24px">Eliminar gymbro</button>'}
-    ${me ? photoEditorHtml() : ''}`;
+    ${me ? photoEditorHtml() : ''}
+    ${photoView && safePhoto(photo) ? `<div class="modal-wrap photo-viewer" data-action="photo-close" role="dialog" aria-label="Foto de ${esc(name)}">
+      <img src="${safePhoto(photo)}" alt="Foto de ${esc(name)}">
+    </div>` : ''}`;
 }
 
 // ---------- Progreso ----------
@@ -3491,6 +3499,7 @@ function render() {
   if (screen !== 'peso') goalEditing = false;
   if (screen !== 'rutina') openEx = null;
   if (screen !== 'perfil' && photoEdit) { URL.revokeObjectURL(photoEdit.src); photoEdit = null; }
+  if (screen !== 'perfil') photoView = false;
   if (screen !== 'nutricion') extraMode = null;
   if (screen !== 'chat' && screen !== 'perfil') closeMessages();   // el perfil muestra lo compartido en el chat
 
@@ -4536,6 +4545,14 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       if (!confirm('¿Quitar tu plan? Tus rutinas no se borran.')) return;
       db.plan = null;
       save(); render();
+      break;
+    case 'photo-view':
+      photoView = true;
+      render();
+      break;
+    case 'photo-close':
+      photoView = false;
+      render();
       break;
     case 'crop-cancel':
       closePhotoEditor();
