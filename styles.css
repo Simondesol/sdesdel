@@ -757,3 +757,6 @@ button.link { text-decoration: underline; text-underline-offset: 3px; }
 .skin-preview { margin: 0; }
 .skin-preview strong { color: var(--accent); }
 .skin-views { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+
+/* Botones de texto (ej. "volver a la del plan"): verdes como los links */
+button.link { color: var(--accent); font-weight: 600; background: none; border: 0; padding: 0; font: inherit; font-weight: 600; cursor: pointer; }

@@ -297,7 +297,7 @@ function dietLinksHtml(diet) {
 function todayNutrition() {
   const log = N().log[todayKey()], auto = planDietToday();
   // Si hoy elegiste una dieta a mano, se respeta solo hoy; si no, la del plan
-  const manual = !!(log && log.manual && dietById(log.dietId));
+  const manual = !!(log && log.manual && dietById(log.dietId)) && !(auto && log.dietId === auto.id);
   const diet = (manual && dietById(log.dietId)) || (auto && dietById(auto.id)) || dietById(log && log.dietId) || dietById(N().activeDietId) || N().diets[0] || null;
   // Cada dieta recuerda sus comidas marcadas del día, aunque cambies de una a otra
   const done = !diet || !log ? [] : (log.byDiet && log.byDiet[diet.id]) || (log.dietId === diet.id ? log.done || [] : []);
@@ -4328,7 +4328,9 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       const log = N().log[todayKey()];
       N().activeDietId = id;
       setTodayLog(id, (log && log.byDiet && log.byDiet[id]) || []);
-      if (planDietToday()) N().log[todayKey()].manual = true;   // elegida a mano: solo por hoy
+      // Elegida a mano (solo por hoy); si elegiste justo la del plan, ya no cuenta como a mano
+      const auto = planDietToday(), day = N().log[todayKey()];
+      if (auto && auto.id !== id) day.manual = true; else delete day.manual;
       save(); render();
       break;
     }
