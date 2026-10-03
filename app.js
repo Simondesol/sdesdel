@@ -249,7 +249,7 @@ const mealMacros = meal => sumM(meal.items.map(itemMacros));
 const dietMacros = diet => sumM(diet.meals.map(mealMacros));
 const macroLine = m => `P ${fmtG(m.p)} g · C ${fmtG(m.c)} g · G ${fmtG(m.f)} g`;
 // Macros de un alimento en la dieta, en corto: "P 17 · C 86 · G 9"
-const itemMacroText = m => `P ${fmtNum(Math.round(m.p))} · C ${fmtNum(Math.round(m.c))} · G ${fmtNum(Math.round(m.f))}`;
+const itemMacroText = m => `${fmtKcal(m.kcal)} kcal · P ${fmtNum(Math.round(m.p))} · C ${fmtNum(Math.round(m.c))} · G ${fmtNum(Math.round(m.f))}`;
 
 // Hoy: qué dieta se usa y qué comidas están marcadas
 // Dietas vinculadas a días: N().dietLinks = { rest: dietId, [id de rutina]: dietId } (cada día con una sola dieta).
@@ -512,7 +512,6 @@ function viewDietEditor(id) {
         ${food && food.unitG
           ? `<button type="button" class="chip mode-chip" data-action="item-mode" data-m="${mi}" data-i="${ii}" title="${portionHint(food)}" aria-label="Cambiar entre gramos y unidades">${byPortion(food, it) ? 'u' : 'g'}</button>`
           : `<span class="unit-label">${isUnit(food) ? 'u' : 'g'}</span>`}
-        <span class="item-kcal" data-item-kcal="${mi}-${ii}">${fmtKcal(im.kcal)} kcal</span>
         <button class="icon small danger" data-action="item-del" data-m="${mi}" data-i="${ii}" aria-label="Quitar">✕</button>
       </div>`;
     }).join('');
@@ -581,8 +580,6 @@ function dietTargetHtml(kcal) {
 function paintDietTotals(diet) {
   diet.meals.forEach((meal, mi) => {
     meal.items.forEach((it, ii) => {
-      const el = $app.querySelector(`[data-item-kcal="${mi}-${ii}"]`);
-      if (el) el.textContent = `${fmtKcal(itemMacros(it).kcal)} kcal`;
       const mac = $app.querySelector(`[data-item-macros="${mi}-${ii}"]`);
       if (mac) mac.textContent = itemMacroText(itemMacros(it));
     });
