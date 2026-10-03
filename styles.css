@@ -768,3 +768,6 @@ button.link { color: var(--accent); font-weight: 600; background: none; border: 
 
 /* Editor de dieta: macros de cada alimento bajo su nombre */
 .item-macros { display: block; font-size: 12px; margin-top: 2px; font-variant-numeric: tabular-nums; }
+
+/* Promedio diario según el plan */
+.avg-card { gap: 4px; margin-bottom: 12px; }

@@ -332,8 +332,8 @@ function viewNutrition(section) {
     return `${head}
       <p class="muted" style="margin:4px 0 12px">Arma tu dieta en 3 pasos:</p>
       <div class="stack start-steps">
-        <a class="card" href="#/objetivo"><span class="step-n">1</span><div class="grow"><strong>Calcula tus calorías objetivo</strong>
-          <span class="muted small">${ct.target ? `Listo: ${fmtKcal(ct.target)} kcal al día` : 'Cuántas calorías debe tener tu dieta'}</span></div><span class="chev">›</span></a>
+        <a class="card" href="#/objetivo"><span class="step-n">1</span><div class="grow"><strong>Calcula tus kcal objetivo</strong>
+          <span class="muted small">${ct.target ? `Listo: ${fmtKcal(ct.target)} kcal al día` : 'Cuántas kcal debe tener tu dieta'}</span></div><span class="chev">›</span></a>
         <a class="card" href="#/nutricion/alimentos"><span class="step-n">2</span><div class="grow"><strong>Revisa tus alimentos</strong>
           <span class="muted small">Usa los ${BASE_FOODS.length} de la base de Desdel o crea los tuyos con su etiqueta</span></div><span class="chev">›</span></a>
         <a class="card" href="#/nutricion/dietas"><span class="step-n">3</span><div class="grow"><strong>Arma tu dieta</strong>
@@ -466,16 +466,51 @@ function saveFood(f) {
   history.back();
 }
 
-// Tarjeta "Tus calorías objetivo: 2.750 kcal" (lleva a la pantalla del cálculo)
+// Promedio diario según tu plan: cada día del ciclo con la dieta que le toca (ej. Día ON ×9 + Día OFF ×5, ÷ 14)
+function planDietAverage() {
+  const p = db.plan, links = dietLinks();
+  if (!p || !Object.keys(links).length) return null;
+  const count = new Map();
+  let total = 0, missing = 0, sum = { ...ZERO };
+  for (const wk of p.days.slice(0, p.weeks)) {
+    for (const id of wk.r) {
+      total++;
+      const routineOk = id && db.routines.some(r => r.id === id);
+      const diet = dietById(links[routineOk ? id : 'rest']);
+      if (!diet) { missing++; continue; }
+      count.set(diet, (count.get(diet) || 0) + 1);
+      sum = sumM([sum, dietMacros(diet)]);
+    }
+  }
+  const days = total - missing;
+  if (!days) return null;
+  return { avg: { kcal: sum.kcal / days, p: sum.p / days, c: sum.c / days, f: sum.f / days }, count, total, missing };
+}
+
+function averageCard() {
+  const a = planDietAverage();
+  if (!a) return '';
+  const ct = calorieTarget(), diff = ct.target ? Math.round(a.avg.kcal - ct.target) : null;
+  const parts = [...a.count].map(([d, n]) => `${esc(d.name)} ×${n}`).join(' + ');
+  return `<section class="card stack avg-card">
+      <span class="muted small">Promedio diario según tu plan</span>
+      <div class="target-kcal"><strong>${fmtKcal(a.avg.kcal)} kcal</strong> al día</div>
+      <span class="muted small">${macroLine(a.avg)}</span>
+      <span class="muted small">${parts} en ${plural(a.total / 7, 'semana')} (${a.total} días)${a.missing ? ` · ${plural(a.missing, 'día')} sin dieta asignada (no se cuenta${a.missing === 1 ? '' : 'n'})` : ''}</span>
+      ${diff != null ? `<span class="muted small">Kcal objetivo: ${fmtKcal(ct.target)} · ${Math.abs(diff) < 50 ? 'calza' : `${diff > 0 ? '+' : '−'}${fmtKcal(Math.abs(diff))} al día`}</span>` : ''}
+    </section>`;
+}
+
+// Tarjeta "Tus kcal objetivo: 2.750 kcal" (lleva a la pantalla del cálculo)
 function targetBanner() {
   const ct = calorieTarget();
   return `<a class="card target-banner" href="#/objetivo">
       <div class="grow">${ct.target
-        ? `<span class="muted small">Tus calorías objetivo</span>
+        ? `<span class="muted small">Tus kcal objetivo</span>
            <div class="target-kcal"><strong>${fmtKcal(ct.target)} kcal</strong> al día</div>
            <span class="muted small">${ct.pace === 0 ? 'Mantener' : `${paceLabel(ct.pace)} al mes`} · Proteína ${Math.round(ct.kg * 1.6)}–${Math.round(ct.kg * 2)} g</span>`
-        : `<strong>Calcula tus calorías objetivo</strong>
-           <span class="muted small">Para saber cuántas calorías debe tener tu dieta</span>`}</div>
+        : `<strong>Calcula tus kcal objetivo</strong>
+           <span class="muted small">Para saber cuántas kcal debe tener tu dieta</span>`}</div>
       <span class="chev">›</span>
     </a>`;
 }
@@ -492,6 +527,7 @@ function viewDiets() {
   }).join('');
   return `${header('Nutrición', { home: true })}${nutriTabs('dietas')}
     ${targetBanner()}
+    ${averageCard()}
     <button class="btn primary block" data-action="diet-new" style="margin:0 0 12px">+ Crear dieta</button>
     ${list || `<p class="empty">${N().foods.length ? 'Crea tu primera dieta.' : 'Primero agrega tus alimentos en <a href="#/nutricion/alimentos">Mis alimentos</a>.'}</p>`}
     ${importForm('Importar dieta con código')}`;
@@ -566,7 +602,7 @@ function setAddMode(form, food) {
 // Barra "2.180 / 2.750 kcal del objetivo · faltan 570" en el editor de dietas
 function dietTargetHtml(kcal) {
   const ct = calorieTarget();
-  if (!ct.target) return '<a class="target-line" href="#/objetivo">Calcula tus calorías objetivo para saber cuántas debe tener esta dieta ›</a>';
+  if (!ct.target) return '<a class="target-line" href="#/objetivo">Calcula tus kcal objetivo para saber cuántas debe tener esta dieta ›</a>';
   const diff = Math.round(ct.target - kcal);
   const status = Math.abs(diff) < 50 ? 'calza con tu objetivo' : diff > 0 ? `faltan ${fmtKcal(diff)}` : `te pasas por ${fmtKcal(-diff)}`;
   return `<div class="diet-target">
@@ -603,7 +639,7 @@ function nutritionCard() {
   </a>`;
 }
 
-// ---------- Calorías objetivo (referencia) ----------
+// ---------- Kcal objetivo (referencia) ----------
 // Metabolismo basal: Katch-McArdle si tienes % de grasa (usa tu masa magra); si no, Mifflin-St Jeor (peso, estatura, edad, sexo).
 // Gasto del día = basal × actividad. Objetivo = gasto ± 7.700 kcal por kg al ritmo que elijas.
 const ACTIVITY = [
@@ -661,7 +697,7 @@ function calorieTarget() {
 // "Objetivo calculado: 2.250 kcal · tu dieta +150"
 function targetLine(dietKcal) {
   const ct = calorieTarget();
-  if (!ct.target) return '<a class="target-line" href="#/objetivo">Calcula tus calorías objetivo ›</a>';
+  if (!ct.target) return '<a class="target-line" href="#/objetivo">Calcula tus kcal objetivo ›</a>';
   const diff = Math.round(dietKcal - ct.target);
   const cmp = Math.abs(diff) < 50 ? 'tu dieta calza' : `tu dieta ${diff > 0 ? '+' : '−'}${fmtKcal(Math.abs(diff))}`;
   return `<a class="target-line" href="#/objetivo">Objetivo calculado: <strong>${fmtKcal(ct.target)} kcal</strong> · ${cmp} ›</a>`;
@@ -688,7 +724,7 @@ function viewTarget() {
         <div class="bd-row bd-total"><strong>Objetivo</strong><span class="bd-val">${fmtKcal(ct.target)} kcal</span></div>
       </section>`;
 
-  return `${header('Calorías objetivo', { back: true, sub: 'Referencia para armar tu dieta' })}
+  return `${header('Kcal objetivo', { back: true, sub: 'Referencia para armar tu dieta' })}
     ${result}
     <h2>¿Qué quieres?</h2>
     <section class="card stack">
@@ -1441,7 +1477,7 @@ function viewAuth(mode) {
       <label class="field"><span>Contraseña${reg ? ' (mínimo 6 caracteres)' : ''}</span>
         <input name="password" type="password" autocomplete="${reg ? 'new-password' : 'current-password'}" required>
       </label>
-      ${reg ? '<p class="muted small" style="margin:0">Se usan para calcular tu FFMI y tus calorías objetivo. Puedes cambiarlos después en ⚙️ Cuenta.</p>' : ''}
+      ${reg ? '<p class="muted small" style="margin:0">Se usan para calcular tu FFMI y tus kcal objetivo. Puedes cambiarlos después en ⚙️ Cuenta.</p>' : ''}
       <p class="auth-error" hidden></p>
       <button class="btn primary block">${reg ? 'Crear cuenta' : 'Entrar'}</button>
     </form>
@@ -1485,7 +1521,7 @@ function viewAccount() {
           <label><input type="radio" name="sex" value="m" ${bd.sex === 'm' ? 'checked' : ''}> Mujer</label>
         </div>
       </div>
-      <p class="muted small" style="margin:0">Se usan para calcular tu FFMI en Peso y tus calorías objetivo en Nutrición.</p>
+      <p class="muted small" style="margin:0">Se usan para calcular tu FFMI en Peso y tus kcal objetivo en Nutrición.</p>
       <p class="form-msg" hidden></p>
       <button class="btn primary block">Guardar cambios</button>
     </form>
@@ -3258,7 +3294,7 @@ function saveSkinfolds(f) {
   if (!entry) { entry = { date }; db.skinfolds.push(entry); }
   Object.assign(entry, { s: vals, bf });
   db.skinfolds.sort((a, b) => (a.date < b.date ? -1 : 1));
-  db.body.bf = bf;   // pasa a ser tu % de grasa (FFMI y calorías objetivo)
+  db.body.bf = bf;   // pasa a ser tu % de grasa (FFMI y kcal objetivo)
   save();
   render();
   formMsg($app.querySelector('[data-form="skin"]'), `Guardado: ${fmtNum(bf)} % de grasa`, true);
