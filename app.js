@@ -2457,42 +2457,63 @@ async function setMyPhoto(url) {
   }
 }
 
-// Ajustar la foto antes de usarla: arrastrar para moverla y barra de zoom (se guarda el cuadrado del círculo)
+// Ajustar la foto antes de usarla: arrastrar para moverla y barra de zoom.
+// Un recorte es { img, src, bw, bh (tamaño del cuadro en pantalla), base, zoom, ox, oy, drag }
 const CROP_BOX = 240;
-let photoEdit = null;   // { img, src, base, zoom, ox, oy, drag }
+let photoEdit = null;   // recorte de la foto de perfil (se guarda el cuadrado del círculo)
 let photoView = false;  // foto de perfil abierta en grande
+function newCrop(img, src, bw, bh) {
+  const base = Math.max(bw / img.width, bh / img.height);   // la foto cubre todo el cuadro
+  return { img, src, bw, bh, base, zoom: 1, ox: (bw - img.width * base) / 2, oy: (bh - img.height * base) / 2 };
+}
+const activeCrop = () => photoEdit || (progNew && progNew.crop) || null;
 function openPhotoEditor(file) {
   const src = URL.createObjectURL(file), img = new Image();
   img.onload = () => {
-    const base = Math.max(CROP_BOX / img.width, CROP_BOX / img.height);   // la foto cubre todo el cuadro
-    photoEdit = { img, src, base, zoom: 1, ox: (CROP_BOX - img.width * base) / 2, oy: (CROP_BOX - img.height * base) / 2 };
+    photoEdit = newCrop(img, src, CROP_BOX, CROP_BOX);
     render();
   };
   img.onerror = () => { URL.revokeObjectURL(src); alert('No se pudo usar esa imagen. Prueba con otra.'); };
   img.src = src;
 }
-const cropScale = () => photoEdit.base * photoEdit.zoom;
-function clampCrop() {
-  const e = photoEdit, w = e.img.width * cropScale(), h = e.img.height * cropScale();
-  e.ox = Math.min(0, Math.max(CROP_BOX - w, e.ox));
-  e.oy = Math.min(0, Math.max(CROP_BOX - h, e.oy));
+const cropScale = e => e.base * e.zoom;
+function clampCrop(e) {
+  const w = e.img.width * cropScale(e), h = e.img.height * cropScale(e);
+  e.ox = Math.min(0, Math.max(e.bw - w, e.ox));
+  e.oy = Math.min(0, Math.max(e.bh - h, e.oy));
 }
 // Mueve la foto en pantalla sin redibujar todo
-function paintCrop() {
+function paintCrop(e) {
   const el = $app.querySelector('.crop-img');
-  if (!el || !photoEdit) return;
-  el.style.width = `${photoEdit.img.width * cropScale()}px`;
-  el.style.height = `${photoEdit.img.height * cropScale()}px`;
-  el.style.transform = `translate(${photoEdit.ox}px, ${photoEdit.oy}px)`;
+  if (!el) return;
+  el.style.width = `${e.img.width * cropScale(e)}px`;
+  el.style.height = `${e.img.height * cropScale(e)}px`;
+  el.style.transform = `translate(${e.ox}px, ${e.oy}px)`;
 }
-function setCropZoom(z) {
-  const e = photoEdit, old = cropScale(), c = CROP_BOX / 2;
-  const cx = (c - e.ox) / old, cy = (c - e.oy) / old;   // el centro del cuadro se mantiene
+function setCropZoom(e, z) {
+  const old = cropScale(e), mx = e.bw / 2, my = e.bh / 2;
+  const cx = (mx - e.ox) / old, cy = (my - e.oy) / old;   // el centro del cuadro se mantiene
   e.zoom = z;
-  e.ox = c - cx * cropScale();
-  e.oy = c - cy * cropScale();
-  clampCrop();
-  paintCrop();
+  e.ox = mx - cx * cropScale(e);
+  e.oy = my - cy * cropScale(e);
+  clampCrop(e);
+  paintCrop(e);
+}
+// Cuadro para mover y hacer zoom (ring: círculo de la foto de perfil)
+const cropBoxHtml = (e, ring) => `<div class="crop-box" style="width:${e.bw}px;height:${e.bh}px">
+        <img class="crop-img" src="${e.src}" alt="" draggable="false"
+          style="width:${e.img.width * cropScale(e)}px;height:${e.img.height * cropScale(e)}px;transform:translate(${e.ox}px, ${e.oy}px)">
+        <span class="${ring ? 'crop-ring' : 'crop-frame'}" aria-hidden="true"></span>
+      </div>
+      <label class="crop-zoom"><span class="muted small">Zoom</span>
+        <input type="range" min="1" max="3" step="0.01" value="${e.zoom}" data-bind="crop-zoom" aria-label="Zoom"></label>
+      <span class="muted small" style="text-align:center">Arrastra la foto para moverla</span>`;
+// Recorta lo que se ve en el cuadro, a `w`×`h` px (JPEG)
+function cropToCanvas(e, w, h, q) {
+  const sc = cropScale(e), canvas = document.createElement('canvas');
+  canvas.width = w; canvas.height = h;
+  canvas.getContext('2d').drawImage(e.img, -e.ox / sc, -e.oy / sc, e.bw / sc, e.bh / sc, 0, 0, w, h);
+  return canvas.toDataURL('image/jpeg', q);
 }
 function closePhotoEditor() {
   if (photoEdit) URL.revokeObjectURL(photoEdit.src);
@@ -2506,14 +2527,7 @@ function photoEditorHtml() {
     <div class="modal-back" data-action="crop-cancel"></div>
     <section class="modal card crop-modal" role="dialog" aria-modal="true" aria-label="Ajustar foto">
       <h2>Ajusta tu foto</h2>
-      <div class="crop-box" style="width:${CROP_BOX}px;height:${CROP_BOX}px">
-        <img class="crop-img" src="${e.src}" alt="" draggable="false"
-          style="width:${e.img.width * cropScale()}px;height:${e.img.height * cropScale()}px;transform:translate(${e.ox}px, ${e.oy}px)">
-        <span class="crop-ring" aria-hidden="true"></span>
-      </div>
-      <label class="crop-zoom"><span class="muted small">Zoom</span>
-        <input type="range" min="1" max="3" step="0.01" value="${e.zoom}" data-bind="crop-zoom" aria-label="Zoom"></label>
-      <span class="muted small" style="text-align:center">Arrastra la foto para moverla</span>
+      ${cropBoxHtml(e, true)}
       <div class="ex-actions">
         <button class="btn ghost" data-action="crop-cancel">Cancelar</button>
         <button class="btn primary" data-action="crop-use">Usar foto</button>
@@ -2521,29 +2535,24 @@ function photoEditorHtml() {
     </section>
   </div>`;
 }
-function cropToDataUrl() {
-  const e = photoEdit, sc = cropScale(), canvas = document.createElement('canvas');
-  canvas.width = canvas.height = 512;   // nítida también al verla en grande (~50 KB)
-  canvas.getContext('2d').drawImage(e.img, -e.ox / sc, -e.oy / sc, CROP_BOX / sc, CROP_BOX / sc, 0, 0, 512, 512);
-  return canvas.toDataURL('image/jpeg', 0.8);
-}
+const cropToDataUrl = () => cropToCanvas(photoEdit, 512, 512, 0.8);   // nítida también al verla en grande (~50 KB)
 // Arrastrar la foto (mouse o dedo)
 $app.addEventListener('pointerdown', e => {
-  const box = e.target.closest('.crop-box');
-  if (!box || !photoEdit) return;
+  const box = e.target.closest('.crop-box'), c = activeCrop();
+  if (!box || !c) return;
   e.preventDefault();
-  photoEdit.drag = { x: e.clientX, y: e.clientY, ox: photoEdit.ox, oy: photoEdit.oy };
+  c.drag = { x: e.clientX, y: e.clientY, ox: c.ox, oy: c.oy };
   box.setPointerCapture(e.pointerId);
 });
 $app.addEventListener('pointermove', e => {
-  if (!photoEdit || !photoEdit.drag) return;
-  const dr = photoEdit.drag;
-  photoEdit.ox = dr.ox + (e.clientX - dr.x);
-  photoEdit.oy = dr.oy + (e.clientY - dr.y);
-  clampCrop();
-  paintCrop();
+  const c = activeCrop();
+  if (!c || !c.drag) return;
+  c.ox = c.drag.ox + (e.clientX - c.drag.x);
+  c.oy = c.drag.oy + (e.clientY - c.drag.y);
+  clampCrop(c);
+  paintCrop(c);
 });
-const endCropDrag = () => { if (photoEdit) photoEdit.drag = null; };
+const endCropDrag = () => { const c = activeCrop(); if (c) c.drag = null; };
 $app.addEventListener('pointerup', endCropDrag);
 $app.addEventListener('pointercancel', endCropDrag);
 
@@ -3468,7 +3477,8 @@ const poseName = k => (POSES.find(p => p[0] === k) || [])[1] || '';
 let progList = null;          // [{ id, date, pose, url (miniatura) }] o null si no se ha cargado
 let progLoading = false, progError = false;
 const progFull = new Map();   // id → foto grande (o 'loading' / 'error')
-let progNew = null;           // foto nueva antes de guardarla: { src, img, pose, date }
+let progNew = null;           // foto nueva antes de guardarla: { crop, pose, date }
+const PROG_BOX = [240, 320];  // cuadro 3:4 en pantalla
 let progOpen = null;          // id de la foto abierta en grande
 let progPose = '';            // filtro de pose ('' = todas)
 let progCmp = null;           // [idAntes, idDespués] elegidos para comparar
@@ -3509,25 +3519,20 @@ const daysBetween = (a, b) => Math.round((Date.parse(bwIso(b)) - Date.parse(bwIs
 
 function openProgressNew(file) {
   const src = URL.createObjectURL(file), img = new Image();
-  img.onload = () => { progNew = { src, img, pose: progPose || 'frente', date: todayKey() }; render(); };
+  img.onload = () => { progNew = { crop: newCrop(img, src, ...PROG_BOX), pose: progPose || 'frente', date: todayKey() }; render(); };
   img.onerror = () => { URL.revokeObjectURL(src); alert('No se pudo usar esa imagen. Prueba con otra.'); };
   img.src = src;
 }
 function closeProgressNew() {
-  if (progNew) URL.revokeObjectURL(progNew.src);
+  if (progNew) URL.revokeObjectURL(progNew.crop.src);
   progNew = null;
-}
-// Achica la foto: lado largo `max` px, en JPEG
-function shrink(img, max, q) {
-  const sc = Math.min(1, max / Math.max(img.width, img.height)), c = document.createElement('canvas');
-  c.width = Math.round(img.width * sc); c.height = Math.round(img.height * sc);
-  c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-  return c.toDataURL('image/jpeg', q);
 }
 async function saveProgressNew(btn) {
   const n = progNew, date = n.date;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || date > todayKey()) return alert('Elige una fecha válida (hoy o antes).');
-  const full = shrink(n.img, 1080, 0.8), thumb = shrink(n.img, 320, 0.7), id = uid();
+  // Grande: hasta 810×1080 (sin agrandar más de lo que trae la foto); miniatura 240×320
+  const c = n.crop, h = Math.round(Math.min(1080, c.bh / cropScale(c)));
+  const full = cropToCanvas(c, Math.round(h * 3 / 4), h, 0.8), thumb = cropToCanvas(c, 240, 320, 0.7), id = uid();
   const meta = { date, pose: n.pose };
   await busy(btn, 'Subiendo…', async () => {
     try {
@@ -3564,7 +3569,7 @@ function progressNewHtml() {
     <div class="modal-back" data-action="prog-cancel"></div>
     <section class="modal card prog-modal" role="dialog" aria-modal="true" aria-label="Nueva foto de progreso">
       <h2>Nueva foto</h2>
-      <img class="prog-preview" src="${n.src}" alt="">
+      ${cropBoxHtml(n.crop, false)}
       <div class="link-chips" role="group" aria-label="Pose">${POSES.map(([k, label]) =>
         `<button class="chip toggle ${n.pose === k ? 'on' : ''}" data-action="prog-pose-new" data-k="${k}" aria-pressed="${n.pose === k}">${label}</button>`).join('')}</div>
       <label class="field"><span>Fecha de la foto</span>
@@ -5148,7 +5153,7 @@ $app.addEventListener('input', e => {
     if (prev) prev.innerHTML = skinPreviewText(SKIN_SITES[db.body.sex].map(([k]) => f.elements[k].value));
     return;
   }
-  if (bind === 'crop-zoom') { if (photoEdit) setCropZoom(Number(el.value)); return; }
+  if (bind === 'crop-zoom') { const c = activeCrop(); if (c) setCropZoom(c, Number(el.value)); return; }
   if (bind === 'plan-day') {
     const p = (db.plan ||= defaultPlan());
     p.days[+el.dataset.w].r[+el.dataset.d] = el.value || null;

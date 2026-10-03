@@ -785,8 +785,9 @@ button.link { color: var(--accent); font-weight: 600; background: none; border: 
 .prog-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .prog-thumb { display: grid; gap: 4px; padding: 0; border: 0; background: none; color: var(--muted); font: inherit; font-size: 12px; text-align: center; cursor: pointer; }
 .prog-thumb img { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 10px; background: var(--surface2); }
-.prog-modal { max-height: calc(100vh - 32px); overflow-y: auto; }
-.prog-preview { width: 100%; max-height: 45vh; object-fit: contain; border-radius: 10px; background: #000; }
+.prog-modal { max-height: calc(100dvh - 32px); overflow-y: auto; justify-items: center; }
+.prog-modal > :not(.crop-box) { justify-self: stretch; }
+.crop-frame { position: absolute; inset: 0; border: 2px solid var(--accent); border-radius: 12px; pointer-events: none; }
 .prog-modal .ex-actions .btn { flex: 1; }
 .cmp-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .cmp-side { display: grid; gap: 6px; min-width: 0; }
