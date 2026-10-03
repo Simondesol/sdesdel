@@ -380,6 +380,9 @@ function setTodayLog(dietId, done) {
   for (const k of Object.keys(N().log)) if (k < min) delete N().log[k];
 }
 
+// Cuerpo: Peso · % Grasa · Medidas · Fotos (como las pestañas de Nutrición)
+const bodyTabs = active => `<div class="range" role="tablist">${[['peso', 'Peso'], ['grasa', '% Grasa'], ['medidas', 'Medidas'], ['fotos', 'Fotos']]
+  .map(([k, label]) => `<a class="${k === active ? 'on' : ''}" href="#/${k}" role="tab">${label}</a>`).join('')}</div>`;
 const nutriTabs = active => `<div class="range" role="tablist">${[['', 'Hoy'], ['dietas', 'Mis dietas'], ['alimentos', 'Mis alimentos']]
   .map(([k, label]) => `<a class="${k === active ? 'on' : ''}" href="#/nutricion${k ? `/${k}` : ''}" role="tab">${label}</a>`).join('')}</div>`;
 
@@ -769,7 +772,7 @@ function viewTarget() {
   const dir = pm < 0 ? 'Bajar' : pm > 0 ? 'Subir' : 'Mantener';
   const result = ct.missing
     ? `<p class="muted card">Para calcularlo falta ${ct.missing.map(([t, href]) => `<a href="${href}">${t}</a>`).join(', ').replace(/, ([^,]*)$/, ' y $1')}.
-        <br><span class="small">Si anotas tu % de grasa en Peso, basta con tu peso.</span></p>`
+        <br><span class="small">Si anotas tu % de grasa en <a href="#/grasa">Cuerpo → % Grasa</a>, basta con tu peso.</span></p>`
     : `<section class="card stack target-card">
         <div class="water-big"><strong>${fmtKcal(ct.target)}</strong> kcal al día</div>
         <span class="muted">${ct.pace === 0 ? 'Para mantener tu peso' : `Para ${paceLabel(ct.pace).toLowerCase()} al mes`}</span>
@@ -1012,7 +1015,7 @@ function viewWater() {
     <h2>Meta diaria</h2>
     <form class="stack card" data-form="water-goal" novalidate>
       <p class="muted" style="margin:0">${g.auto
-        ? (g.kg ? `Calculada con tu peso: 35 ml × ${fmtNum(g.kg)} kg = ${fmtL(g.ml)} L` : 'Anota tu peso en Peso para calcularla. Por ahora: 2,5 L')
+        ? (g.kg ? `Calculada con tu peso: 35 ml × ${fmtNum(g.kg)} kg = ${fmtL(g.ml)} L` : 'Anota tu peso en Cuerpo para calcularla. Por ahora: 2,5 L')
         : `Meta personalizada: ${fmtL(g.ml)} L`}</p>
       <div class="add-row" style="margin-top:0">
         <input name="liters" inputmode="decimal" placeholder="Litros (ej. 3)" value="${g.auto ? '' : fmtL(g.ml)}" autocomplete="off" aria-label="Meta en litros">
@@ -1582,7 +1585,7 @@ function viewAccount() {
           <label><input type="radio" name="sex" value="m" ${bd.sex === 'm' ? 'checked' : ''}> Mujer</label>
         </div>
       </div>
-      <p class="muted small" style="margin:0">Se usan para calcular tu FFMI en Peso y tus kcal objetivo en Nutrición.</p>
+      <p class="muted small" style="margin:0">Se usan para calcular tu FFMI (Cuerpo → % Grasa) y tus kcal objetivo (Nutrición).</p>
       <p class="form-msg" hidden></p>
       <button class="btn primary block">Guardar cambios</button>
     </form>
@@ -3080,7 +3083,7 @@ function bodyweightCard() {
   const last = db.bodyweight[db.bodyweight.length - 1];
   const change = bwChange(30), gi = goalInfo();
   return `<a class="card hub" href="#/peso">
-      <div class="hub-top"><span class="hub-icon">⚖️</span><strong>Peso</strong><span class="chev">›</span></div>
+      <div class="hub-top"><span class="hub-icon">⚖️</span><strong>Cuerpo</strong><span class="chev">›</span></div>
       ${last
         ? `<div class="hub-value"><strong>${fmtKg(last.kg)}</strong></div>
            ${gi ? `${bar(gi.pct, 100)}<span class="muted">${gi.reached ? '🎉 ¡Llegaste a tu meta!' : `${Math.round(gi.pct)}% de tu meta · faltan ${fmtKg(gi.left)}`}</span>`
@@ -3170,7 +3173,15 @@ function viewBodyweight() {
       </section>`;
   }
 
-  // FFMI
+  return `${header('Cuerpo', { home: true })}${bodyTabs('peso')}
+    ${form}
+    ${goalCard}
+    ${rangeButtons(RANGES, bwRange, 'bw')}
+    ${body}`;
+}
+
+// Cuerpo → % Grasa: tu % de grasa (a mano o con pliegues) y el FFMI
+function viewBodyFat() {
   const ff = ffmiInfo(), bf = currentBf();
   const bfForm = `<form class="add-row bf-row" data-form="bf" novalidate style="margin-top:0">
       <span class="muted">% de grasa</span>
@@ -3180,7 +3191,6 @@ function viewBodyweight() {
     </form>
     <a class="skin-link" href="#/pliegues">${db.skinfolds.length ? `Pliegues: última medición ${bwDate(db.skinfolds[db.skinfolds.length - 1].date)} ›` : 'Calcular con pliegues (plicómetro) ›'}</a>`;
   const ffmi = ff ? `<section class="card stack">
-      ${bfForm}
       <div class="ffmi-top"><strong class="ffmi-value">${ff.value.toFixed(1).replace('.', ',')}</strong>
         <span class="badge on">${FFMI_LEVELS[ff.level]}</span></div>
       <span class="muted small">Masa magra ${fmtKg(ff.lean)} (con tu último peso y ${fmtNum(ff.bf)} % de grasa)</span>
@@ -3189,32 +3199,12 @@ function viewBodyweight() {
       </div>`).join('')}</div>
       <p class="muted small" style="margin:0">Mide cuánta masa magra tienes para tu estatura. A diferencia del IMC, no confunde músculo con grasa.</p>
     </section>`
-    : `<section class="card stack">${bfForm}<p class="muted small" style="margin:0">Para ver tu FFMI falta ${ffmiMissing()}</p></section>`;
+    : `<p class="muted card">Para ver tu FFMI falta ${ffmiMissing()}</p>`;
 
-  const allBw = openSections.has('peso-lista');
-  const list = db.bodyweight.slice().reverse().slice(0, allBw ? undefined : 7).map(e => `
-    <div class="prog-row">
-      <span class="muted">${bwDate(e.date)}</span>
-      <span class="bw-right">${fmtKg(e.kg)}
-        <button class="icon small danger" data-action="del-bw" data-date="${e.date}" aria-label="Borrar registro">✕</button>
-      </span>
-    </div>`).join('');
-
-  return `${header('Peso corporal', { back: true, sub: 'Un registro por día' })}
-    ${form}
-    ${goalCard}
-    ${rangeButtons(RANGES, bwRange, 'bw')}
-    ${body}
+  return `${header('Cuerpo', { home: true })}${bodyTabs('grasa')}
+    <section class="card stack">${bfForm}</section>
     <h2>FFMI · masa libre de grasa</h2>
-    ${ffmi}
-    <h2>Medidas y fotos</h2>
-    <div class="hub-pair body-links">
-      <a class="card hub" href="#/medidas"><div class="hub-top"><strong>Medidas</strong><span class="chev">›</span></div>
-        <span class="muted small">${db.measures.length ? `Última: ${bwDate(db.measures[db.measures.length - 1].date)}` : 'Cintura, brazo, pecho… con huincha'}</span></a>
-      <a class="card hub" href="#/fotos"><div class="hub-top"><strong>Fotos</strong><span class="chev">›</span></div>
-        <span class="muted small">Fotos de progreso para comparar</span></a>
-    </div>
-    ${list ? `<h2>Registros</h2><section class="card">${list}</section>${moreBtn('peso-lista', db.bodyweight.length)}` : ''}`;
+    ${ffmi}`;
 }
 
 function saveBodyweight(f) {
@@ -3388,7 +3378,7 @@ const lastMeasure = k => { for (let n = db.measures.length - 1; n >= 0; n--) if 
 function viewMeasures() {
   const today = db.measures.find(e => e.date === todayKey());
   const form = `<form class="stack card" data-form="measures" novalidate>
-      <span class="muted small">${today ? 'Hoy ya mediste; puedes corregirlo.' : 'Medidas de hoy, en centímetros. Anota solo las que quieras.'}</span>
+      <span class="muted small">${today ? 'Hoy ya mediste con huincha; puedes corregirlo.' : 'Medidas de hoy con huincha, en cm. Anota solo las que quieras.'}</span>
       <div class="measure-inputs">${MEASURE_SITES.map(([k, name]) => {
         const last = lastMeasure(k);
         return `<label class="field"><span>${name}</span>
@@ -3440,7 +3430,7 @@ function viewMeasures() {
         <button class="icon small danger" data-action="del-measure" data-date="${e.date}" aria-label="Borrar medición">✕</button></span>
     </div>`).join('');
 
-  return `${header('Medidas', { back: true, sub: 'Con huincha, en centímetros' })}
+  return `${header('Cuerpo', { home: true })}${bodyTabs('medidas')}
     ${form}
     ${howTo}
     <h2>Evolución</h2>
@@ -3652,7 +3642,8 @@ function viewProgressPhotos() {
       </button>`).join('');
     body = `${filter}${cmp}<h2>Todas (${list.length})</h2><div class="prog-grid">${grid}</div>`;
   }
-  return `${header('Fotos de progreso', { back: true, sub: 'Privadas: solo tú las ves' })}
+  return `${header('Cuerpo', { home: true })}${bodyTabs('fotos')}
+    <p class="muted small prog-note">Fotos de progreso privadas: solo tú las ves.</p>
     ${add}
     ${body}
     ${progNew ? progressNewHtml() : ''}
@@ -3928,6 +3919,7 @@ function render() {
     case 'perfil': html = viewProfile(arg); break;
     case 'privacidad': html = viewPrivacy(); break;
     case 'plan': html = viewPlan(); break;
+    case 'grasa': html = viewBodyFat(); break;
     case 'pliegues': html = viewSkinfolds(); break;
     case 'medidas': html = viewMeasures(); break;
     case 'fotos': html = viewProgressPhotos(); break;
@@ -4484,18 +4476,6 @@ $app.addEventListener('click', e => {
       goalEditing = false;
       save(); render();
       break;
-    case 'del-bw': {
-      const k = db.bodyweight.findIndex(e => e.date === el.dataset.date);
-      if (k < 0) return;
-      const [removed] = db.bodyweight.splice(k, 1);
-      save(); render();
-      showUndo(`Registro de ${bwDate(removed.date)} borrado`, () => {
-        db.bodyweight.push(removed);
-        db.bodyweight.sort((a, b) => (a.date < b.date ? -1 : 1));
-        save(); render();
-      });
-      break;
-    }
     case 'range':
       if (el.dataset.s === 'bw') bwRange = el.dataset.r;
       else if (el.dataset.s === 'sl') sleepRange = el.dataset.r;

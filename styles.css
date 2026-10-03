@@ -813,3 +813,6 @@ button.link { color: var(--accent); font-weight: 600; background: none; border: 
 .wk-stat { display: grid; align-content: start; gap: 2px; padding: 8px 10px; background: var(--surface2); border-radius: 10px; min-width: 0; }
 .wk-stat strong { font-size: 17px; font-variant-numeric: tabular-nums; }
 .wk-prs { color: var(--accent); }
+
+/* Cuerpo */
+.prog-note { margin: 0 0 8px; }
