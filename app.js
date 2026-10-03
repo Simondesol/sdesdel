@@ -11,7 +11,7 @@ const $tabs = document.getElementById('tabs');
 const emptyWater = () => ({ goalMl: null, days: {} });   // days: { 'AAAA-MM-DD': [{ at, ml }] }
 // Nutrición: alimentos (valores por 100 g), dietas con comidas y el registro de comidas marcadas por día
 const emptyNutrition = () => ({ foods: [], diets: [], activeDietId: null, log: {} });
-const emptyDb = () => ({ routines: [], workouts: [], draft: null, notes: {}, bodyweight: [], body: {}, sleep: [], plan: null, water: emptyWater(), nutrition: emptyNutrition() });
+const emptyDb = () => ({ routines: [], workouts: [], draft: null, notes: {}, bodyweight: [], body: {}, sleep: [], skinfolds: [], plan: null, water: emptyWater(), nutrition: emptyNutrition() });
 const emptySynced = () => ({ main: null, w: {} });
 let db = emptyDb();
 let user = null;                 // { uid, email, username }
@@ -250,13 +250,48 @@ const dietMacros = diet => sumM(diet.meals.map(mealMacros));
 const macroLine = m => `P ${fmtG(m.p)} g · C ${fmtG(m.c)} g · G ${fmtG(m.f)} g`;
 
 // Hoy: qué dieta se usa y qué comidas están marcadas
-// Dieta según tu plan: días de entreno (o si entrenaste hoy) → dieta "on"; días de descanso → dieta "off"
+// Dietas vinculadas a días: N().dietLinks = { rest: dietId, [id de rutina]: dietId } (cada día con una sola dieta).
+// Cada día se usa la de la rutina que toca según Mi plan (o la que entrenaste hoy), o la de descanso.
+function dietLinks() {
+  const n = N();
+  if (!n.dietLinks) {
+    // Antes era "días de entreno / días de descanso": se pasa a cada rutina del plan
+    const links = {}, pd = n.planDiets;
+    if (pd) {
+      if (pd.off) links.rest = pd.off;
+      if (pd.on) for (const r of db.routines) links[r.id] = pd.on;
+    }
+    n.dietLinks = links;
+    delete n.planDiets;
+  }
+  return n.dietLinks;
+}
 function planDietToday() {
-  const pd = N().planDiets;
-  if (!pd || !db.plan) return null;
-  const t = todayKey(), training = !!plannedRoutine(t) || trainedOn(t);
-  const id = training ? pd.on : pd.off;
-  return dietById(id) ? { id, training } : null;
+  const links = dietLinks();
+  if (!Object.keys(links).length) return null;
+  const t = todayKey(), planned = plannedRoutine(t);
+  const trained = db.workouts.filter(w => dayKeyOf(w.date) === t).pop();
+  let key, label;
+  if (trained && links[trained.routineId]) { key = trained.routineId; label = `día de ${trained.routineName}`; }
+  else if (planned) { key = planned.id; label = `día de ${planned.name}`; }
+  else if (planned === null && !trained) { key = 'rest'; label = 'día de descanso'; }
+  else return null;
+  return dietById(links[key]) ? { id: links[key], label } : null;
+}
+
+// En el editor de dieta: "Usar esta dieta los días de: [Descanso] [Pierna] [Brazo]…"
+function dietLinksHtml(diet) {
+  const links = dietLinks();
+  const opts = [['rest', 'Descanso'], ...db.routines.map(r => [r.id, r.name || '(sin nombre)'])];
+  const chips = opts.map(([k, name]) => {
+    const other = links[k] && links[k] !== diet.id ? dietById(links[k]) : null;
+    return `<button class="chip toggle ${links[k] === diet.id ? 'on' : ''}" data-action="diet-link" data-k="${k}">${esc(name)}${other ? `<small> · en ${esc(other.name)}</small>` : ''}</button>`;
+  }).join('');
+  return `<section class="card stack diet-links">
+      <strong>Usar esta dieta los días de</strong>
+      <div class="link-chips">${chips}</div>
+      <span class="muted small">Cada día la app elige sola la dieta de la rutina que te toca en <a href="#/plan">Mi plan</a> (o la que entrenaste), o la de descanso.${db.plan ? '' : ' Para saber qué días son de descanso, arma tu plan.'}</span>
+    </section>`;
 }
 
 function todayNutrition() {
@@ -319,7 +354,7 @@ function viewNutrition(section) {
   // "Hoy: Día ON · día de entreno" (según tu plan)
   const planNote = auto ? `<p class="muted small plan-diet-note">${manual
       ? `Hoy elegiste <strong>${esc(diet.name)}</strong> a mano · <button class="link" data-action="nutri-auto">volver a la del plan</button>`
-      : `Hoy: <strong>${esc(diet.name)}</strong> · ${auto.training ? 'día de entreno' : 'día de descanso'}`}</p>` : '';
+      : `Hoy: <strong>${esc(diet.name)}</strong> · ${esc(auto.label)}`}</p>` : '';
   return `${head}${planNote}${chooser}
     <section class="card nutri-sum">
       <div class="water-big"><strong>${fmtKcal(eaten.kcal)}</strong> / ${fmtKcal(goal.kcal)} kcal</div>
@@ -429,22 +464,6 @@ function saveFood(f) {
   history.back();
 }
 
-// Tarjeta "Dieta según tu plan": qué dieta usar los días de entreno y los de descanso
-function planDietsCard() {
-  if (!N().diets.length) return '';
-  if (!db.plan) return `<a class="card plan-diets" href="#/plan"><div class="grow"><strong>Dieta según tu plan</strong>
-      <span class="muted small">Arma tu plan de entrenos y la app elegirá sola tu dieta de los días de entreno y de descanso</span></div><span class="chev">›</span></a>`;
-  const pd = N().planDiets || {};
-  const sel = k => `<select data-bind="plan-diet" data-k="${k}" aria-label="${k === 'on' ? 'Dieta de los días de entreno' : 'Dieta de los días de descanso'}">
-      <option value="">Elige una dieta</option>${N().diets.map(d => `<option value="${d.id}" ${d.id === pd[k] ? 'selected' : ''}>${esc(d.name)}</option>`).join('')}</select>`;
-  return `<section class="card plan-diets stack">
-      <strong>Dieta según tu plan</strong>
-      <label class="plan-row"><span>Días de entreno</span>${sel('on')}</label>
-      <label class="plan-row"><span>Días de descanso</span>${sel('off')}</label>
-      <span class="muted small">Cada día se usa la que corresponde según <a href="#/plan">Mi plan</a>. Si entrenas un día de descanso, cambia sola a la de entreno.</span>
-    </section>`;
-}
-
 // Tarjeta "Tus calorías objetivo: 2.750 kcal" (lleva a la pantalla del cálculo)
 function targetBanner() {
   const ct = calorieTarget();
@@ -471,7 +490,6 @@ function viewDiets() {
   }).join('');
   return `${header('Nutrición', { home: true })}${nutriTabs('dietas')}
     ${targetBanner()}
-    ${planDietsCard()}
     <button class="btn primary block" data-action="diet-new" style="margin:0 0 12px">+ Crear dieta</button>
     ${list || `<p class="empty">${N().foods.length ? 'Crea tu primera dieta.' : 'Primero agrega tus alimentos en <a href="#/nutricion/alimentos">Mis alimentos</a>.'}</p>`}
     ${importForm('Importar dieta con código')}`;
@@ -516,6 +534,7 @@ function viewDietEditor(id) {
   }).join('');
   return `${header('Editar dieta', { back: true })}
     <label class="field"><span>Nombre de la dieta</span><input data-bind="diet-name" value="${esc(diet.name)}" autocomplete="off"></label>
+    ${dietLinksHtml(diet)}
     <section class="card nutri-sum" style="margin-top:12px">
       <div class="muted small">Total de la dieta</div>
       <div data-diet-total><strong class="big">${fmtKcal(total.kcal)} kcal</strong><div class="muted small">${macroLine(total)}</div></div>
@@ -3051,7 +3070,8 @@ function viewBodyweight() {
       <input name="bf" inputmode="decimal" value="${bf != null ? toField(bf) : ''}" placeholder="ej. 18" autocomplete="off" aria-label="Porcentaje de grasa">
       <span class="unit-label">%</span>
       <button class="btn">Guardar</button>
-    </form>`;
+    </form>
+    <a class="skin-link" href="#/pliegues">${db.skinfolds.length ? `Pliegues: última medición ${bwDate(db.skinfolds[db.skinfolds.length - 1].date)} ›` : 'Calcular con pliegues (plicómetro) ›'}</a>`;
   const ffmi = ff ? `<section class="card stack">
       ${bfForm}
       <div class="ffmi-top"><strong class="ffmi-value">${ff.value.toFixed(1).replace('.', ',')}</strong>
@@ -3120,6 +3140,119 @@ function saveBf(f) {
   render();
 }
 
+
+// ---------- Pliegues (Jackson-Pollock, 3 pliegues) ----------
+// db.skinfolds = [{ date: 'AAAA-MM-DD', s: { pecho, abdomen, muslo } (o tríceps, suprailíaco, muslo), bf }]
+// Hombres: pecho, abdomen y muslo. Mujeres: tríceps, suprailíaco y muslo. % de grasa con la fórmula de Siri.
+const SKIN_SITES = {
+  h: [['pecho', 'Pecho', 'Diagonal, a mitad de camino entre la axila y el pezón'],
+      ['abdomen', 'Abdomen', 'Vertical, 2 cm a la derecha del ombligo'],
+      ['muslo', 'Muslo', 'Vertical, al frente del muslo, a mitad entre la cadera y la rodilla']],
+  m: [['triceps', 'Tríceps', 'Vertical, atrás del brazo, a mitad entre el hombro y el codo'],
+      ['suprailiaco', 'Suprailíaco', 'Diagonal, justo arriba del hueso de la cadera'],
+      ['muslo', 'Muslo', 'Vertical, al frente del muslo, a mitad entre la cadera y la rodilla']],
+};
+let skinView = 'bf', skinRange = 'mes';
+function jp3(sum, sex, age) {
+  const bd = sex === 'm'
+    ? 1.0994921 - 0.0009929 * sum + 0.0000023 * sum * sum - 0.0001392 * age
+    : 1.10938 - 0.0008267 * sum + 0.0000016 * sum * sum - 0.0002574 * age;
+  return 495 / bd - 450;
+}
+const skinAge = () => (db.body.birthYear ? new Date().getFullYear() - db.body.birthYear : null);
+
+function viewSkinfolds() {
+  const b = db.body, age = skinAge();
+  if (!b.sex || !age) {
+    return `${header('Pliegues', { back: true })}
+      <p class="muted card">Para calcular tu % de grasa con pliegues falta ${[!b.sex && 'tu sexo', !age && 'tu año de nacimiento'].filter(Boolean).join(' y ')}. Ponlo en <a href="#/cuenta">⚙️ Cuenta → Mis datos</a>.</p>`;
+  }
+  const sites = SKIN_SITES[b.sex], today = db.skinfolds.find(e => e.date === todayKey());
+  const form = `<form class="stack card" data-form="skin" novalidate>
+      <span class="muted small">${today ? 'Hoy ya mediste; puedes corregirlo.' : 'Medición de hoy, en milímetros'}</span>
+      <div class="skin-inputs">${sites.map(([k, name]) => `<label class="field"><span>${name}</span>
+        <div class="add-row" style="margin-top:0"><input name="${k}" data-bind="skin" inputmode="decimal" value="${today ? toField(today.s[k]) : ''}" placeholder="mm" autocomplete="off" aria-label="${name} en mm"></div>
+      </label>`).join('')}</div>
+      <p class="skin-preview muted">${skinPreviewText(today ? sites.map(([k]) => today.s[k]) : [])}</p>
+      <button class="btn primary block">Guardar y usar este %</button>
+      <p class="form-msg" hidden></p>
+    </form>`;
+  const howTo = `${sectionHead('pliegues-como', 'Cómo medir')}
+    ${openSections.has('pliegues-como') ? `<section class="card stack">
+      ${sites.map(([, name, how]) => `<div><strong>${name}:</strong> <span class="muted">${how}.</span></div>`).join('')}
+      <span class="muted small">Mide en el lado derecho, con la piel seca y antes de entrenar. Toma el pliegue con los dedos, pon el plicómetro 1 cm al lado y lee a los 2 segundos. Mide 2 veces y usa el promedio. Siempre a la misma hora para comparar bien.</span>
+    </section>` : ''}`;
+
+  // Evolución: % de grasa o cada pliegue
+  const days = EX_RANGES.find(r => r[0] === skinRange)[2], since = Date.now() - days * 86400000;
+  const inRange = db.skinfolds.filter(e => Date.parse(bwIso(e.date)) >= since);
+  const isBf = skinView === 'bf', unit = isBf ? '%' : 'mm';
+  const viewName = isBf ? '% de grasa' : (sites.find(([k]) => k === skinView) || [])[1];
+  const points = inRange.filter(e => (isBf ? e.bf : e.s[skinView]) != null).map(e => {
+    const y = isBf ? e.bf : e.s[skinView];
+    return { t: Date.parse(bwIso(e.date)), date: bwIso(e.date), y, tip: `${fmtNum(y)} ${unit}` };
+  });
+  chart = null;
+  const views = `<div class="skin-views">${[['bf', '% grasa'], ...sites.map(([k, name]) => [k, name])].map(([k, name]) =>
+    `<button class="chip toggle ${k === skinView ? 'on' : ''}" data-action="skin-view" data-k="${k}">${name}</button>`).join('')}</div>`;
+  let body;
+  if (!db.skinfolds.length) body = '<p class="empty">Cuando guardes tu primera medición verás aquí su evolución.</p>';
+  else if (!points.length) body = '<p class="empty">No hay mediciones en este período.</p>';
+  else {
+    const first = points[0], last = points[points.length - 1];
+    body = `<div class="stats">
+        <div class="stat"><span class="muted">Última</span><strong>${fmtNum(last.y)} ${unit}</strong><span class="muted">${bwDate(dayKeyOf(last.date))}</span></div>
+        ${points.length > 1 ? `<div class="stat"><span class="muted">Cambio</span><strong>${signed(last.y - first.y)} ${unit}</strong><span class="muted">desde ${bwDate(dayKeyOf(first.date))}</span></div>` : ''}
+      </div>
+      <section class="card chart-card">
+        ${chartSvg(points, unit, days, `${viewName} por medición`)}
+        <div class="tip" hidden></div>
+      </section>`;
+  }
+  const all = openSections.has('pliegues-lista');
+  const list = db.skinfolds.slice().reverse().slice(0, all ? undefined : 7).map(e => `
+    <div class="prog-row">
+      <span class="muted">${bwDate(e.date)}</span>
+      <span class="bw-right"><strong>${fmtNum(e.bf)} %</strong> <span class="muted small">${sites.map(([k]) => fmtNum(e.s[k] ?? 0)).join(' · ')} mm</span>
+        <button class="icon small danger" data-action="del-skin" data-date="${e.date}" aria-label="Borrar medición">✕</button></span>
+    </div>`).join('');
+
+  return `${header('Pliegues', { back: true, sub: `Jackson-Pollock 3 pliegues · ${sites.map(([, n]) => n.toLowerCase()).join(', ')}` })}
+    ${form}
+    ${howTo}
+    <h2>Evolución</h2>
+    ${views}
+    ${rangeButtons(EX_RANGES, skinRange, 'sk')}
+    ${body}
+    ${list ? `<h2>Mediciones</h2><section class="card">${list}</section>${moreBtn('pliegues-lista', db.skinfolds.length)}` : ''}`;
+}
+
+// "Suma: 42 mm → 13,8 % de grasa"
+function skinPreviewText(vals) {
+  const nums = vals.map(v => num(String(v ?? ''))).filter(v => v != null && v > 0);
+  if (nums.length < 3) return 'Anota los 3 pliegues para calcular tu % de grasa.';
+  const sum = nums.reduce((a, v) => a + v, 0);
+  return `Suma: ${fmtNum(round1(sum))} mm → <strong>${fmtNum(round1(jp3(sum, db.body.sex, skinAge())))} % de grasa</strong>`;
+}
+
+function saveSkinfolds(f) {
+  const sites = SKIN_SITES[db.body.sex], vals = {};
+  for (const [k, name] of sites) {
+    const v = num(f.elements[k].value);
+    if (v == null || v < 2 || v > 80) return formMsg(f, `Escribe el pliegue de ${name.toLowerCase()} en mm (entre 2 y 80).`);
+    vals[k] = round1(v);
+  }
+  const sum = Object.values(vals).reduce((a, v) => a + v, 0), bf = round1(jp3(sum, db.body.sex, skinAge()));
+  const date = todayKey();
+  let entry = db.skinfolds.find(e => e.date === date);
+  if (!entry) { entry = { date }; db.skinfolds.push(entry); }
+  Object.assign(entry, { s: vals, bf });
+  db.skinfolds.sort((a, b) => (a.date < b.date ? -1 : 1));
+  db.body.bf = bf;   // pasa a ser tu % de grasa (FFMI y calorías objetivo)
+  save();
+  render();
+  formMsg($app.querySelector('[data-form="skin"]'), `Guardado: ${fmtNum(bf)} % de grasa`, true);
+}
 
 // ---------- Sueño ----------
 // Un registro por día: { date: 'AAAA-MM-DD', h } con las horas que dormiste la noche anterior
@@ -3388,6 +3521,7 @@ function render() {
     case 'perfil': html = viewProfile(arg); break;
     case 'privacidad': html = viewPrivacy(); break;
     case 'plan': html = viewPlan(); break;
+    case 'pliegues': html = viewSkinfolds(); break;
     default: html = viewHub();   // Inicio: sin pestañas
   }
   $app.innerHTML = html;
@@ -3616,6 +3750,7 @@ const mainData = () => ({
   routines: db.routines, notes: db.notes,
   ...(db.bodyweight.length ? { bodyweight: db.bodyweight } : {}),
   ...(db.sleep.length ? { sleep: db.sleep } : {}),
+  ...(db.skinfolds.length ? { skinfolds: db.skinfolds } : {}),
   ...(hasBody(db.body) ? { body: db.body } : {}),
   ...(db.plan ? { plan: db.plan } : {}),
   ...(hasWater(db.water) ? { water: db.water } : {}),
@@ -3671,12 +3806,13 @@ async function sync() {
 
 // Cambios que llegan desde otro dispositivo. Si aquí hay cambios sin subir, ganan los de aquí.
 function applyRemoteMain(data) {
-  const bw = data.bodyweight || [], sl = data.sleep || [], body = data.body || {}, plan = data.plan || null;
+  const bw = data.bodyweight || [], sl = data.sleep || [], body = data.body || {}, plan = data.plan || null, sk = data.skinfolds || [];
   const water = hasWater(data.water) ? { ...emptyWater(), ...data.water } : emptyWater();
   const remote = {
     routines: data.routines || [], notes: data.notes || {},
     ...(bw.length ? { bodyweight: bw } : {}),
     ...(sl.length ? { sleep: sl } : {}),
+    ...(sk.length ? { skinfolds: sk } : {}),
     ...(hasBody(body) ? { body } : {}),
     ...(plan ? { plan } : {}),
     ...(hasWater(water) ? { water } : {}),
@@ -3685,7 +3821,7 @@ function applyRemoteMain(data) {
   const r = stable(remote), local = stable(mainData());
   if (local !== synced.main) return;
   synced.main = r;
-  if (r !== local) { db.routines = remote.routines; db.notes = remote.notes; db.bodyweight = bw; db.sleep = sl; db.body = body; db.plan = plan; db.water = water; db.nutrition = hasNutrition(data.nutrition) ? { ...emptyNutrition(), ...data.nutrition } : emptyNutrition(); refresh(); }
+  if (r !== local) { db.routines = remote.routines; db.notes = remote.notes; db.bodyweight = bw; db.sleep = sl; db.skinfolds = sk; db.body = body; db.plan = plan; db.water = water; db.nutrition = hasNutrition(data.nutrition) ? { ...emptyNutrition(), ...data.nutrition } : emptyNutrition(); refresh(); }
   persistLocal();
 }
 
@@ -3730,6 +3866,7 @@ async function loadFromCloud() {
     db.notes = main.notes || {};
     db.bodyweight = main.bodyweight || [];
     db.sleep = main.sleep || [];
+    db.skinfolds = main.skinfolds || [];
     db.body = main.body || {};
     db.plan = main.plan || null;
     db.water = hasWater(main.water) ? { ...emptyWater(), ...main.water } : emptyWater();
@@ -3949,6 +4086,7 @@ $app.addEventListener('click', e => {
     case 'range':
       if (el.dataset.s === 'bw') bwRange = el.dataset.r;
       else if (el.dataset.s === 'sl') sleepRange = el.dataset.r;
+      else if (el.dataset.s === 'sk') skinRange = el.dataset.r;
       else progressRange = el.dataset.r;
       render();
       break;
@@ -4191,6 +4329,29 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       N().activeDietId = id;
       setTodayLog(id, (log && log.byDiet && log.byDiet[id]) || []);
       if (planDietToday()) N().log[todayKey()].manual = true;   // elegida a mano: solo por hoy
+      save(); render();
+      break;
+    }
+    case 'skin-view':
+      skinView = el.dataset.k;
+      render();
+      break;
+    case 'del-skin': {
+      const k = db.skinfolds.findIndex(e => e.date === el.dataset.date);
+      if (k < 0) return;
+      const [removed] = db.skinfolds.splice(k, 1);
+      save(); render();
+      showUndo(`Medición de ${bwDate(removed.date)} borrada`, () => {
+        db.skinfolds.push(removed);
+        db.skinfolds.sort((a, b) => (a.date < b.date ? -1 : 1));
+        save(); render();
+      });
+      break;
+    }
+    case 'diet-link': {
+      // Cada día va con una sola dieta: si estaba en otra, se pasa a esta
+      const links = dietLinks(), diet = dietById(routeParts()[1]), k = el.dataset.k;
+      if (links[k] === diet.id) delete links[k]; else links[k] = diet.id;
       save(); render();
       break;
     }
@@ -4522,12 +4683,13 @@ $app.addEventListener('input', e => {
     return;
   }
   const i = +el.dataset.i, j = +el.dataset.j;
-  if (bind === 'crop-zoom') { if (photoEdit) setCropZoom(Number(el.value)); return; }
-  if (bind === 'plan-diet') {
-    (N().planDiets ||= {})[el.dataset.k] = el.value || null;
-    save();
+  if (bind === 'skin') {
+    // Vista previa del % mientras escribes
+    const f = el.closest('form'), prev = f.querySelector('.skin-preview');
+    if (prev) prev.innerHTML = skinPreviewText(SKIN_SITES[db.body.sex].map(([k]) => f.elements[k].value));
     return;
   }
+  if (bind === 'crop-zoom') { if (photoEdit) setCropZoom(Number(el.value)); return; }
   if (bind === 'plan-day') {
     const p = (db.plan ||= defaultPlan());
     p.days[+el.dataset.w].r[+el.dataset.d] = el.value || null;
@@ -4616,6 +4778,7 @@ $app.addEventListener('submit', e => {
     case 'bodyweight': saveBodyweight(f); return;
     case 'goal': saveGoal(f); return;
     case 'bf': saveBf(f); return;
+    case 'skin': saveSkinfolds(f); return;
     case 'sleep': saveSleep(parseHours(f.elements.h.value), f); return;
     case 'food': saveFood(f); return;
     case 'add-item': {

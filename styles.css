@@ -745,3 +745,15 @@ a.plan-diets .grow { display: grid; gap: 2px; }
   text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px;
 }
 button.link { text-decoration: underline; text-underline-offset: 3px; }
+
+/* Dieta vinculada a días */
+.diet-links { margin-top: 12px; }
+.link-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.link-chips .chip small { font-weight: 400; color: var(--muted); }
+/* Pliegues */
+.skin-link { display: block; color: var(--accent); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; font-size: 14px; }
+.skin-inputs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.skin-inputs input { min-width: 0; width: 100%; text-align: center; }
+.skin-preview { margin: 0; }
+.skin-preview strong { color: var(--accent); }
+.skin-views { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
