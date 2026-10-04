@@ -21,6 +21,7 @@ let status = 'booting';          // booting | signed-out | ready | load-error | 
 let pendingUsername = null;      // nombre elegido al registrarse (Firebase lo avisa un poco después)
 let pendingBody = null;          // estatura y sexo elegidos al registrarse (se guardan al entrar)
 let authUser = null;             // último usuario informado por Firebase
+let firstOpen = true;            // la app recién se abrió (para volver al entrenamiento en curso)
 
 let lastUnit = 'kg';
 // Unidades de peso; "placas" es para máquinas con los números borrados (se anota cuántas placas)
@@ -4101,8 +4102,10 @@ function setTimer(t) {
 }
 
 // Actualiza solo los textos del cronómetro (sin redibujar la pantalla)
+const DONE_SHOW = 8;   // segundos que se ve "¡A darle!" antes de desaparecer
 function paintTimer() {
   const d = db.draft;
+  if (d && d.timer && Date.now() - d.timer.endsAt > DONE_SHOW * 1000) { setTimer(null); return; }
   const t = routeParts()[0] === 'entrenar' && d && d.timer ? d.timer : null;
   const left = t ? Math.ceil((t.endsAt - Date.now()) / 1000) : 0;
 
@@ -4341,6 +4344,9 @@ async function handleUser(u) {
   pendingBody = null;
 
   status = 'ready';
+  // Si el teléfono cerró la app en medio del entrenamiento, al abrirla vuelves a él (no al inicio)
+  if (firstOpen && db.draft && routeParts()[0] === '') location.replace('#/entrenar');
+  firstOpen = false;
   persistLocal();
   stopListening = cloud.listen(u.uid, applyRemoteMain, applyRemoteWorkouts);
   startSocial(u.uid);
@@ -4657,7 +4663,7 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
     }
     case 'rest': {
       const t = db.draft.timer;
-      if (t && t.i === i) setTimer(null);    // tocar de nuevo lo detiene
+      if (t && t.i === i && t.endsAt > Date.now()) setTimer(null);    // tocar de nuevo lo detiene (si ya terminó, empieza otro)
       else setTimer({ i, endsAt: Date.now() + db.draft.exercises[i].rest * 1000 });
       break;
     }
