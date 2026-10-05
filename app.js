@@ -528,7 +528,7 @@ function saveFood(f) {
     N().foods.push({ id: uid(), ...data });
   }
   save();
-  history.back();
+  goBack();
 }
 
 // Promedio diario según tu plan: cada día del ciclo con la dieta que le toca (ej. Día ON ×9 + Día OFF ×5, ÷ 14)
@@ -3945,6 +3945,30 @@ const go = hash => { location.hash = hash; };
 
 window.addEventListener('hashchange', () => { hideToast(); render(); window.scrollTo(0, 0); });
 
+// Pantalla "de arriba" de cada pantalla (para volver cuando no hay historial)
+function parentRoute() {
+  const [screen, arg] = routeParts();
+  return {
+    rutina: '#/rutinas', plan: '#/rutinas', editar: '#/historial', sesion: '#/historial',
+    progreso: arg ? '#/progreso' : '#/', ejercicio: '#/progreso',
+    alimento: '#/nutricion/alimentos', dieta: '#/nutricion/dietas', objetivo: '#/nutricion/dietas',
+    chat: '#/social', gymbro: '#/social', perfil: '#/social', privacidad: '#/perfil/yo', pliegues: '#/grasa',
+  }[screen] || '#/';
+}
+// Volver atrás. Si no hay pantalla anterior (ej. la app se reabrió directo en el entrenamiento),
+// va a la pantalla de arriba en vez de quedarse sin hacer nada.
+function goBack() {
+  const fallback = parentRoute();
+  let moved = false;
+  const onPop = () => { moved = true; };
+  window.addEventListener('popstate', onPop, { once: true });
+  history.back();
+  setTimeout(() => {
+    window.removeEventListener('popstate', onPop);
+    if (!moved) location.replace(fallback);
+  }, 350);
+}
+
 // ---------- Aviso con "Deshacer" ----------
 const $toast = document.createElement('div');
 $toast.className = 'toast';
@@ -4045,7 +4069,7 @@ function saveEdit() {
   if (!exercises.length) { alert('El entrenamiento quedó sin series. Si quieres borrarlo, usa "Eliminar este entrenamiento".'); return; }
   w.exercises = exercises;
   save();
-  history.back();
+  goBack();
 }
 
 // Busca un ejercicio que ya exista con ese nombre (en rutinas o historial) para mantener su historial
@@ -4442,7 +4466,7 @@ $app.addEventListener('click', e => {
 
   switch (action) {
     case 'back':
-      history.back();
+      goBack();
       break;
 
     case 'start': {
@@ -4576,7 +4600,7 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       if (!confirm(`¿Eliminar la rutina "${r.name}"? Tu historial se mantiene.${warn}`)) return;
       db.routines = db.routines.filter(x => x !== r);
       if (db.plan) for (const wk of db.plan.days) wk.r = wk.r.map(id => (id === r.id ? null : id));
-      save(); history.back();
+      save(); goBack();
       break;
     }
 
@@ -4834,7 +4858,7 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
         : `¿Eliminar "${food.name}"?`)) return;
       for (const d of N().diets) for (const m of d.meals) m.items = m.items.filter(it => it.foodId !== food.id);
       N().foods = N().foods.filter(f => f !== food);
-      save(); history.back();
+      save(); goBack();
       break;
     }
     case 'diet-new': {
@@ -4958,7 +4982,7 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
     case 'del-session':
       if (!confirm('¿Eliminar este entrenamiento del historial?')) return;
       db.workouts = db.workouts.filter(w => w.id !== id);
-      save(); history.back();
+      save(); goBack();
       break;
 
     // Compartir rutinas
