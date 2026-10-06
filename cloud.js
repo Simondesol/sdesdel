@@ -2,7 +2,7 @@
 // Estructura en Firestore:
 //   users/{uid}                 → { username, email, createdAt }
 //   users/{uid}/data/main       → { routines, notes }
-//   users/{uid}/workouts/{id}   → un entrenamiento guardado
+//   users/{uid}/workouts/{id}   → un entrenamiento guardado (+ _at: cuándo cambió; _del: borrado)
 //   users/{uid}/progressThumbs/{id} y progress/{id} → fotos de progreso (miniatura + grande)
 //   shared/{código}             → rutina o dieta compartida { ownerUid, ownerName, routine | diet, createdAt }
 //   invites/{código}            → código de gymbro { ownerUid, ownerName, createdAt }
@@ -17,7 +17,7 @@ import {
 } from 'https://www.gstatic.com/firebasejs/12.8.0/firebase-auth.js';
 import {
   getFirestore, doc, collection, getDoc, getDocs, setDoc, deleteDoc, onSnapshot, serverTimestamp,
-  query, where, orderBy, limitToLast, updateDoc, writeBatch,
+  query, where, orderBy, limitToLast, updateDoc, writeBatch, Timestamp,
 } from 'https://www.gstatic.com/firebasejs/12.8.0/firebase-firestore.js';
 
 const app = initializeApp(firebaseConfig);
@@ -61,25 +61,47 @@ export async function getShared(code) {
   return snap.exists() ? snap.data() : null;
 }
 
+// Cada entrenamiento guarda en _at cuándo cambió por última vez. Así, al abrir la app, solo se piden
+// a la nube los que cambiaron desde la última vez (no todos), y se gastan muchas menos lecturas.
+// Al borrar uno queda una marca (_del) para que los otros dispositivos también lo borren.
+const atMs = t => (t && typeof t.toMillis === 'function' ? t.toMillis() : 0);
+const cleanWorkout = ({ _at, _del, ...w }) => w;
+
 export async function fetchAll(uid) {
-  const [main, workouts] = await Promise.all([getDoc(mainRef(uid)), getDocs(workoutsRef(uid))]);
-  return { main: main.exists() ? main.data() : null, workouts: workouts.docs.map(d => d.data()) };
+  const [main, ws] = await Promise.all([getDoc(mainRef(uid)), getDocs(workoutsRef(uid))]);
+  let wAt = 0;
+  const workouts = [];
+  for (const d of ws.docs) {
+    const x = d.data();
+    wAt = Math.max(wAt, atMs(x._at));
+    if (!x._del) workouts.push(cleanWorkout(x));
+  }
+  return { main: main.exists() ? main.data() : null, workouts, wAt };
 }
 
 export const putMain = (uid, data) => setDoc(mainRef(uid), data);
-export const putWorkout = (uid, w) => setDoc(doc(workoutsRef(uid), w.id), w);
-export const removeWorkout = (uid, id) => deleteDoc(doc(workoutsRef(uid), id));
+export const putWorkout = (uid, w) => setDoc(doc(workoutsRef(uid), w.id), { ...w, _at: serverTimestamp() });
+// La marca de borrado tiene forma de entrenamiento vacío para que una versión antigua de la app no se caiga
+export const removeWorkout = (uid, id) => setDoc(doc(workoutsRef(uid), id),
+  { id, date: new Date(0).toISOString(), routineName: '', exercises: [], _del: true, _at: serverTimestamp() });
 
-// Avisa de cambios hechos desde otros dispositivos (ignora los propios que el servidor aún no confirma)
-export function listen(uid, onMain, onWorkouts) {
+// Avisa de cambios hechos desde otros dispositivos (ignora los propios que el servidor aún no confirma).
+// since: hasta cuándo ya tenemos los entrenamientos (ms); onWorkouts(cambios, hasta cuándo llegan)
+export function listen(uid, onMain, onWorkouts, since = 0) {
   const stopMain = onSnapshot(mainRef(uid), snap => {
     if (!snap.metadata.hasPendingWrites && snap.exists()) onMain(snap.data());
   }, () => {});
-  const stopWorkouts = onSnapshot(workoutsRef(uid), snap => {
+  const changed = query(workoutsRef(uid), where('_at', '>=', Timestamp.fromMillis(since)));
+  const stopWorkouts = onSnapshot(changed, snap => {
+    let maxAt = 0;
     const changes = snap.docChanges()
       .filter(c => !c.doc.metadata.hasPendingWrites)
-      .map(c => ({ type: c.type, id: c.doc.id, data: c.doc.data() }));
-    if (changes.length) onWorkouts(changes);
+      .map(c => {
+        const x = c.doc.data();
+        maxAt = Math.max(maxAt, atMs(x._at));
+        return { type: c.type === 'removed' || x._del ? 'removed' : c.type, id: c.doc.id, data: cleanWorkout(x) };
+      });
+    if (changes.length) onWorkouts(changes, maxAt);
   }, () => {});
   return () => { stopMain(); stopWorkouts(); };
 }

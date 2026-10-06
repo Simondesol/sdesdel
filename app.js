@@ -12,7 +12,7 @@ const emptyWater = () => ({ goalMl: null, days: {} });   // days: { 'AAAA-MM-DD'
 // Nutrición: alimentos (valores por 100 g), dietas con comidas y el registro de comidas marcadas por día
 const emptyNutrition = () => ({ foods: [], diets: [], activeDietId: null, log: {} });
 const emptyDb = () => ({ routines: [], workouts: [], draft: null, notes: {}, bodyweight: [], body: {}, sleep: [], skinfolds: [], measures: [], plan: null, water: emptyWater(), nutrition: emptyNutrition() });
-const emptySynced = () => ({ main: null, w: {} });
+const emptySynced = () => ({ main: null, w: {}, wAt: 0 });   // wAt: hasta cuándo tenemos los entrenamientos de la nube
 let db = emptyDb();
 let user = null;                 // { uid, email, username }
 let synced = emptySynced();      // último estado confirmado por la nube (para saber qué falta subir)
@@ -4297,8 +4297,9 @@ function applyRemoteMain(data) {
   persistLocal();
 }
 
-function applyRemoteWorkouts(changes) {
+function applyRemoteWorkouts(changes, maxAt = 0) {
   let changed = false;
+  if (maxAt > (synced.wAt || 0)) synced.wAt = maxAt;
   for (const c of changes) {
     const idx = db.workouts.findIndex(w => w.id === c.id);
     const localJ = idx >= 0 ? stable(db.workouts[idx]) : undefined;
@@ -4330,7 +4331,7 @@ let stopListening = () => {};
 
 // Primera vez en este teléfono: descarga todo desde la nube
 async function loadFromCloud() {
-  const { main, workouts } = await cloud.fetchAll(user.uid);
+  const { main, workouts, wAt } = await cloud.fetchAll(user.uid);
   db = emptyDb();
   synced = emptySynced();
   if (main) {
@@ -4348,6 +4349,7 @@ async function loadFromCloud() {
   }
   db.workouts = workouts.sort(byDate);
   for (const w of db.workouts) synced.w[w.id] = stable(w);
+  synced.wAt = wAt || 0;
 }
 
 // Sube a la cuenta lo que se guardó en este teléfono antes de tener cuenta
@@ -4409,7 +4411,7 @@ async function handleUser(u) {
   if (firstOpen && db.draft && routeParts()[0] === '') location.replace('#/entrenar');
   firstOpen = false;
   persistLocal();
-  stopListening = cloud.listen(u.uid, applyRemoteMain, applyRemoteWorkouts);
+  stopListening = cloud.listen(u.uid, applyRemoteMain, applyRemoteWorkouts, synced.wAt || 0);
   startSocial(u.uid);
   loadMyPhoto(u.uid);
   sync();
