@@ -1607,7 +1607,7 @@ function viewAccount() {
 
     <h2>Quiz entre series</h2>
     <section class="card stack">
-      <div class="goal-top"><span class="muted">Preguntas cortas de entrenamiento, nutrición y salud mientras descansas.</span>
+      <div class="quiz-set"><span class="muted">Preguntas cortas de entrenamiento, nutrición y salud mientras descansas.</span>
         <button class="chip toggle ${quizOn() ? 'on' : ''}" data-action="quiz-toggle" aria-pressed="${quizOn()}">${quizOn() ? 'Activado' : 'Desactivado'}</button></div>
       ${quizState().n ? `<span class="muted small">${quizName()}: llevas ${quizState().ok || 0} de ${quizState().n} correctas</span>` : ''}
     </section>

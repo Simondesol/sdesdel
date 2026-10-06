@@ -838,3 +838,7 @@ button.link { color: var(--accent); font-weight: 600; background: none; border: 
 .quiz-off { justify-self: start; font-size: 13px; }
 body:has(.quiz:not([hidden])) #app { padding-bottom: 440px; }
 .quiz-hard { color: #f0b429; font-weight: 700; }
+/* Cuenta: interruptor del quiz (el botón no se achica) */
+.quiz-set { display: flex; align-items: center; gap: 12px; }
+.quiz-set .muted { flex: 1; min-width: 0; }
+.quiz-set .chip { flex: none; white-space: nowrap; }
