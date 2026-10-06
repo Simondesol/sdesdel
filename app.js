@@ -1,4 +1,5 @@
 import { BASE_FOODS, synonymsOf } from './foods-base.js';
+import { QUIZ, QUIZ_CATS } from './quiz.js';
 
 // ---------- Datos ----------
 // Cada usuario tiene una copia en el teléfono (para usar la app sin internet en el gym)
@@ -1439,6 +1440,7 @@ function viewWorkout() {
         ? '<button class="btn ghost block" data-action="back">Cancelar</button>'
         : '<button class="btn ghost block danger-text" data-action="discard">Descartar entrenamiento</button>'}
     </div>` : ''}
+    ${editing ? '' : '<div id="quizcard" class="quiz card" hidden></div>'}
     ${editing ? '' : `<div id="restbar" class="restbar" hidden>
       <span class="rb-text"></span>
       <button class="btn rest-plus" data-action="rest-add">+30 s</button>
@@ -1602,6 +1604,13 @@ function viewAccount() {
 
     <section class="card" data-sync style="margin-top:16px">${syncHtml()}</section>
     <p class="muted hint">Tus datos se guardan en tu cuenta. Inicia sesión con el mismo correo en otro teléfono para verlos.</p>
+
+    <h2>Quiz entre series</h2>
+    <section class="card stack">
+      <div class="goal-top"><span class="muted">Preguntas cortas de entrenamiento, nutrición y salud mientras descansas.</span>
+        <button class="chip toggle ${quizOn() ? 'on' : ''}" data-action="quiz-toggle" aria-pressed="${quizOn()}">${quizOn() ? 'Activado' : 'Desactivado'}</button></div>
+      ${quizState().n ? `<span class="muted small">${quizName()}: llevas ${quizState().ok || 0} de ${quizState().n} correctas</span>` : ''}
+    </section>
 
     <h2>Ideas</h2>
     <section class="card stack">
@@ -3980,6 +3989,7 @@ function render() {
   if (screen === 'gymbro') ensureInvite();
   if (screen === 'chat') scrollChatBottom();
   paintTimer();
+  paintQuiz();
 }
 
 const go = hash => { location.hash = hash; };
@@ -4163,8 +4173,77 @@ async function keepScreenOn(on) {
 function setTimer(t) {
   if (db.draft) { db.draft.timer = t; save(); }
   keepScreenOn(!!t);
+  if (!t) quizCur = null;   // terminó el descanso: se va la pregunta
   paintTimer();
+  paintQuiz();
 }
+
+// ---------- Quiz entre series ----------
+// Al empezar un descanso aparece una pregunta corta (Quiz Gymbro / Gymsis). Es opcional: se apaga con
+// "No mostrar más" o en Cuenta. Lo que ya viste y tu puntaje se guardan en este teléfono.
+const quizKey = () => `desdel-quiz-${user.uid}`;
+function quizState() { try { return JSON.parse(localStorage.getItem(quizKey())) || {}; } catch (e) { return {}; } }
+function saveQuizState(st) { try { localStorage.setItem(quizKey(), JSON.stringify(st)); } catch (e) { /* sin almacenamiento */ } }
+const quizOn = () => !quizState().off;
+const quizName = () => (db.body.sex === 'h' ? 'Quiz Gymbro' : db.body.sex === 'm' ? 'Quiz Gymsis' : 'Quiz Gym');
+let quizCur = null;   // { q, order: orden de las alternativas, picked: alternativa elegida o null, hidden }
+
+// Primero las que nunca viste; después repasa las que fallaste o las que viste hace más tiempo
+function pickQuiz() {
+  const st = quizState(), seen = st.seen || {}, wrong = st.wrong || [];
+  let pool = QUIZ.filter(x => !seen[x[0]]);
+  // Entre las nuevas, aprox. 1 de cada 3 es difícil
+  const hard = pool.filter(x => x[6] === 2), basic = pool.filter(x => x[6] !== 2);
+  if (hard.length && basic.length) pool = Math.random() < 0.35 ? hard : basic;
+  if (!pool.length) {
+    const missed = QUIZ.filter(x => wrong.includes(x[0]));
+    pool = missed.length && Math.random() < 0.6 ? missed : QUIZ.slice().sort((a, b) => seen[a[0]] - seen[b[0]]).slice(0, 20);
+  }
+  const q = pool[Math.floor(Math.random() * pool.length)];
+  const order = q[3].map((_, k) => k);
+  for (let k = order.length - 1; k > 0; k--) { const j = Math.floor(Math.random() * (k + 1)); [order[k], order[j]] = [order[j], order[k]]; }
+  st.seen = { ...seen, [q[0]]: Date.now() };
+  saveQuizState(st);
+  return { q, order, picked: null, hidden: false };
+}
+// Al empezar un descanso: pregunta nueva (si la anterior quedó sin responder, se mantiene)
+function startQuiz() {
+  if (!quizOn()) return;
+  if (!quizCur || quizCur.picked != null || quizCur.hidden) quizCur = pickQuiz();
+  paintQuiz();
+}
+function answerQuiz(k) {
+  if (!quizCur || quizCur.picked != null) return;
+  quizCur.picked = k;
+  const st = quizState(), id = quizCur.q[0], ok = k === quizCur.q[4];
+  st.n = (st.n || 0) + 1;
+  if (ok) st.ok = (st.ok || 0) + 1;
+  const wrong = (st.wrong || []).filter(x => x !== id);
+  st.wrong = ok ? wrong : [...wrong, id];
+  saveQuizState(st);
+  paintQuiz();
+}
+function quizHtml() {
+  const [, cat, text, opts, right, why, level] = quizCur.q, picked = quizCur.picked, done = picked != null, st = quizState();
+  return `<div class="quiz-top"><strong>${quizName()}</strong><span class="muted small">${QUIZ_CATS[cat]}${level === 2 ? ' · <span class="quiz-hard">Difícil</span>' : ''}</span>
+      <button class="icon small" data-action="quiz-hide" aria-label="Cerrar pregunta">✕</button></div>
+    <p class="quiz-q">${esc(text)}</p>
+    <div class="quiz-opts">${quizCur.order.map(k => `<button class="btn quiz-opt ${done && k === right ? 'ok' : done && k === picked ? 'bad' : ''}"
+      data-action="quiz-ans" data-k="${k}" ${done ? 'disabled' : ''}>${esc(opts[k])}</button>`).join('')}</div>
+    ${done
+      ? `<p class="quiz-why"><strong>${picked === right ? '¡Correcto!' : 'Casi.'}</strong> ${esc(why)}</p>
+         <span class="muted small">Llevas ${st.ok || 0} de ${st.n || 0} correctas</span>`
+      : '<button class="link quiz-off" data-action="quiz-off">No mostrar más</button>'}`;
+}
+// Se muestra mientras corre el descanso, sobre la barra del Rest
+function paintQuiz() {
+  const el = $app.querySelector('#quizcard');
+  if (!el) return;
+  const show = !!(quizCur && !quizCur.hidden && db.draft && db.draft.timer && routeParts()[0] === 'entrenar');
+  el.hidden = !show;
+  if (show) el.innerHTML = quizHtml();
+}
+
 
 // Actualiza solo los textos del cronómetro (sin redibujar la pantalla)
 const DONE_SHOW = 8;   // segundos que se ve "¡A darle!" antes de desaparecer
@@ -4735,9 +4814,28 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
     case 'rest': {
       const t = db.draft.timer;
       if (t && t.i === i && t.endsAt > Date.now()) setTimer(null);    // tocar de nuevo lo detiene (si ya terminó, empieza otro)
-      else setTimer({ i, endsAt: Date.now() + db.draft.exercises[i].rest * 1000 });
+      else { setTimer({ i, endsAt: Date.now() + db.draft.exercises[i].rest * 1000 }); startQuiz(); }
       break;
     }
+    case 'quiz-ans':
+      answerQuiz(+el.dataset.k);
+      break;
+    case 'quiz-hide':
+      if (quizCur) quizCur.hidden = true;
+      paintQuiz();
+      break;
+    case 'quiz-off': {
+      const st = quizState();
+      saveQuizState({ ...st, off: true });
+      quizCur = null;
+      paintQuiz();
+      showUndo('Quiz desactivado. Puedes activarlo en Cuenta', () => { saveQuizState({ ...quizState(), off: false }); });
+      break;
+    }
+    case 'quiz-toggle':
+      saveQuizState({ ...quizState(), off: quizOn() });
+      render();
+      break;
     case 'rest-stop':
       setTimer(null);
       break;
