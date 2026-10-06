@@ -1,7 +1,7 @@
 // Guarda la app en el teléfono para que funcione sin internet.
 // Sirve la versión guardada al instante y la actualiza en segundo plano.
 // Al publicar cambios, subir el número de versión.
-const CACHE = 'sdesdel-v100';
+const CACHE = 'sdesdel-v101';
 const FIREBASE = 'https://www.gstatic.com/firebasejs/12.8.0/';
 const ASSETS = [
   './',
@@ -12,6 +12,7 @@ const ASSETS = [
   './firebase-config.js',
   './foods-base.js',
   './quiz.js',
+  './ejercicios.js',
   './manifest.webmanifest',
   './icons/icon-192.png',
   './icons/icon-512.png',

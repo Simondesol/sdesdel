@@ -1,5 +1,6 @@
 import { BASE_FOODS, synonymsOf } from './foods-base.js';
 import { QUIZ, QUIZ_CATS } from './quiz.js';
+import { GUIDES, GUIDE_ZONES } from './ejercicios.js';
 
 // ---------- Datos ----------
 // Cada usuario tiene una copia en el teléfono (para usar la app sin internet en el gym)
@@ -1081,7 +1082,7 @@ function parseRange(text, maxV) {
 }
 const rangeTop = t => +String(t).split('-').pop();
 // Plan del ejercicio en la rutina: objetivo, dropset y superset con el siguiente
-const planFields = ex => ({ ...goalFields(ex), ...(ex.dropset ? { dropset: true } : {}), ...(ex.ssNext ? { ssNext: true } : {}), ...(ex.bw ? { bw: true } : {}) });
+const planFields = ex => ({ ...goalFields(ex), ...(ex.dropset ? { dropset: true } : {}), ...(ex.ssNext ? { ssNext: true } : {}), ...(ex.bw ? { bw: true } : {}), ...(ex.guide ? { guide: ex.guide } : {}) });
 const goalFields = ex => ({
   ...(ex.goalSets ? { goalSets: ex.goalSets } : {}),
   ...(ex.goalReps ? { goalReps: ex.goalReps } : {}),
@@ -1250,6 +1251,8 @@ function viewRoutine() {
         <button class="chip toggle ${ex.dropset ? 'on' : ''}" data-action="toggle-drop" data-i="${i}" aria-pressed="${!!ex.dropset}">Dropset</button>
         <button class="chip toggle ${ex.bw ? 'on' : ''}" data-action="toggle-bw" data-i="${i}" aria-pressed="${!!ex.bw}" title="Dominadas, dips…: lo que anotas es el lastre">Peso corporal</button>
       </div>
+      ${(g => `<div class="ex-guide"><span class="muted small">Técnica: ${g ? `<strong>${esc(g.name)}</strong>` : 'sin guía'}</span>
+        <button class="link small" data-action="guide-pick" data-i="${i}">${g ? 'Cambiar' : 'Elegir guía'}</button></div>`)(guideFor(ex.name, ex.guide))}
       ${i < last ? `<button class="chip toggle ss-toggle ${ex.ssNext ? 'on' : ''}" data-action="toggle-ss" data-i="${i}" aria-pressed="${!!ex.ssNext}">🔗 ${ex.ssNext ? 'En superset con el siguiente' : 'Hacer superset con el siguiente'}</button>` : ''}
       <button class="btn block ex-done" data-action="ex-close">Listo</button>
     </li>`
@@ -1266,14 +1269,16 @@ function viewRoutine() {
     <h2>Ejercicios</h2>
     <ul class="list ex-edit">${items || '<p class="empty">Agrega los ejercicios de esta rutina.</p>'}</ul>
     <form class="add-row" data-form="new-ex">
-      <input name="title" placeholder="Nombre del ejercicio" autocomplete="off" required>
+      <input name="title" data-bind="ex-title" placeholder="Nombre del ejercicio" autocomplete="off" required>
       ${unitSelect()}
       <button class="btn">Agregar</button>
     </form>
+    <div class="ex-sugg"></div>
     ${shareBox(r.id, 'Tu amigo toca el link y la rutina se le agrega sola (o ingresa el código en Rutinas → "Importar rutina con código"). Solo se comparten los ejercicios, el Rest y los objetivos, no tus pesos ni tu historial.')
       || '<button class="btn block" data-action="share-routine" style="margin-top:32px">Compartir rutina</button>'}
     <button class="btn block" data-action="dup-routine">Duplicar rutina</button>
-    <button class="btn ghost block danger-text" data-action="del-routine">Eliminar rutina</button>`;
+    <button class="btn ghost block danger-text" data-action="del-routine">Eliminar rutina</button>
+    ${guidePickerHtml()}`;
 }
 
 // Superset: los ejercicios unidos con el siguiente (ssNext) se hacen juntos, intercalando sus series
@@ -1364,11 +1369,12 @@ function viewWorkout() {
   const restBtn = (i, pre = '') => (!editing && d.exercises[i].rest
     ? `<button class="btn ghost" data-action="rest" data-i="${i}" data-rest="${i}" data-pre="${pre}">Rest ${pre}${fmtRest(d.exercises[i].rest)}</button>` : '');
   const dropBadge = ex => (ex.dropset ? '<span class="badge on">Dropset</span>' : '');
+  const techBtn = i => `<button class="btn small-btn tech-btn" data-action="guide-view" data-i="${i}">Técnica</button>`;
 
   const exerciseBlock = (ex, i) => {
     const open = openHistory.has(ex.exerciseId);
     return `<section class="card" data-ex="${i}">
-      <div class="ex-head"><strong>${esc(ex.name)}</strong>${dropBadge(ex)}</div>
+      <div class="ex-head"><strong>${esc(ex.name)}</strong>${dropBadge(ex)}${techBtn(i)}</div>
       ${exInfo(ex, i)}
       <div class="sets">${ex.sets.map((st, j) => setRow(ex, i, st, j, j + 1)).join('')}</div>
       <div class="ex-actions">
@@ -1395,7 +1401,7 @@ function viewWorkout() {
     return `<section class="card superset" data-ex="${idx[0]}">
       <div class="ss-tag">🔗 Superset · alterna una serie de cada uno</div>
       ${idx.map((k, n) => `<div class="ss-ex">
-        <div class="ex-head"><strong>${letterOf(n)} · ${esc(d.exercises[k].name)}</strong>${dropBadge(d.exercises[k])}</div>
+        <div class="ex-head"><strong>${letterOf(n)} · ${esc(d.exercises[k].name)}</strong>${dropBadge(d.exercises[k])}${techBtn(k)}</div>
         ${exInfo(d.exercises[k], k)}
       </div>`).join('')}
       <div class="sets">${rows}</div>
@@ -1440,6 +1446,8 @@ function viewWorkout() {
         ? '<button class="btn ghost block" data-action="back">Cancelar</button>'
         : '<button class="btn ghost block danger-text" data-action="discard">Descartar entrenamiento</button>'}
     </div>` : ''}
+    ${guideView != null ? guideViewHtml() : ''}
+    ${guidePickerHtml()}
     ${editing ? '' : '<div id="quizcard" class="quiz card" hidden></div>'}
     ${editing ? '' : `<div id="restbar" class="restbar" hidden>
       <span class="rb-text"></span>
@@ -3945,6 +3953,8 @@ function render() {
   if (screen !== 'perfil' && photoEdit) { URL.revokeObjectURL(photoEdit.src); photoEdit = null; }
   if (screen !== 'perfil') photoView = false;
   if (screen !== 'fotos') { closeProgressNew(); progOpen = null; }
+  if (screen !== 'entrenar' && screen !== 'editar') guideView = null;
+  if (screen !== 'rutina' && screen !== 'entrenar' && screen !== 'editar') guidePick = null;
   if (screen !== 'nutricion') extraMode = null;
   if (screen !== 'chat' && screen !== 'perfil') closeMessages();   // el perfil muestra lo compartido en el chat
 
@@ -4176,6 +4186,95 @@ function setTimer(t) {
   if (!t) quizCur = null;   // terminó el descanso: se va la pregunta
   paintTimer();
   paintQuiz();
+}
+
+// ---------- Guías de técnica ----------
+// Cada ejercicio de la rutina puede tener su guía (ex.guide = id, o 'none' si elegiste "sin guía").
+// Si no elegiste ninguna, se busca por el nombre (o sus alias: "Banca" → Press banca).
+const GUIDE_BY_ID = new Map(GUIDES.map(g => [g.id, g]));
+const guideKey = s => normText(String(s || '')).replace(/[^a-z0-9ñ]+/g, ' ').trim();
+let guideNames = null;
+function guideByName(name) {
+  if (!guideNames) {
+    guideNames = new Map();
+    for (const g of GUIDES) for (const n of [g.name, ...g.alias]) guideNames.set(guideKey(n), g);
+  }
+  return guideNames.get(guideKey(name)) || null;
+}
+const guideFor = (name, chosen) => (chosen === 'none' ? null : GUIDE_BY_ID.get(chosen) || guideByName(name));
+// Búsqueda por palabras (sin tildes): "press incl" encuentra Press inclinado
+function searchGuides(q, limit = 6) {
+  const words = guideKey(q).split(' ').filter(Boolean);
+  if (!words.length) return [];
+  const hits = [];
+  for (const g of GUIDES) {
+    const texts = [g.name, ...g.alias].map(guideKey);
+    const all = texts.join(' ').split(' ');
+    if (!words.every(w => all.some(t => t.startsWith(w)))) continue;
+    // Primero los que coinciden por el nombre principal; después los que coinciden solo por un alias
+    const phrase = words.join(' '), nameWords = texts[0].split(' ');
+    const score = texts[0].startsWith(phrase) ? 0 : words.every(w => nameWords.some(t => t.startsWith(w))) ? 1 : texts.some(t => t.startsWith(phrase)) ? 2 : 3;
+    hits.push({ g, score });
+  }
+  return hits.sort((a, b) => a.score - b.score).slice(0, limit).map(h => h.g);
+}
+
+let guideView = null;   // índice del ejercicio (en el entrenamiento) cuya guía está abierta
+let guidePick = null;   // { rid, exId, q } elegir la guía de un ejercicio a mano
+function setGuide(ctx, id) {
+  const r = db.routines.find(x => x.id === ctx.rid), ex = r && r.exercises.find(e => e.id === ctx.exId);
+  if (ex) ex.guide = id;
+  const d = cur();
+  const dx = d && d.exercises.find(e => e.exerciseId === ctx.exId);
+  if (dx) dx.guide = id;
+  save();
+}
+const guideItem = g => `<button type="button" class="food-pick" data-action="guide-set" data-g="${g.id}">
+    <span class="grow"><strong>${esc(g.name)}</strong><span class="muted small">${esc(g.musc)}</span></span><span class="chev">›</span></button>`;
+function guideListHtml(q) {
+  if (q && q.trim()) {
+    const res = searchGuides(q, 30);
+    return res.length ? res.map(guideItem).join('') : '<p class="muted small">No hay guías con ese nombre todavía.</p>';
+  }
+  return Object.entries(GUIDE_ZONES).map(([z, name]) => `<h3 class="guide-zone">${name}</h3>${GUIDES.filter(g => g.zone === z).map(guideItem).join('')}`).join('');
+}
+function guidePickerHtml() {
+  if (!guidePick) return '';
+  return `<div class="modal-wrap">
+    <div class="modal-back" data-action="guide-pick-close"></div>
+    <section class="modal card guide-modal" role="dialog" aria-modal="true" aria-label="Elegir guía de técnica">
+      <h2>Elegir guía de técnica</h2>
+      <input data-bind="guide-q" placeholder="Buscar ejercicio" autocomplete="off" value="${esc(guidePick.q || '')}" aria-label="Buscar ejercicio">
+      <div class="guide-list">${guideListHtml(guidePick.q)}</div>
+      <button class="btn ghost block" data-action="guide-set" data-g="none">Sin guía</button>
+      <button class="btn block" data-action="guide-pick-close">Cancelar</button>
+    </section>
+  </div>`;
+}
+function guideViewHtml() {
+  const d = cur(), ex = d && d.exercises[guideView];
+  if (!ex) return '';
+  const g = guideFor(ex.name, ex.guide);
+  const body = g
+    ? `<span class="muted small">${guideKey(g.name) === guideKey(ex.name) ? '' : `${esc(g.name)} · `}Trabaja: ${esc(g.musc)}</span>
+       ${g.video ? `<video class="guide-video" src="${esc(g.video)}" controls playsinline muted loop preload="metadata"></video>` : ''}
+       <h3>Puntos clave</h3>
+       <ul class="guide-ul">${g.cues.map(c => `<li>${esc(c)}</li>`).join('')}</ul>
+       <h3>Errores comunes</h3>
+       <ul class="guide-ul bad">${g.errs.map(c => `<li>${esc(c)}</li>`).join('')}</ul>
+       <p class="muted small" style="margin:0">Guía general. Si tienes una lesión o sientes dolor, consulta a un profesional.</p>
+       <button class="link small" data-action="guide-change" style="justify-self:start">¿No es este ejercicio? Cambiar guía</button>`
+    : `<p class="muted" style="margin:0">Todavía no hay guía para este ejercicio.</p>
+       <button class="btn block" data-action="guide-change">Elegir una guía</button>
+       <a class="btn primary block center" href="https://ig.me/m/${IG_USER}" target="_blank" rel="noopener">Pide esta guía</a>
+       <span class="muted small">Se abre un mensaje a @${IG_USER} en Instagram. Cuéntanos qué ejercicio es.</span>`;
+  return `<div class="modal-wrap">
+    <div class="modal-back" data-action="guide-close"></div>
+    <section class="modal card guide-modal" role="dialog" aria-modal="true" aria-label="Técnica de ${esc(ex.name)}">
+      <div class="guide-head"><h2>Técnica · ${esc(ex.name)}</h2><button class="icon small" data-action="guide-close" aria-label="Cerrar">✕</button></div>
+      ${body}
+    </section>
+  </div>`;
 }
 
 // ---------- Quiz entre series ----------
@@ -4818,6 +4917,44 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       else { setTimer({ i, endsAt: Date.now() + db.draft.exercises[i].rest * 1000 }); startQuiz(); }
       break;
     }
+    case 'guide-view':
+      guideView = i;
+      render();
+      break;
+    case 'guide-close':
+      guideView = null;
+      render();
+      break;
+    case 'guide-pick': {   // desde el editor de rutina
+      const r = curRoutine();
+      guidePick = { rid: r.id, exId: r.exercises[i].id, q: '' };
+      render();
+      break;
+    }
+    case 'guide-change': {   // desde la guía abierta mientras entrenas
+      const d = cur(), ex = d.exercises[guideView];
+      guidePick = { rid: d.routineId, exId: ex.exerciseId, q: '' };
+      render();
+      break;
+    }
+    case 'guide-set':
+      setGuide(guidePick, el.dataset.g);
+      guidePick = null;
+      render();
+      break;
+    case 'guide-pick-close':
+      guidePick = null;
+      render();
+      break;
+    case 'sugg-ex': {   // sugerencia elegida al agregar un ejercicio: se agrega con su guía
+      const g = GUIDE_BY_ID.get(el.dataset.g), f = $app.querySelector('[data-form="new-ex"]');
+      if (!g || !f) return;
+      lastUnit = f.elements.unit.value;
+      curRoutine().exercises.push({ id: uid(), name: g.name, unit: lastUnit, rest: 0, guide: g.id });
+      openEx = curRoutine().exercises.length - 1;
+      save(); render();
+      break;
+    }
     case 'quiz-ans':
       answerQuiz(+el.dataset.k);
       break;
@@ -5317,6 +5454,18 @@ $app.addEventListener('input', e => {
   if (!bind) return;
   if (bind === 'progress-search') { progressQuery = el.value; filterProgress(); return; }
   if (bind === 'food-search') { foodQuery = el.value; filterFoods(); return; }
+  if (bind === 'ex-title') {
+    const box = $app.querySelector('.ex-sugg'), res = searchGuides(el.value, 5);
+    if (box) box.innerHTML = res.length ? `<span class="muted small">Con guía de técnica:</span>${res.map(g => `<button type="button" class="food-pick" data-action="sugg-ex" data-g="${g.id}">
+      <span class="grow"><strong>${esc(g.name)}</strong><span class="muted small">${esc(g.musc)}</span></span><span class="chev">+</span></button>`).join('')}` : '';
+    return;
+  }
+  if (bind === 'guide-q') {
+    if (guidePick) guidePick.q = el.value;
+    const list = $app.querySelector('.guide-list');
+    if (list) list.innerHTML = guideListHtml(el.value);
+    return;
+  }
   if (bind === 'food-q') {
     const form = el.closest('form');
     delete form.dataset.food;                                   // se cambió el texto: hay que volver a elegir
