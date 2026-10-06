@@ -842,3 +842,5 @@ body:has(.quiz:not([hidden])) #app { padding-bottom: 440px; }
 .quiz-set { display: flex; align-items: center; gap: 12px; }
 .quiz-set .muted { flex: 1; min-width: 0; }
 .quiz-set .chip { flex: none; white-space: nowrap; }
+.quiz-end { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.quiz-end .btn { flex: none; min-height: 36px; padding: 0 14px; font-size: 14px; color: var(--accent); border-color: var(--accent); }

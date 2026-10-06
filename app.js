@@ -4232,7 +4232,8 @@ function quizHtml() {
       data-action="quiz-ans" data-k="${k}" ${done ? 'disabled' : ''}>${esc(opts[k])}</button>`).join('')}</div>
     ${done
       ? `<p class="quiz-why"><strong>${picked === right ? '¡Correcto!' : 'Casi.'}</strong> ${esc(why)}</p>
-         <span class="muted small">Llevas ${st.ok || 0} de ${st.n || 0} correctas</span>`
+         <div class="quiz-end"><span class="muted small">Llevas ${st.ok || 0} de ${st.n || 0} correctas</span>
+           <button class="btn small-btn" data-action="quiz-next">Otra pregunta</button></div>`
       : '<button class="link quiz-off" data-action="quiz-off">No mostrar más</button>'}`;
 }
 // Se muestra mientras corre el descanso, sobre la barra del Rest
@@ -4819,6 +4820,10 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
     }
     case 'quiz-ans':
       answerQuiz(+el.dataset.k);
+      break;
+    case 'quiz-next':   // seguir respondiendo en el mismo descanso
+      quizCur = pickQuiz();
+      paintQuiz();
       break;
     case 'quiz-hide':
       if (quizCur) quizCur.hidden = true;
