@@ -1859,6 +1859,30 @@ const logoImg = '<img class="auth-logo" src="icons/logo-full.png" alt="Desdel">'
 
 // En iPhone los links siempre se abren en Safari (no en la app instalada), así que se copia el código para pegarlo en la app
 let handoffCode = null, handoffGymbro = false;
+// Navegador dentro de otra app (no deja instalar): { app, url } mientras se muestra el aviso
+let inApp = null;
+function viewInApp() {
+  const chrome = inApp.android ? 'Chrome' : 'Safari';
+  const u = new URL(inApp.url);
+  const intent = `intent://${u.host}${u.pathname}${u.search}#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=${encodeURIComponent(inApp.url)};end`;
+  return `<div class="auth handoff">${logoImg}
+    <p><strong>Estás viendo Desdel dentro de ${esc(inApp.app)}</strong></p>
+    <p class="muted" style="margin:0">Desde aquí no se puede instalar. Ábrela en <strong>${chrome}</strong>:</p>
+    ${inApp.android ? `<a class="btn primary block center" href="${esc(intent)}">Abrir en Chrome</a>` : ''}
+    <ol class="handoff-steps">
+      ${inApp.android
+        ? `<li>Si no se abre, toca <strong>⋮</strong> arriba a la derecha.</li>
+           <li>Elige <strong>Abrir en Chrome</strong>.</li>
+           <li>En Chrome toca <strong>⋮</strong> → <strong>Instalar app</strong> (o <strong>Agregar a la pantalla principal</strong>).</li>`
+        : `<li>Toca <strong>⋯</strong> arriba a la derecha.</li>
+           <li>Elige <strong>Abrir en navegador externo</strong>.</li>
+           <li>En Safari toca <strong>Compartir</strong> → <strong>Agregar a inicio</strong>.</li>`}
+    </ol>
+    <button class="btn block" data-action="inapp-copy">Copiar link</button>
+    <p class="muted small" style="margin:0;text-align:center">Si no encuentras el botón, copia el link y pégalo en ${chrome}.</p>
+    <button class="btn ghost block" data-action="inapp-stay">Seguir aquí igual</button>
+  </div>`;
+}
 function viewHandoff() {
   return `<div class="auth handoff">${logoImg}
     <p><strong>${handoffGymbro ? 'Te invitaron a ser gymbro en Desdel 💪' : 'Te compartieron una rutina o una dieta'}</strong></p>
@@ -3882,6 +3906,7 @@ function viewExercise(id) {
 function render() {
   const [screen, arg = ''] = routeParts();
   const authScreen = screen === 'login' || screen === 'registro';
+  if (inApp) { $app.innerHTML = viewInApp(); $tabs.hidden = true; return; }
   if (handoffCode) { $app.innerHTML = viewHandoff(); $tabs.hidden = true; return; }
 
   // Sin sesión: solo pantallas de acceso. Cargando o con error: pantalla de estado.
@@ -5143,6 +5168,15 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       navigator.clipboard.writeText(fmtCode(handoffCode))
         .then(() => { el.textContent = 'Código copiado. Ahora abre Desdel'; }, () => alert(`Código: ${fmtCode(handoffCode)}`));
       break;
+    case 'inapp-copy':
+      navigator.clipboard.writeText(inApp.url)
+        .then(() => { el.textContent = 'Link copiado'; }, () => prompt('Copia este link:', inApp.url));
+      break;
+    case 'inapp-stay':
+      try { sessionStorage.setItem('desdel-inapp-ok', '1'); } catch (e) { /* sin almacenamiento */ }
+      inApp = null;
+      render();
+      break;
     case 'handoff-here':
       // Sigue el camino normal: inicia sesión aquí y se importa
       localStorage.setItem(PENDING_IMPORT, handoffCode);
@@ -5356,6 +5390,17 @@ const linkParams = new URLSearchParams(location.search);
 const isLocal = ['localhost', '127.0.0.1'].includes(location.hostname);
 const isIPhone = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const isInstalled = navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
+// Abierta dentro de Instagram, Facebook o TikTok: se avisa que hay que abrirla en Chrome o Safari.
+// Se guarda el link completo (con ?g= o ?r=) para no perder la invitación al cambiar de navegador. En local: ?ig
+const inAppName = /Instagram/i.test(navigator.userAgent) ? 'Instagram'
+  : /FBAN|FBAV|FB_IAB|FBIOS|Messenger/i.test(navigator.userAgent) ? 'Facebook'
+  : /TikTok|musical_ly|BytedanceWebview/i.test(navigator.userAgent) ? 'TikTok'
+  : isLocal && linkParams.has('ig') ? 'Instagram' : null;
+if (inAppName && !isInstalled && sessionStorage.getItem('desdel-inapp-ok') !== '1') {
+  const u = new URL(location.href);
+  u.searchParams.delete('ig'); u.hash = '';
+  inApp = { app: inAppName, url: u.href, android: /Android/i.test(navigator.userAgent) || (isLocal && linkParams.has('android')) };
+}
 const linkCode = linkParams.get('r') || linkParams.get('g');   // r = rutina o dieta, g = gymbro
 if (linkCode) {
   // En Safari de iPhone (fuera de la app) se muestra el código para copiarlo; en local se prueba con ?ios
