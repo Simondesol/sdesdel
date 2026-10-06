@@ -1569,6 +1569,7 @@ function syncHtml() {
 }
 const paintSync = () => { const el = $app.querySelector('[data-sync]'); if (el) el.innerHTML = syncHtml(); };
 
+const IG_USER = 'desdel.app';   // cuenta de Instagram de Desdel (para las ideas por DM)
 function viewAccount() {
   const bd = db.body;
   return `${header('Cuenta', { back: true })}
@@ -1601,6 +1602,13 @@ function viewAccount() {
 
     <section class="card" data-sync style="margin-top:16px">${syncHtml()}</section>
     <p class="muted hint">Tus datos se guardan en tu cuenta. Inicia sesión con el mismo correo en otro teléfono para verlos.</p>
+
+    <h2>Ideas</h2>
+    <section class="card stack">
+      <p class="muted" style="margin:0">¿Qué le falta a Desdel? Mándame tu idea o cuéntame si algo no funciona.</p>
+      <a class="btn primary block center" href="https://ig.me/m/${IG_USER}" target="_blank" rel="noopener" style="margin-top:0">Sugerir una idea</a>
+      <span class="muted small">Se abre un mensaje a @${IG_USER} en Instagram.</span>
+    </section>
 
     <h2>Cambiar contraseña</h2>
     <form class="stack" data-form="password" novalidate>
