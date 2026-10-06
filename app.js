@@ -79,6 +79,13 @@ function parseRest(text) {
   return Number.isFinite(n) && n >= 0 ? Math.round(n * 60) : null;
 }
 
+// Reloj desde que empezaste: "42:15" o "1:05:20"
+function elapsedClock(startIso) {
+  const sec = Math.max(0, Math.floor((Date.now() - new Date(startIso).getTime()) / 1000));
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), ss = String(sec % 60).padStart(2, '0');
+  return h ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`;
+}
+
 function fmtDuration(sec) {
   if (sec < 60) return 'menos de 1 min';
   const h = Math.floor(sec / 3600), m = Math.round((sec % 3600) / 60);
@@ -1416,7 +1423,8 @@ function viewWorkout() {
     </div>`;
 
   const title = editing ? `Editar · ${d.routineName}` : d.routineName;
-  return `${header(title, { back: true, sub: `Ejercicio ${gi + 1} de ${groups.length} · ${fmtDate(d.start)}` })}
+  // Entrenando: cuánto llevas (se actualiza solo). Editando uno guardado: su fecha
+  return `${header(title, { back: true, sub: `Ejercicio ${gi + 1} de ${groups.length} · ${editing ? fmtDate(d.start) : `Duración ${elapsedClock(d.start)}`}` })}
     ${steps}
     ${group.length > 1 ? supersetBlock(group) : exerciseBlock(d.exercises[group[0]], group[0])}
     ${nav}
@@ -4134,6 +4142,10 @@ function paintTimer() {
   const left = t ? Math.ceil((t.endsAt - Date.now()) / 1000) : 0;
 
   if (!d) return;
+  if (routeParts()[0] === 'entrenar') {
+    const sub = $app.querySelector('.bar .sub');
+    if (sub) sub.textContent = sub.textContent.replace(/Duración .*$/, `Duración ${elapsedClock(d.start)}`);
+  }
   $app.querySelectorAll('[data-rest]').forEach(b => {
     const i = +b.dataset.rest;
     if (!d.exercises[i]) return;
