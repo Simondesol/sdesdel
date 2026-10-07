@@ -1251,8 +1251,12 @@ function viewRoutine() {
         <button class="chip toggle ${ex.dropset ? 'on' : ''}" data-action="toggle-drop" data-i="${i}" aria-pressed="${!!ex.dropset}">Dropset</button>
         <button class="chip toggle ${ex.bw ? 'on' : ''}" data-action="toggle-bw" data-i="${i}" aria-pressed="${!!ex.bw}" title="Dominadas, dips…: lo que anotas es el lastre">Peso corporal</button>
       </div>
-      ${(g => `<div class="ex-guide"><span class="muted small">Técnica: ${g ? `<strong>${esc(g.name)}</strong>` : 'sin guía'}</span>
-        <button class="link small" data-action="guide-pick" data-i="${i}">${g ? 'Cambiar' : 'Elegir guía'}</button></div>`)(guideFor(ex.name, ex.guide))}
+      ${(g => {
+        // Elegida por ti o con el mismo nombre: está bien. Conectada por un nombre parecido: puede ser otra
+        const sure = g && ((ex.guide && ex.guide !== 'none') || guideKey(g.name) === guideKey(ex.name));
+        return `<div class="ex-guide"><span class="muted small">Técnica: ${g ? `<strong>${esc(g.name)}</strong>${sure ? ' ✓' : ''}` : 'sin guía'}</span>
+          ${sure ? '' : `<button class="link small" data-action="guide-pick" data-i="${i}">${g ? '¿Es otro? Cambiar' : 'Elegir guía'}</button>`}</div>`;
+      })(guideFor(ex.name, ex.guide))}
       ${i < last ? `<button class="chip toggle ss-toggle ${ex.ssNext ? 'on' : ''}" data-action="toggle-ss" data-i="${i}" aria-pressed="${!!ex.ssNext}">🔗 ${ex.ssNext ? 'En superset con el siguiente' : 'Hacer superset con el siguiente'}</button>` : ''}
       <button class="btn block ex-done" data-action="ex-close">Listo</button>
     </li>`
@@ -3991,7 +3995,14 @@ function render() {
     case 'fotos': html = viewProgressPhotos(); break;
     default: html = viewHub();   // Inicio: sin pestañas
   }
+  const stepsLeft = $app.querySelector('.steps')?.scrollLeft;   // fila de ejercicios del entrenamiento
   $app.innerHTML = html;
+  const steps = $app.querySelector('.steps');
+  if (steps) {
+    const chip = steps.querySelector('.step.on');
+    if (stepsLeft != null) steps.scrollLeft = stepsLeft;
+    else if (chip) steps.scrollLeft = chip.offsetLeft - (steps.clientWidth - chip.offsetWidth) / 2;
+  }
   $tabs.hidden = !tab;
   $tabs.querySelectorAll('a').forEach(a => a.classList.toggle('active', a.dataset.tab === tab));
   if (tab === 'progreso' && progressQuery) filterProgress();
