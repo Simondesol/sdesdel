@@ -14,7 +14,7 @@ const $tabs = document.getElementById('tabs');
 const emptyWater = () => ({ goalMl: null, days: {} });   // days: { 'AAAA-MM-DD': [{ at, ml }] }
 // Nutrición: alimentos (valores por 100 g), dietas con comidas y el registro de comidas marcadas por día
 const emptyNutrition = () => ({ foods: [], diets: [], activeDietId: null, log: {} });
-const emptyDb = () => ({ routines: [], workouts: [], draft: null, notes: {}, bodyweight: [], body: {}, sleep: [], skinfolds: [], measures: [], plan: null, water: emptyWater(), nutrition: emptyNutrition() });
+const emptyDb = () => ({ routines: [], workouts: [], draft: null, notes: {}, bodyweight: [], body: {}, sleep: [], skinfolds: [], measures: [], programs: [], plan: null, water: emptyWater(), nutrition: emptyNutrition() });
 const emptySynced = () => ({ main: null, w: {}, wAt: 0 });   // wAt: hasta cuándo tenemos los entrenamientos de la nube
 let db = emptyDb();
 let user = null;                 // { uid, email, username }
@@ -1149,16 +1149,10 @@ function viewHome() {
       </div>` : ''}
       <button class="btn primary" data-action="start" data-id="${r.id}" ${r.exercises.length ? '' : 'disabled'}>Empezar</button>
     </div>`).join('');
-  const progCard = `<a class="card plan-card prog-card" href="#/programas">
-      <div class="grow"><strong>Programas</strong>
-        <span class="muted small">Rutinas listas por días a la semana, hechas por un coach</span></div>
-      <span class="chev">›</span>
-    </a>`;
   return `${header('Rutinas', { home: true })}
     ${resume}
     ${planCard}
-    ${progCard}
-    ${routines || '<p class="empty">Aún no tienes rutinas. Elige un programa listo arriba o crea la tuya abajo.</p>'}
+    ${routines || '<p class="empty">Aún no tienes rutinas. Elige un programa en la pestaña Programas o crea la tuya abajo.</p>'}
     <form class="add-row" data-form="new-routine">
       <input name="title" placeholder="Nueva rutina (ej. Brazo)" autocomplete="off" required>
       <button class="btn">Crear</button>
@@ -1725,7 +1719,10 @@ let importOpen = false;   // formulario "Importar con código" visible
 // Link que abre Desdel y agrega la rutina (?r=CÓDIGO)
 const PENDING_IMPORT = 'desdel-importar';
 const shareLink = code => `${location.origin}${location.pathname}?r=${code}`;
-const shareText = ({ name, code, kind }) => kind === 'diet'
+const shareText = ({ name, code, kind }) => kind === 'program'
+  ? `Te comparto el programa "${name}" en Desdel 📅\n\nTócalo para usarlo:\n${shareLink(code)}\n\n` +
+    `Si no se abre, copia este código, abre Desdel y en Rutinas toca "Pegar código": ${fmtCode(code)}`
+  : kind === 'diet'
   ? `Te comparto la dieta "${name}" en Desdel 🥗\n\nTócalo para agregarla:\n${shareLink(code)}\n\n` +
     `Si no se abre, copia este código, abre Desdel y en Nutrición → Mis dietas toca "Pegar código": ${fmtCode(code)}`
   : `Te comparto mi rutina "${name}" en Desdel 💪\n\nTócalo para agregarla:\n${shareLink(code)}\n\n` +
@@ -1816,13 +1813,14 @@ async function importByCode(code, showError) {
     return showError(e.code === 'auth/network-request-failed' || !navigator.onLine
       ? 'Se necesita internet para importar.' : 'No se pudo buscar el código. Intenta de nuevo.');
   }
-  if (!data || !(data.routine || data.diet)) {
+  if (!data || !(data.routine || data.diet || data.program)) {
     let inv = null;
     try { inv = await withTimeout(cloud.getInvite(code)); } catch (e) { /* sin internet: se avisa abajo */ }
     if (inv) return addGymbro(code, inv, showError);
     return showError('No existe ninguna rutina, dieta ni gymbro con ese código.');
   }
   if (data.diet) return importDiet(data);
+  if (data.program) return useSharedProgram(data.program, data.ownerName);
   importRoutineData(data);
 }
 
@@ -2288,6 +2286,10 @@ function msgBody(m, mine) {
         <span class="muted small">${esc(m.routine.exercises.map(ex => ex.name).join(' · '))}</span>${add('Agregar a mis rutinas')}</div>`;
     case 'workout':
       return `<div class="msg-card"><span class="muted small">💪 Entrenamiento</span><div class="pre">${esc(m.text)}</div></div>`;
+    case 'program':
+      return `<div class="msg-card"><span class="muted small">📅 Programa</span><strong>${esc(m.program.name)}</strong>
+        <span class="muted small">${payloadDays(m.program)} días por semana${m.program.weeks > 1 ? ` · se repite cada ${m.program.weeks} semanas` : ''}</span>
+        <span class="muted small">${esc(payloadWeekLine(m.program))}</span>${add('Usar este programa')}</div>`;
     case 'pr':
       return `<div class="msg-card"><span class="muted small">🔥 ¡Nuevo PR!</span><div class="pre">${esc(m.text)}</div></div>`;
     default:
@@ -2314,16 +2316,20 @@ function attachPanel() {
       <button class="btn block" data-action="attach-pick" data-kind="diet">🥗 Enviar una dieta</button>
       <button class="btn block" data-action="attach-pick" data-kind="routine">🏋️ Enviar una rutina</button>
       <button class="btn block" data-action="attach-pick" data-kind="workout">💪 Enviar un entrenamiento</button>
+      <button class="btn block" data-action="attach-pick" data-kind="program">📅 Enviar un programa</button>
       <button class="btn ghost block" data-action="attach-close">Cancelar</button>
     </section>`;
   }
-  const items = attach === 'diet'
+  const items = attach === 'program'
+    ? db.programs.map(p => [p.id, p.name || '(sin nombre)', `${myProgDays(p.days)} días por semana`])
+    : attach === 'diet'
     ? N().diets.map(d => [d.id, d.name, `${plural(d.meals.length, 'comida')} · ${fmtKcal(dietMacros(d).kcal)} kcal`])
     : attach === 'routine'
       ? db.routines.filter(r => r.exercises.length).map(r => [r.id, r.name || '(sin nombre)', plural(r.exercises.length, 'ejercicio')])
       : db.workouts.slice(-20).reverse().map(w => [w.id, w.routineName, fmtDate(w.date)]);
-  const title = { diet: '¿Qué dieta?', routine: '¿Qué rutina?', workout: '¿Qué entrenamiento?' }[attach];
-  const none = { diet: 'Todavía no tienes dietas.', routine: 'Todavía no tienes rutinas con ejercicios.', workout: 'Todavía no tienes entrenamientos guardados.' }[attach];
+  const title = { diet: '¿Qué dieta?', routine: '¿Qué rutina?', workout: '¿Qué entrenamiento?', program: '¿Qué programa?' }[attach];
+  const none = { diet: 'Todavía no tienes dietas.', routine: 'Todavía no tienes rutinas con ejercicios.', workout: 'Todavía no tienes entrenamientos guardados.',
+    program: 'Todavía no tienes programas. Créalos en Entreno → Programas.' }[attach];
   return `<section class="card attach">
       <div class="muted small">${title}</div>
       ${items.map(([id, name, sub]) => `<button class="btn block attach-item" data-action="attach-send" data-id="${id}">
@@ -2379,7 +2385,11 @@ function saveMsgEdit(text) {
 
 function sendAttachment(id) {
   const chatId = routeParts()[1];
-  if (attach === 'diet') {
+  if (attach === 'program') {
+    const p = db.programs.find(x => x.id === id), pr = p && checkSendable(p);
+    if (!pr) return;
+    sendMsg(chatId, { type: 'program', program: pr }, `📅 Programa: ${pr.name}`);
+  } else if (attach === 'diet') {
     const d = dietById(id);
     sendMsg(chatId, { type: 'diet', diet: dietPayload(d) }, `🥗 Dieta: ${d.name}`);
   } else if (attach === 'routine') {
@@ -2400,6 +2410,7 @@ const msgPreview = m => ({
   routine: () => `🏋️ Rutina: ${m.routine.name}`,
   workout: () => '💪 Entrenamiento',
   pr: () => '🔥 Nuevo PR',
+  program: () => `📅 Programa: ${m.program.name}`,
 }[m.type] || (() => m.text || ''))().slice(0, 120);
 
 // Borra un mensaje tuyo para los dos; si era el último, la lista de chats muestra el anterior
@@ -2423,7 +2434,8 @@ function addFromMessage(id) {
   const c = chats.find(x => x.id === chatMsgs.id);
   if (!m) return;
   const data = { ownerName: c ? gymbroName(c) : '' };
-  if (m.type === 'diet') importDiet({ ...data, diet: m.diet });
+  if (m.type === 'program') useSharedProgram(m.program, data.ownerName);
+  else if (m.type === 'diet') importDiet({ ...data, diet: m.diet });
   else if (m.type === 'routine') importRoutineData({ ...data, routine: m.routine });
 }
 
@@ -3956,7 +3968,7 @@ function render() {
   if (screen !== 'editar') editBuf = null;
   else if (!editBuf || editBuf.editOf !== arg) editBuf = makeEditBuf(arg);
   if (screen !== 'sesion' || arg !== justFinished) justFinished = null;
-  if (screen !== 'rutina' && screen !== 'dieta') shareResult = null;
+  if (screen !== 'rutina' && screen !== 'dieta' && screen !== 'miprograma') shareResult = null;
   if (screen !== 'chat') { attach = null; editingMsg = null; selectedMsg = null; }
   if (screen !== 'agua') waterEditing = null;
   if (screen !== 'peso') goalEditing = false;
@@ -4000,7 +4012,8 @@ function render() {
     case 'plan': html = viewPlan(); break;
     case 'grasa': html = viewBodyFat(); break;
     case 'pliegues': html = viewSkinfolds(); break;
-    case 'programas': html = viewPrograms(); break;
+    case 'programas': html = viewPrograms(); tab = 'programas'; break;
+    case 'miprograma': html = viewMyProgram(arg); break;
     case 'programa': html = viewProgram(arg); break;
     case 'medidas': html = viewMeasures(); break;
     case 'fotos': html = viewProgressPhotos(); break;
@@ -4210,6 +4223,123 @@ function setTimer(t) {
   paintQuiz();
 }
 
+// ---------- Mis programas (creados por ti: tus rutinas ordenadas por día) ----------
+// db.programs = [{ id, name, weeks: 1–4, days: [{ r: [id de rutina o null ×7] }], from?: quién te lo envió }]
+// Se pueden usar como tu plan, enviar por el chat o compartir con código. Al recibir uno, sus rutinas quedan
+// marcadas con prog = id del programa: si te mandan una versión nueva, reemplaza a la anterior (el historial se mantiene).
+const myProgDays = days => (days[0] ? days[0].r.filter(Boolean).length : 0);
+const myWeekLine = p => (p.days[0] ? p.days[0].r : []).map((id, d) => {
+  const r = id && db.routines.find(x => x.id === id);
+  return r ? `${DAY_SHORT[d]} ${r.name || '(sin nombre)'}` : null;
+}).filter(Boolean).join(' · ');
+const uniqueRoutineName = name => { let n = name || 'Rutina'; for (let k = 2; db.routines.some(r => sameName(r.name, n)); k++) n = `${name} ${k}`; return n; };
+
+// Lo que viaja al compartir: las rutinas (sin pesos ni historial) y en qué día va cada una (por posición)
+function programPayload(p) {
+  const days = p.days.slice(0, p.weeks);
+  const ids = [...new Set(days.flatMap(w => w.r).filter(id => id && db.routines.some(r => r.id === id && r.exercises.length)))];
+  return {
+    pid: p.id, name: p.name || 'Programa', weeks: days.length,
+    routines: ids.map(id => routinePayload(db.routines.find(r => r.id === id))),
+    days: days.map(w => ({ r: w.r.map(id => { const k = ids.indexOf(id); return k >= 0 ? k : null; }) })),
+  };
+}
+const payloadWeekLine = pr => ((pr.days[0] || {}).r || []).map((k, d) => (k != null && pr.routines[k] ? `${DAY_SHORT[d]} ${pr.routines[k].name}` : null)).filter(Boolean).join(' · ');
+const payloadDays = pr => ((pr.days[0] || {}).r || []).filter(k => k != null).length;
+
+// Programa recibido (por chat o código): agrega sus rutinas, arma tu plan y queda en Mis programas
+function useSharedProgram(pr, from) {
+  if (!pr || !Array.isArray(pr.routines) || !Array.isArray(pr.days) || !pr.routines.length) { alert('Este programa no trae rutinas.'); return; }
+  const prev = db.routines.filter(r => r.prog && r.prog === pr.pid);
+  const hasPlan = !!(db.plan && db.plan.days.some(w => w.r.some(Boolean)));
+  if (!confirm(`¿Usar "${pr.name}"${from ? ` de ${from}` : ''} como tu plan?\n\n${prev.length
+    ? 'Reemplaza la versión anterior de este programa (tu historial se mantiene)'
+    : `Se agregarán ${plural(pr.routines.length, 'rutina')} a tus rutinas`}${hasPlan ? ' y se reemplazará tu plan actual.' : ' y se armará tu plan.'}`)) return;
+  const before = { routines: clone(db.routines), plan: db.plan ? clone(db.plan) : null, programs: clone(db.programs) };
+  const oldEx = new Map();
+  for (const r of prev) for (const ex of r.exercises) oldEx.set(guideKey(ex.name), ex);
+  db.routines = db.routines.filter(r => !(r.prog && r.prog === pr.pid));
+  const ids = pr.routines.map(rt => {
+    const used = new Set();
+    const r = {
+      id: uid(), name: uniqueRoutineName(rt.name), prog: pr.pid,
+      exercises: (rt.exercises || []).map(ex => {
+        const old = oldEx.get(guideKey(ex.name));
+        const found = old ? { id: old.id, name: old.name, unit: old.unit } : findExercise(ex.name);
+        const mine = found && !used.has(found.id) ? found : null;
+        if (mine) used.add(mine.id);
+        return { id: mine ? mine.id : uid(), name: mine ? mine.name : ex.name, unit: mine ? mine.unit : ex.unit, rest: ex.rest || 0, rir: !!ex.rir, ...planFields(ex) };
+      }),
+    };
+    db.routines.push(r);
+    return r.id;
+  });
+  const days = pr.days.slice(0, 4).map(w => ({ r: Array.from({ length: 7 }, (_, d) => { const k = (w.r || [])[d]; return k == null ? null : ids[k] || null; }) }));
+  db.plan = { weeks: days.length || 1, start: dayKeyOf(mondayOf(new Date())), days: days.length ? days : [{ r: Array(7).fill(null) }] };
+  db.programs = db.programs.filter(p => p.id !== pr.pid);
+  db.programs.push({ id: pr.pid, name: pr.name, weeks: db.plan.weeks, days: clone(db.plan.days), ...(from ? { from } : {}) });
+  save();
+  go('#/rutinas');
+  setTimeout(() => showUndo(`Listo: "${pr.name}" es tu plan`, () => {
+    db.routines = before.routines; db.plan = before.plan; db.programs = before.programs;
+    save(); render();
+  }), 100);
+}
+
+// Uno tuyo: pasa a ser tu plan (las rutinas ya son tuyas)
+function useMyProgram(p) {
+  if (!myProgDays(p.days)) { alert('Elige al menos una rutina en algún día.'); return; }
+  const hasPlan = !!(db.plan && db.plan.days.some(w => w.r.some(Boolean)));
+  if (hasPlan && !confirm(`¿Usar "${p.name || 'este programa'}" como tu plan? Se reemplazará tu plan actual.`)) return;
+  const before = db.plan ? clone(db.plan) : null;
+  db.plan = { weeks: p.weeks, start: dayKeyOf(mondayOf(new Date())),
+    days: p.days.slice(0, p.weeks).map(w => ({ r: w.r.map(id => (id && db.routines.some(r => r.id === id) ? id : null)) })) };
+  save();
+  go('#/rutinas');
+  setTimeout(() => showUndo(`Listo: "${p.name || 'Programa'}" es tu plan`, () => { db.plan = before; save(); render(); }), 100);
+}
+
+function checkSendable(p) {
+  const pr = programPayload(p);
+  if (!pr.routines.length) { alert('El programa no tiene rutinas con ejercicios. Elige qué rutina va cada día.'); return null; }
+  return pr;
+}
+
+function viewMyProgram(id) {
+  const p = db.programs.find(x => x.id === id);
+  if (!p) { location.replace('#/programas'); return ''; }
+  const options = sel => `<option value="">Descanso</option>${db.routines.map(r =>
+    `<option value="${r.id}" ${r.id === sel ? 'selected' : ''}>${esc(r.name || '(sin nombre)')}</option>`).join('')}`;
+  const weeks = p.days.slice(0, p.weeks).map((wk, w) => `
+    <h2>${p.weeks > 1 ? `Semana ${w + 1}` : 'Días'}</h2>
+    <section class="card plan-week">${DAY_NAMES.map((name, d) => `
+      <label class="plan-row"><span>${name}</span>
+        <select data-bind="myprog-day" data-w="${w}" data-d="${d}" aria-label="${name}">${options(wk.r[d])}</select>
+      </label>`).join('')}
+    </section>`).join('');
+  const send = chats.length ? `<h2>Enviar a un gymbro</h2>
+    <section class="card stack">${chats.map(c => `<button class="btn block" data-action="myprog-send" data-chat="${c.id}">${esc(gymbroName(c))}</button>`).join('')}
+      <span class="muted small">Le llega por el chat y lo puede usar como su plan con un toque.</span></section>` : '';
+  return `${header('Programa', { back: true, sub: `${myProgDays(p.days)} días por semana` })}
+    ${p.from ? `<p class="muted small" style="margin:0 0 8px">Te lo envió ${esc(p.from)}</p>` : ''}
+    <label class="field"><span>Nombre del programa</span>
+      <input data-bind="myprog-name" value="${esc(p.name)}" placeholder="ej. Programa Juan" autocomplete="off"></label>
+    <section class="card stack">
+      <div class="pace-sentence">
+        <span>Se repite cada</span>
+        <button class="btn pace-dir plan-n" data-action="myprog-weeks" data-v="${(p.weeks % 4) + 1}" aria-label="Cambiar cada cuántas semanas se repite">${p.weeks}</button>
+        <span>${p.weeks === 1 ? 'semana' : 'semanas'}</span>
+      </div>
+      <span class="muted small">Toca el número para cambiarlo (de 1 a 4).</span>
+    </section>
+    ${db.routines.length ? weeks : '<p class="empty">Primero crea tus rutinas en la pestaña Rutinas; después eliges qué día va cada una.</p>'}
+    <button class="btn primary block" data-action="myprog-use" style="margin-top:16px">Usar como mi plan</button>
+    ${send}
+    ${shareBox(p.id, 'Quien toque el link (o pegue el código en Rutinas) puede usarlo como su plan. Se comparten las rutinas, no tus pesos ni tu historial.')
+      || '<button class="btn block" data-action="myprog-share" style="margin-top:16px">Compartir con código</button>'}
+    <button class="btn ghost block danger-text" data-action="myprog-del">Eliminar programa</button>`;
+}
+
 // ---------- Programas (rutinas listas + plan semanal) ----------
 let progDays = 0;      // filtro por días a la semana (0 = todos)
 let progLevel = 'p';   // Principiante o Intermedio
@@ -4224,8 +4354,17 @@ const levelToggle = () => `<div class="range" role="group" aria-label="Nivel">${
 function viewPrograms() {
   const list = PROGRAMS.filter(p => !progDays || p.days === progDays);
   const days = [...new Set(PROGRAMS.map(p => p.days))].sort((a, b) => a - b);
-  return `${header('Programas', { back: true, sub: 'Rutinas listas, hechas por un coach' })}
-    <p class="muted" style="margin:0 0 12px">Elige cuántos días puedes entrenar y tu nivel. El programa agrega sus rutinas y arma tu plan de la semana.</p>
+  const mine = db.programs.map(p => `<a class="card prog-item" href="#/miprograma/${p.id}">
+      <div class="grow"><strong>${esc(p.name || '(sin nombre)')}</strong><span class="badge on">${myProgDays(p.days)} días</span>
+        ${p.from ? `<span class="muted small">De ${esc(p.from)}</span>` : ''}
+        <span class="muted small prog-week">${esc(myWeekLine(p)) || 'Sin días todavía'}</span></div>
+      <span class="chev">›</span></a>`).join('');
+  return `${header('Programas', { home: true, sub: 'Tu semana de entrenamiento' })}
+    <h2>Mis programas</h2>
+    ${mine || '<p class="muted small" style="margin:0 0 8px">Arma un programa con tus rutinas para usarlo como tu plan o enviárselo a tus alumnos y gymbros.</p>'}
+    <button class="btn block" data-action="myprog-new" style="margin-bottom:8px">+ Crear programa</button>
+    <h2>Programas listos</h2>
+    <p class="muted" style="margin:0 0 12px">Hechos por un coach. Elige tu nivel y cuántos días puedes entrenar: el programa agrega sus rutinas y arma tu plan.</p>
     ${levelToggle()}
     <div class="skin-views">${[0, ...days].map(n => `<button class="chip toggle ${n === progDays ? 'on' : ''}" data-action="prog-days" data-n="${n}">${n ? `${n} días` : 'Todos'}</button>`).join('')}</div>
     ${list.map(p => `<a class="card prog-item" href="#/programa/${p.id}">
@@ -4529,6 +4668,7 @@ const mainData = () => ({
   ...(db.sleep.length ? { sleep: db.sleep } : {}),
   ...(db.skinfolds.length ? { skinfolds: db.skinfolds } : {}),
   ...(db.measures.length ? { measures: db.measures } : {}),
+  ...(db.programs.length ? { programs: db.programs } : {}),
   ...(hasBody(db.body) ? { body: db.body } : {}),
   ...(db.plan ? { plan: db.plan } : {}),
   ...(hasWater(db.water) ? { water: db.water } : {}),
@@ -4584,7 +4724,7 @@ async function sync() {
 
 // Cambios que llegan desde otro dispositivo. Si aquí hay cambios sin subir, ganan los de aquí.
 function applyRemoteMain(data) {
-  const bw = data.bodyweight || [], sl = data.sleep || [], body = data.body || {}, plan = data.plan || null, sk = data.skinfolds || [], ms = data.measures || [];
+  const bw = data.bodyweight || [], sl = data.sleep || [], body = data.body || {}, plan = data.plan || null, sk = data.skinfolds || [], ms = data.measures || [], pgs = data.programs || [];
   const water = hasWater(data.water) ? { ...emptyWater(), ...data.water } : emptyWater();
   const remote = {
     routines: data.routines || [], notes: data.notes || {},
@@ -4592,6 +4732,7 @@ function applyRemoteMain(data) {
     ...(sl.length ? { sleep: sl } : {}),
     ...(sk.length ? { skinfolds: sk } : {}),
     ...(ms.length ? { measures: ms } : {}),
+    ...(pgs.length ? { programs: pgs } : {}),
     ...(hasBody(body) ? { body } : {}),
     ...(plan ? { plan } : {}),
     ...(hasWater(water) ? { water } : {}),
@@ -4600,7 +4741,7 @@ function applyRemoteMain(data) {
   const r = stable(remote), local = stable(mainData());
   if (local !== synced.main) return;
   synced.main = r;
-  if (r !== local) { db.routines = remote.routines; db.notes = remote.notes; db.bodyweight = bw; db.sleep = sl; db.skinfolds = sk; db.measures = ms; db.body = body; db.plan = plan; db.water = water; db.nutrition = hasNutrition(data.nutrition) ? { ...emptyNutrition(), ...data.nutrition } : emptyNutrition(); refresh(); }
+  if (r !== local) { db.routines = remote.routines; db.notes = remote.notes; db.bodyweight = bw; db.sleep = sl; db.skinfolds = sk; db.measures = ms; db.programs = pgs; db.body = body; db.plan = plan; db.water = water; db.nutrition = hasNutrition(data.nutrition) ? { ...emptyNutrition(), ...data.nutrition } : emptyNutrition(); refresh(); }
   persistLocal();
 }
 
@@ -4648,6 +4789,7 @@ async function loadFromCloud() {
     db.sleep = main.sleep || [];
     db.skinfolds = main.skinfolds || [];
     db.measures = main.measures || [];
+    db.programs = main.programs || [];
     db.body = main.body || {};
     db.plan = main.plan || null;
     db.water = hasWater(main.water) ? { ...emptyWater(), ...main.water } : emptyWater();
@@ -5035,6 +5177,47 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       const t = db.draft.timer;
       if (t && t.i === i && t.endsAt > Date.now()) setTimer(null);    // tocar de nuevo lo detiene (si ya terminó, empieza otro)
       else { setTimer({ i, endsAt: Date.now() + db.draft.exercises[i].rest * 1000 }); startQuiz(); }
+      break;
+    }
+    case 'myprog-new': {
+      const p = { id: uid(), name: '', weeks: 1, days: [{ r: Array(7).fill(null) }] };
+      db.programs.push(p);
+      save();
+      go('#/miprograma/' + p.id);
+      break;
+    }
+    case 'myprog-weeks': {
+      const p = db.programs.find(x => x.id === routeParts()[1]), n = Number(el.dataset.v);
+      if (!p) return;
+      while (p.days.length < n) p.days.push({ r: Array(7).fill(null) });
+      p.weeks = n;
+      save(); render();
+      break;
+    }
+    case 'myprog-use': {
+      const p = db.programs.find(x => x.id === routeParts()[1]);
+      if (p) useMyProgram(p);
+      break;
+    }
+    case 'myprog-send': {
+      const p = db.programs.find(x => x.id === routeParts()[1]), pr = p && checkSendable(p);
+      if (!pr) return;
+      const chatId = el.dataset.chat;
+      sendMsg(chatId, { type: 'program', program: pr }, `📅 Programa: ${pr.name}`);
+      go('#/chat/' + chatId);
+      break;
+    }
+    case 'myprog-share': {
+      const p = db.programs.find(x => x.id === routeParts()[1]), pr = p && checkSendable(p);
+      if (pr) shareWithCode(el, { program: pr }, { id: p.id, name: pr.name, kind: 'program' });
+      break;
+    }
+    case 'myprog-del': {
+      const p = db.programs.find(x => x.id === routeParts()[1]);
+      if (!p || !confirm(`¿Eliminar el programa "${p.name || '(sin nombre)'}"? Tus rutinas y tu plan no se borran.`)) return;
+      db.programs = db.programs.filter(x => x !== p);
+      save();
+      location.replace('#/programas');
       break;
     }
     case 'prog-level':
@@ -5640,6 +5823,18 @@ $app.addEventListener('input', e => {
     return;
   }
   if (bind === 'crop-zoom') { const c = activeCrop(); if (c) setCropZoom(c, Number(el.value)); return; }
+  if (bind === 'myprog-name' || bind === 'myprog-day') {
+    const p = db.programs.find(x => x.id === routeParts()[1]);
+    if (!p) return;
+    if (bind === 'myprog-name') p.name = el.value;
+    else {
+      p.days[+el.dataset.w].r[+el.dataset.d] = el.value || null;
+      const sub = $app.querySelector('.bar .sub');
+      if (sub) sub.textContent = `${myProgDays(p.days)} días por semana`;
+    }
+    save();
+    return;
+  }
   if (bind === 'plan-day') {
     const p = (db.plan ||= defaultPlan());
     p.days[+el.dataset.w].r[+el.dataset.d] = el.value || null;
