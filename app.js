@@ -1134,7 +1134,7 @@ function viewHome() {
   const planCard = `<a class="card plan-card" href="#/plan">
       <div class="grow"><strong>Mi plan</strong>
         <span class="muted small">${todays === undefined ? 'Arma tu calendario: qué rutina te toca cada día'
-          : `${todays ? `Hoy te toca: ${esc(todays.name)}` : 'Hoy: descanso'} · se repite cada ${plural(db.plan.weeks, 'semana')}`}</span></div>
+          : `${todays ? `Hoy te toca: ${esc(todays.name)}` : 'Hoy: descanso'} · ${activeProgram() ? esc(activeProgram().name || 'Programa') : `se repite cada ${plural(db.plan.weeks, 'semana')}`}`}</span></div>
       <span class="chev">›</span>
     </a>`;
   const routines = db.routines.map((r, i) => `
@@ -2288,7 +2288,7 @@ function msgBody(m, mine) {
       return `<div class="msg-card"><span class="muted small">💪 Entrenamiento</span><div class="pre">${esc(m.text)}</div></div>`;
     case 'program':
       return `<div class="msg-card"><span class="muted small">📅 Programa</span><strong>${esc(m.program.name)}</strong>
-        <span class="muted small">${payloadDays(m.program)} días por semana${m.program.weeks > 1 ? ` · se repite cada ${m.program.weeks} semanas` : ''}</span>
+        <span class="muted small">${plural(payloadDays(m.program), 'día')} por semana${m.program.weeks > 1 ? ` · se repite cada ${m.program.weeks} semanas` : ''}</span>
         <span class="muted small">${esc(payloadWeekLine(m.program))}</span>${add('Usar este programa')}</div>`;
     case 'pr':
       return `<div class="msg-card"><span class="muted small">🔥 ¡Nuevo PR!</span><div class="pre">${esc(m.text)}</div></div>`;
@@ -2321,7 +2321,7 @@ function attachPanel() {
     </section>`;
   }
   const items = attach === 'program'
-    ? db.programs.map(p => [p.id, p.name || '(sin nombre)', `${myProgDays(p.days)} días por semana`])
+    ? db.programs.map(p => [p.id, p.name || '(sin nombre)', `${plural(myProgDays(p.days), 'día')} por semana`])
     : attach === 'diet'
     ? N().diets.map(d => [d.id, d.name, `${plural(d.meals.length, 'comida')} · ${fmtKcal(dietMacros(d).kcal)} kcal`])
     : attach === 'routine'
@@ -2684,7 +2684,11 @@ function viewPlan() {
         <select data-bind="plan-day" data-w="${w}" data-d="${d}" aria-label="${name} de la semana ${w + 1}">${options(wk.r[d])}</select>
       </label>`).join('')}
     </section>`).join('');
+  const act = activeProgram();
   return `${header('Mi plan', { back: true, sub: 'Qué rutina te toca cada día' })}
+    ${act ? `<a class="card plan-card" href="#/miprograma/${act.id}"><div class="grow"><strong>Programa activo: ${esc(act.name || '(sin nombre)')}</strong>
+        <span class="muted small">Lo que cambies aquí también cambia en el programa</span></div><span class="chev">›</span></a>`
+      : planIsLoose() ? '<button class="btn block" data-action="plan-save-prog" style="margin-bottom:12px">Guardar mi plan como programa</button>' : ''}
     <section class="card stack">
       <div class="pace-sentence">
         <span>Se repite cada</span>
@@ -4275,7 +4279,7 @@ function useSharedProgram(pr, from) {
     return r.id;
   });
   const days = pr.days.slice(0, 4).map(w => ({ r: Array.from({ length: 7 }, (_, d) => { const k = (w.r || [])[d]; return k == null ? null : ids[k] || null; }) }));
-  db.plan = { weeks: days.length || 1, start: dayKeyOf(mondayOf(new Date())), days: days.length ? days : [{ r: Array(7).fill(null) }] };
+  db.plan = { weeks: days.length || 1, start: dayKeyOf(mondayOf(new Date())), days: days.length ? days : [{ r: Array(7).fill(null) }], prog: pr.pid };
   db.programs = db.programs.filter(p => p.id !== pr.pid);
   db.programs.push({ id: pr.pid, name: pr.name, weeks: db.plan.weeks, days: clone(db.plan.days), ...(from ? { from } : {}) });
   save();
@@ -4286,17 +4290,45 @@ function useSharedProgram(pr, from) {
   }), 100);
 }
 
-// Uno tuyo: pasa a ser tu plan (las rutinas ya son tuyas)
+// El programa activo ES tu plan: db.plan.prog = id del programa. Lo que cambias en uno se ve en el otro.
+const activeProgram = () => (db.plan && db.plan.prog && db.programs.find(p => p.id === db.plan.prog)) || null;
+const planIsLoose = () => !!(db.plan && !activeProgram() && db.plan.days.some(w => w.r.some(Boolean)));   // plan sin programa guardado
+const validDays = days => days.map(w => ({ r: w.r.map(id => (id && db.routines.some(r => r.id === id) ? id : null)) }));
+function activateProgram(p) {
+  const start = db.plan && db.plan.start ? db.plan.start : dayKeyOf(mondayOf(new Date()));
+  db.plan = { weeks: p.weeks, start, days: validDays(clone(p.days)), prog: p.id };
+}
+// Cambiaste el programa activo: tu plan se actualiza
+function planFromProgram(p) {
+  if (!db.plan || db.plan.prog !== p.id) return;
+  db.plan.weeks = p.weeks;
+  db.plan.days = validDays(clone(p.days));
+}
+// Cambiaste tu plan: el programa activo se actualiza
+function programFromPlan() {
+  const p = activeProgram();
+  if (!p) return;
+  p.weeks = db.plan.weeks;
+  p.days = clone(db.plan.days);
+}
+const nextProgramName = () => { let n = db.programs.length + 1; while (db.programs.some(p => sameName(p.name, `Programa ${n}`))) n++; return `Programa ${n}`; };
+// Para quien ya tenía su plan armado: se guarda como programa y queda activo
+function savePlanAsProgram() {
+  const p = { id: uid(), name: nextProgramName(), weeks: db.plan.weeks, days: clone(db.plan.days) };
+  db.programs.push(p);
+  db.plan.prog = p.id;
+  save();
+  go('#/miprograma/' + p.id);
+}
+
+// Uno tuyo: pasa a ser el activo (tu plan)
 function useMyProgram(p) {
   if (!myProgDays(p.days)) { alert('Elige al menos una rutina en algún día.'); return; }
-  const hasPlan = !!(db.plan && db.plan.days.some(w => w.r.some(Boolean)));
-  if (hasPlan && !confirm(`¿Usar "${p.name || 'este programa'}" como tu plan? Se reemplazará tu plan actual.`)) return;
+  if (planIsLoose() && !confirm(`Tu plan actual no está guardado en Mis programas y se reemplazará por "${p.name || 'este programa'}". ¿Continuar?`)) return;
   const before = db.plan ? clone(db.plan) : null;
-  db.plan = { weeks: p.weeks, start: dayKeyOf(mondayOf(new Date())),
-    days: p.days.slice(0, p.weeks).map(w => ({ r: w.r.map(id => (id && db.routines.some(r => r.id === id) ? id : null)) })) };
-  save();
-  go('#/rutinas');
-  setTimeout(() => showUndo(`Listo: "${p.name || 'Programa'}" es tu plan`, () => { db.plan = before; save(); render(); }), 100);
+  activateProgram(p);
+  save(); render();
+  showUndo(`"${p.name || 'Programa'}" es tu programa activo`, () => { db.plan = before; save(); render(); });
 }
 
 function checkSendable(p) {
@@ -4317,10 +4349,11 @@ function viewMyProgram(id) {
         <select data-bind="myprog-day" data-w="${w}" data-d="${d}" aria-label="${name}">${options(wk.r[d])}</select>
       </label>`).join('')}
     </section>`).join('');
-  const send = chats.length ? `<h2>Enviar a un gymbro</h2>
-    <section class="card stack">${chats.map(c => `<button class="btn block" data-action="myprog-send" data-chat="${c.id}">${esc(gymbroName(c))}</button>`).join('')}
-      <span class="muted small">Le llega por el chat y lo puede usar como su plan con un toque.</span></section>` : '';
-  return `${header('Programa', { back: true, sub: `${myProgDays(p.days)} días por semana` })}
+  const active = activeProgram() === p;
+  return `${header('Programa', { back: true, sub: `${plural(myProgDays(p.days), 'día')} por semana` })}
+    ${active
+      ? '<section class="card active-prog"><strong>Programa activo</strong><span class="muted small">Es el que estás usando: lo que cambies aquí se aplica a tu plan.</span></section>'
+      : '<button class="btn primary block" data-action="myprog-use" style="margin:0 0 14px">Usar este programa</button>'}
     ${p.from ? `<p class="muted small" style="margin:0 0 8px">Te lo envió ${esc(p.from)}</p>` : ''}
     <label class="field"><span>Nombre del programa</span>
       <input data-bind="myprog-name" value="${esc(p.name)}" placeholder="ej. Programa Juan" autocomplete="off"></label>
@@ -4333,11 +4366,8 @@ function viewMyProgram(id) {
       <span class="muted small">Toca el número para cambiarlo (de 1 a 4).</span>
     </section>
     ${db.routines.length ? weeks : '<p class="empty">Primero crea tus rutinas en la pestaña Rutinas; después eliges qué día va cada una.</p>'}
-    <button class="btn primary block" data-action="myprog-use" style="margin-top:16px">Usar como mi plan</button>
-    ${send}
-    ${shareBox(p.id, 'Quien toque el link (o pegue el código en Rutinas) puede usarlo como su plan. Se comparten las rutinas, no tus pesos ni tu historial.')
-      || '<button class="btn block" data-action="myprog-share" style="margin-top:16px">Compartir con código</button>'}
-    <button class="btn ghost block danger-text" data-action="myprog-del">Eliminar programa</button>`;
+    <p class="muted small" style="margin:14px 0 0">Para enviárselo a un alumno o gymbro, en su chat toca ＋ → Enviar un programa.</p>
+    <button class="btn ghost block danger-text" data-action="myprog-del" style="margin-top:20px">Eliminar programa</button>`;
 }
 
 // ---------- Programas (rutinas listas + plan semanal) ----------
@@ -4354,8 +4384,13 @@ const levelToggle = () => `<div class="range" role="group" aria-label="Nivel">${
 function viewPrograms() {
   const list = PROGRAMS.filter(p => !progDays || p.days === progDays);
   const days = [...new Set(PROGRAMS.map(p => p.days))].sort((a, b) => a - b);
-  const mine = db.programs.map(p => `<a class="card prog-item" href="#/miprograma/${p.id}">
-      <div class="grow"><strong>${esc(p.name || '(sin nombre)')}</strong><span class="badge on">${myProgDays(p.days)} días</span>
+  const act = activeProgram();
+  const loose = planIsLoose() ? `<section class="card stack">
+      <span class="muted">Tu plan actual no está guardado como programa.</span>
+      <button class="btn block" data-action="plan-save-prog">Guardar mi plan como programa</button></section>` : '';
+  const mine = loose + db.programs.slice().sort((a, b) => (b === act) - (a === act)).map(p => `<a class="card prog-item ${p === act ? 'active-prog' : ''}" href="#/miprograma/${p.id}">
+      <div class="grow"><strong>${esc(p.name || '(sin nombre)')}</strong>
+        <span class="prog-badges">${p === act ? '<span class="badge on">Activo</span>' : ''}<span class="badge">${plural(myProgDays(p.days), 'día')}</span></span>
         ${p.from ? `<span class="muted small">De ${esc(p.from)}</span>` : ''}
         <span class="muted small prog-week">${esc(myWeekLine(p)) || 'Sin días todavía'}</span></div>
       <span class="chev">›</span></a>`).join('');
@@ -4422,13 +4457,16 @@ function useProgram(p) {
     ? 'se reemplazará tu plan actual. Tus rutinas actuales no se borran.' : 'se armará tu plan de la semana.'}`)) return;
   const prevPlan = db.plan ? clone(db.plan) : null, ids = {};
   for (const k of keys) { const r = routineFromProgram(lv.routines[k]); db.routines.push(r); ids[k] = r.id; }
-  db.plan = { weeks: 1, start: dayKeyOf(mondayOf(new Date())), days: [{ r: lv.week.map(k => (k ? ids[k] : null)) }] };
+  const prevPrograms = clone(db.programs), prog = { id: uid(), name: `${p.name} ${p.days} días`, weeks: 1, days: [{ r: lv.week.map(k => (k ? ids[k] : null)) }] };
+  db.programs.push(prog);
+  activateProgram(prog);
   save();
-  go('#/rutinas');
+  go('#/programas');
   const added = Object.values(ids);
   // Después de cambiar de pantalla (al cambiar de pantalla se esconden los avisos)
-  setTimeout(() => showUndo(`Listo: ${p.name} está en tu plan`, () => {
+  setTimeout(() => showUndo(`Listo: ${p.name} es tu programa activo`, () => {
     db.routines = db.routines.filter(r => !added.includes(r.id));
+    db.programs = prevPrograms;
     db.plan = prevPlan;
     save(); render();
   }), 100);
@@ -5088,6 +5126,7 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       if (!confirm(`¿Eliminar la rutina "${r.name}"? Tu historial se mantiene.${warn}`)) return;
       db.routines = db.routines.filter(x => x !== r);
       if (db.plan) for (const wk of db.plan.days) wk.r = wk.r.map(id => (id === r.id ? null : id));
+      for (const pg of db.programs) for (const wk of pg.days) wk.r = wk.r.map(id => (id === r.id ? null : id));
       save(); goBack();
       break;
     }
@@ -5180,7 +5219,7 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       break;
     }
     case 'myprog-new': {
-      const p = { id: uid(), name: '', weeks: 1, days: [{ r: Array(7).fill(null) }] };
+      const p = { id: uid(), name: nextProgramName(), weeks: 1, days: [{ r: Array(7).fill(null) }] };
       db.programs.push(p);
       save();
       go('#/miprograma/' + p.id);
@@ -5191,31 +5230,23 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       if (!p) return;
       while (p.days.length < n) p.days.push({ r: Array(7).fill(null) });
       p.weeks = n;
+      planFromProgram(p);
       save(); render();
       break;
     }
+    case 'plan-save-prog':
+      if (db.plan) savePlanAsProgram();
+      break;
     case 'myprog-use': {
       const p = db.programs.find(x => x.id === routeParts()[1]);
       if (p) useMyProgram(p);
-      break;
-    }
-    case 'myprog-send': {
-      const p = db.programs.find(x => x.id === routeParts()[1]), pr = p && checkSendable(p);
-      if (!pr) return;
-      const chatId = el.dataset.chat;
-      sendMsg(chatId, { type: 'program', program: pr }, `📅 Programa: ${pr.name}`);
-      go('#/chat/' + chatId);
-      break;
-    }
-    case 'myprog-share': {
-      const p = db.programs.find(x => x.id === routeParts()[1]), pr = p && checkSendable(p);
-      if (pr) shareWithCode(el, { program: pr }, { id: p.id, name: pr.name, kind: 'program' });
       break;
     }
     case 'myprog-del': {
       const p = db.programs.find(x => x.id === routeParts()[1]);
       if (!p || !confirm(`¿Eliminar el programa "${p.name || '(sin nombre)'}"? Tus rutinas y tu plan no se borran.`)) return;
       db.programs = db.programs.filter(x => x !== p);
+      if (db.plan && db.plan.prog === p.id) delete db.plan.prog;   // tu plan sigue igual, pero ya no es de un programa
       save();
       location.replace('#/programas');
       break;
@@ -5627,6 +5658,7 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       const p = (db.plan ||= defaultPlan()), n = Number(el.dataset.v);
       while (p.days.length < n) p.days.push({ r: Array(7).fill(null) });
       p.weeks = n;
+      programFromPlan();
       save(); render();
       break;
     }
@@ -5829,8 +5861,9 @@ $app.addEventListener('input', e => {
     if (bind === 'myprog-name') p.name = el.value;
     else {
       p.days[+el.dataset.w].r[+el.dataset.d] = el.value || null;
+      planFromProgram(p);
       const sub = $app.querySelector('.bar .sub');
-      if (sub) sub.textContent = `${myProgDays(p.days)} días por semana`;
+      if (sub) sub.textContent = `${plural(myProgDays(p.days), 'día')} por semana`;
     }
     save();
     return;
@@ -5838,6 +5871,7 @@ $app.addEventListener('input', e => {
   if (bind === 'plan-day') {
     const p = (db.plan ||= defaultPlan());
     p.days[+el.dataset.w].r[+el.dataset.d] = el.value || null;
+    programFromPlan();
     save();
     return;
   }
@@ -5903,6 +5937,10 @@ $app.addEventListener('focusout', e => {
     const ex = curRoutine() && curRoutine().exercises[+e.target.dataset.i];
     if (ex) e.target.value = { 'ex-goal-sets': ex.goalSets, 'ex-goal-reps': ex.goalReps, 'ex-goal-rir': ex.goalRir }[bind] || '';
   }
+});
+
+$app.addEventListener('focusin', e => {
+  if (e.target.matches('[data-bind="myprog-name"]')) e.target.select();
 });
 
 $app.addEventListener('keydown', e => {
