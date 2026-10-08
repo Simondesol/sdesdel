@@ -2282,7 +2282,7 @@ function msgBody(m, mine) {
     case 'program':
       return `<div class="msg-card"><span class="muted small">📅 Programa</span><strong>${esc(m.program.name)}</strong>
         <span class="muted small">${plural(payloadDays(m.program), 'día')} por semana${m.program.weeks > 1 ? ` · se repite cada ${m.program.weeks} semanas` : ''}</span>
-        <span class="muted small">${esc(payloadWeekLine(m.program))}</span>${add('Usar este programa')}</div>`;
+        <span class="muted small">${esc(payloadWeekLine(m.program))}</span>${add('Añadir a mis programas')}</div>`;
     case 'pr':
       return `<div class="msg-card"><span class="muted small">🔥 ¡Nuevo PR!</span><div class="pre">${esc(m.text)}</div></div>`;
     default:
@@ -4213,14 +4213,13 @@ function programPayload(p) {
 const payloadWeekLine = pr => ((pr.days[0] || {}).r || []).map((k, d) => (k != null && pr.routines[k] ? `${DAY_SHORT[d]} ${pr.routines[k].name}` : null)).filter(Boolean).join(' · ');
 const payloadDays = pr => ((pr.days[0] || {}).r || []).filter(k => k != null).length;
 
-// Programa recibido (por chat o código): agrega sus rutinas, arma tu plan y queda en Mis programas
+// Programa recibido (por chat o código): agrega sus rutinas y queda en Mis programas.
+// Si ya tenías una versión anterior, se reemplaza (y si era tu programa activo, sigue activo con los cambios).
 function useSharedProgram(pr, from) {
   if (!pr || !Array.isArray(pr.routines) || !Array.isArray(pr.days) || !pr.routines.length) { alert('Este programa no trae rutinas.'); return; }
   const prev = db.routines.filter(r => r.prog && r.prog === pr.pid);
-  const hasPlan = !!(db.plan && db.plan.days.some(w => w.r.some(Boolean)));
-  if (!confirm(`¿Usar "${pr.name}"${from ? ` de ${from}` : ''} como tu plan?\n\n${prev.length
-    ? 'Reemplaza la versión anterior de este programa (tu historial se mantiene)'
-    : `Se agregarán ${plural(pr.routines.length, 'rutina')} a tus rutinas`}${hasPlan ? ' y se reemplazará tu plan actual.' : ' y se armará tu plan.'}`)) return;
+  if ((prev.length || db.programs.some(p => p.id === pr.pid))
+    && !confirm(`Ya tienes "${pr.name}" en Mis programas. ¿Reemplazarlo por esta versión${from ? ` de ${from}` : ''}?\n\nTu historial se mantiene.`)) return;
   const before = { routines: clone(db.routines), plan: db.plan ? clone(db.plan) : null, programs: clone(db.programs) };
   const oldEx = new Map();
   for (const r of prev) for (const ex of r.exercises) oldEx.set(guideKey(ex.name), ex);
@@ -4241,14 +4240,17 @@ function useSharedProgram(pr, from) {
     return r.id;
   });
   const days = pr.days.slice(0, 4).map(w => ({ r: Array.from({ length: 7 }, (_, d) => { const k = (w.r || [])[d]; return k == null ? null : ids[k] || null; }) }));
-  db.plan = { weeks: days.length || 1, start: dayKeyOf(mondayOf(new Date())), days: days.length ? days : [{ r: Array(7).fill(null) }], prog: pr.pid };
+  const prog = { id: pr.pid, name: pr.name, weeks: days.length || 1, days: days.length ? days : [{ r: Array(7).fill(null) }], ...(from ? { from } : {}) };
   db.programs = db.programs.filter(p => p.id !== pr.pid);
-  db.programs.push({ id: pr.pid, name: pr.name, weeks: db.plan.weeks, days: clone(db.plan.days), ...(from ? { from } : {}) });
+  db.programs.push(prog);
+  planFromProgram(prog);   // si era tu programa activo, tu semana se actualiza
   save();
-  go('#/rutinas');
-  setTimeout(() => showUndo(`Listo: "${pr.name}" es tu plan`, () => {
+  go('#/miprograma/' + prog.id);
+  // Después de cambiar de pantalla (al cambiar de pantalla se esconden los avisos)
+  setTimeout(() => showUndo(prev.length ? `"${pr.name}" actualizado` : `Añadido a Mis programas con ${plural(ids.length, 'rutina')}`, () => {
     db.routines = before.routines; db.plan = before.plan; db.programs = before.programs;
-    save(); render();
+    save();
+    history.back();
   }), 100);
 }
 
