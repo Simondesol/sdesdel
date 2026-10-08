@@ -3957,8 +3957,10 @@ function render() {
   if (screen !== 'perfil' && photoEdit) { URL.revokeObjectURL(photoEdit.src); photoEdit = null; }
   if (screen !== 'perfil') photoView = false;
   if (screen !== 'fotos') { closeProgressNew(); progOpen = null; }
+  const hadModal = !!guidePick || guideView != null;
   if (screen !== 'entrenar' && screen !== 'editar') guideView = null;
   if (screen !== 'rutina' && screen !== 'entrenar' && screen !== 'editar') guidePick = null;
+  if (hadModal && !guidePick && guideView == null) modalPushed = false;   // se cerró por salir de la pantalla
   if (screen !== 'nutricion') extraMode = null;
   if (screen !== 'chat' && screen !== 'perfil') closeMessages();   // el perfil muestra lo compartido en el chat
 
@@ -4231,6 +4233,17 @@ function searchGuides(q, limit = 6) {
 }
 
 let guideView = null;   // índice del ejercicio (en el entrenamiento) cuya guía está abierta
+let modalPushed = false;   // hay un paso extra en el historial para que "atrás" cierre la ventana
+function syncModalHistory() {
+  const open = !!guidePick || guideView != null;
+  if (open && !modalPushed) { history.pushState({ modal: 1 }, ''); modalPushed = true; }
+  else if (!open && modalPushed) { modalPushed = false; history.back(); }
+}
+window.addEventListener('popstate', () => {
+  if (!modalPushed) return;
+  modalPushed = false;
+  if (guidePick || guideView != null) { guidePick = null; guideView = null; render(); }
+});
 let guidePick = null;   // { rid, exId, q } elegir la guía de un ejercicio a mano
 function setGuide(ctx, id) {
   const r = db.routines.find(x => x.id === ctx.rid), ex = r && r.exercises.find(e => e.id === ctx.exId);
@@ -4254,8 +4267,10 @@ function guidePickerHtml() {
   return `<div class="modal-wrap">
     <div class="modal-back" data-action="guide-pick-close"></div>
     <section class="modal card guide-modal" role="dialog" aria-modal="true" aria-label="Elegir guía de técnica">
-      <h2>Elegir guía de técnica</h2>
-      <input data-bind="guide-q" placeholder="Buscar ejercicio" autocomplete="off" value="${esc(guidePick.q || '')}" aria-label="Buscar ejercicio">
+      <div class="picker-top">
+        <div class="guide-head"><h2>Elegir guía de técnica</h2><button class="icon small" data-action="guide-pick-close" aria-label="Cerrar">✕</button></div>
+        <input data-bind="guide-q" placeholder="Buscar ejercicio" autocomplete="off" value="${esc(guidePick.q || '')}" aria-label="Buscar ejercicio">
+      </div>
       <div class="guide-list">${guideListHtml(guidePick.q)}</div>
       <button class="btn ghost block" data-action="guide-set" data-g="none">Sin guía</button>
       <button class="btn block" data-action="guide-pick-close">Cancelar</button>
@@ -4931,31 +4946,37 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
     case 'guide-view':
       guideView = i;
       render();
+      syncModalHistory();
       break;
     case 'guide-close':
       guideView = null;
       render();
+      syncModalHistory();
       break;
     case 'guide-pick': {   // desde el editor de rutina
       const r = curRoutine();
       guidePick = { rid: r.id, exId: r.exercises[i].id, q: '' };
       render();
+      syncModalHistory();
       break;
     }
     case 'guide-change': {   // desde la guía abierta mientras entrenas
       const d = cur(), ex = d.exercises[guideView];
       guidePick = { rid: d.routineId, exId: ex.exerciseId, q: '' };
       render();
+      syncModalHistory();
       break;
     }
     case 'guide-set':
       setGuide(guidePick, el.dataset.g);
       guidePick = null;
       render();
+      syncModalHistory();
       break;
     case 'guide-pick-close':
       guidePick = null;
       render();
+      syncModalHistory();
       break;
     case 'sugg-ex': {   // sugerencia elegida al agregar un ejercicio: se agrega con su guía
       const g = GUIDE_BY_ID.get(el.dataset.g), f = $app.querySelector('[data-form="new-ex"]');
