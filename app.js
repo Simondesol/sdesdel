@@ -364,7 +364,7 @@ function dietLinksHtml(diet) {
   return `<section class="card stack diet-links">
       <strong>Usar esta dieta los días de</strong>
       <div class="link-chips">${chips}</div>
-      <span class="muted small">Cada día la app elige sola la dieta de la rutina que te toca en <a href="#/plan">Mi plan</a> (o la que entrenaste), o la de descanso.${db.plan ? '' : ' Para saber qué días son de descanso, arma tu plan.'}</span>
+      <span class="muted small">Cada día la app elige sola la dieta de la rutina que te toca en tu <a href="#/programas">programa activo</a> (o la que entrenaste), o la de descanso.${db.plan ? '' : ' Para saber qué días son de descanso, elige un programa.'}</span>
     </section>`;
 }
 
@@ -1131,12 +1131,6 @@ function viewHome() {
       <span class="chev">›</span>
     </a>` : '';
   const last = db.routines.length - 1, todays = plannedRoutine(todayKey());
-  const planCard = `<a class="card plan-card" href="#/plan">
-      <div class="grow"><strong>Mi plan</strong>
-        <span class="muted small">${todays === undefined ? 'Arma tu calendario: qué rutina te toca cada día'
-          : `${todays ? `Hoy te toca: ${esc(todays.name)}` : 'Hoy: descanso'} · ${activeProgram() ? esc(activeProgram().name || 'Programa') : `se repite cada ${plural(db.plan.weeks, 'semana')}`}`}</span></div>
-      <span class="chev">›</span>
-    </a>`;
   const routines = db.routines.map((r, i) => `
     <div class="card routine">
       <a href="#/rutina/${r.id}">
@@ -1151,7 +1145,6 @@ function viewHome() {
     </div>`).join('');
   return `${header('Rutinas', { home: true })}
     ${resume}
-    ${planCard}
     ${routines || '<p class="empty">Aún no tienes rutinas. Elige un programa en la pestaña Programas o crea la tuya abajo.</p>'}
     <form class="add-row" data-form="new-routine">
       <input name="title" placeholder="Nueva rutina (ej. Brazo)" autocomplete="off" required>
@@ -2642,7 +2635,6 @@ $app.addEventListener('pointercancel', endCropDrag);
 // Se repite cada `weeks` semanas: la app sabe qué semana del ciclo es y qué rutina toca cada día.
 const DAY_NAMES = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
 const mondayOf = date => { const d = new Date(date); d.setHours(12, 0, 0, 0); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d; };
-const defaultPlan = () => ({ weeks: 1, start: dayKeyOf(mondayOf(new Date())), days: [{ r: Array(7).fill(null) }] });
 function planWeekIndex(plan, date) {
   const diff = Math.round((mondayOf(date) - mondayOf(`${plan.start}T12:00:00`)) / (7 * 86400000));
   return ((diff % plan.weeks) + plan.weeks) % plan.weeks;
@@ -2668,38 +2660,6 @@ function planUses(routineId) {
   }).filter(Boolean);
 }
 
-function viewPlan() {
-  const p = db.plan || defaultPlan();
-  if (!db.routines.length) {
-    return `${header('Mi plan', { back: true })}<p class="empty">Primero crea tus rutinas en <a href="#/rutinas">Rutinas</a>; después eliges qué día toca cada una.</p>`;
-  }
-  const nowWeek = planWeekIndex(p, new Date()), nowDay = (new Date().getDay() + 6) % 7;
-  const options = sel => `<option value="">Descanso</option>${db.routines.map(r =>
-    `<option value="${r.id}" ${r.id === sel ? 'selected' : ''}>${esc(r.name || '(sin nombre)')}</option>`).join('')}`;
-  const weeks = p.days.slice(0, p.weeks).map((wk, w) => `
-    <h2>Semana ${w + 1}${p.weeks > 1 && w === nowWeek ? ' · esta semana' : ''}</h2>
-    <section class="card plan-week">${DAY_NAMES.map((name, d) => `
-      <label class="plan-row ${w === nowWeek && d === nowDay ? 'today' : ''}">
-        <span>${name}${w === nowWeek && d === nowDay ? ' <span class="badge on">Hoy</span>' : ''}</span>
-        <select data-bind="plan-day" data-w="${w}" data-d="${d}" aria-label="${name} de la semana ${w + 1}">${options(wk.r[d])}</select>
-      </label>`).join('')}
-    </section>`).join('');
-  const act = activeProgram();
-  return `${header('Mi plan', { back: true, sub: 'Qué rutina te toca cada día' })}
-    ${act ? `<a class="card plan-card" href="#/miprograma/${act.id}"><div class="grow"><strong>Programa activo: ${esc(act.name || '(sin nombre)')}</strong>
-        <span class="muted small">Lo que cambies aquí también cambia en el programa</span></div><span class="chev">›</span></a>`
-      : planIsLoose() ? '<button class="btn block" data-action="plan-save-prog" style="margin-bottom:12px">Guardar mi plan como programa</button>' : ''}
-    <section class="card stack">
-      <div class="pace-sentence">
-        <span>Se repite cada</span>
-        <button class="btn pace-dir plan-n" data-action="plan-weeks" data-v="${(p.weeks % 4) + 1}" aria-label="Cambiar cada cuántas semanas se repite">${p.weeks}</button>
-        <span>${p.weeks === 1 ? 'semana' : 'semanas'}</span>
-      </div>
-      <span class="muted small">Toca el número para cambiarlo (de 1 a 4).</span>
-    </section>
-    ${weeks}
-    ${db.plan ? '<button class="btn ghost block danger-text" data-action="plan-del" style="margin-top:20px">Quitar plan</button>' : ''}`;
-}
 
 // ---------- Perfil de gymbro ----------
 // Cada uno publica un resumen (récords, estadísticas, últimos entrenamientos) en profiles/{uid}; solo sus gymbros lo pueden leer.
@@ -4013,7 +3973,7 @@ function render() {
     case 'chat': html = viewChat(arg); break;
     case 'perfil': html = viewProfile(arg); break;
     case 'privacidad': html = viewPrivacy(); break;
-    case 'plan': html = viewPlan(); break;
+    case 'plan': location.replace(activeProgram() ? `#/miprograma/${activeProgram().id}` : '#/programas'); return;   // antes: pantalla Mi plan
     case 'grasa': html = viewBodyFat(); break;
     case 'pliegues': html = viewSkinfolds(); break;
     case 'programas': html = viewPrograms(); tab = 'programas'; break;
@@ -4306,27 +4266,23 @@ function planFromProgram(p) {
   db.plan.weeks = p.weeks;
   db.plan.days = validDays(clone(p.days));
 }
-// Cambiaste tu plan: el programa activo se actualiza
-function programFromPlan() {
-  const p = activeProgram();
-  if (!p) return;
-  p.weeks = db.plan.weeks;
-  p.days = clone(db.plan.days);
-}
 const nextProgramName = () => { let n = db.programs.length + 1; while (db.programs.some(p => sameName(p.name, `Programa ${n}`))) n++; return `Programa ${n}`; };
-// Para quien ya tenía su plan armado: se guarda como programa y queda activo
-function savePlanAsProgram() {
-  const p = { id: uid(), name: nextProgramName(), weeks: db.plan.weeks, days: clone(db.plan.days) };
+// Quien ya tenía su plan armado (antes de existir los programas): se guarda solo como programa activo
+function migrateLoosePlan() {
+  if (!planIsLoose()) return;
+  let name = 'Mi programa';
+  for (let n = 2; db.programs.some(x => sameName(x.name, name)); n++) name = `Mi programa ${n}`;
+  const p = { id: uid(), name, weeks: db.plan.weeks, days: clone(db.plan.days) };
   db.programs.push(p);
   db.plan.prog = p.id;
   save();
-  go('#/miprograma/' + p.id);
 }
 
 // Uno tuyo: pasa a ser el activo (tu plan)
 function useMyProgram(p) {
   if (!myProgDays(p.days)) { alert('Elige al menos una rutina en algún día.'); return; }
-  if (planIsLoose() && !confirm(`Tu plan actual no está guardado en Mis programas y se reemplazará por "${p.name || 'este programa'}". ¿Continuar?`)) return;
+  const act = activeProgram();
+  if (!confirm(`¿Usar "${p.name || 'este programa'}" como tu programa activo?${act ? `\n\nDejarás de usar "${act.name || 'tu programa actual'}" (no se borra, sigue en Mis programas).` : ''}`)) return;
   const before = db.plan ? clone(db.plan) : null;
   activateProgram(p);
   save(); render();
@@ -4354,7 +4310,8 @@ function viewMyProgram(id) {
   const active = activeProgram() === p;
   return `${header('Programa', { back: true, sub: `${plural(myProgDays(p.days), 'día')} por semana` })}
     ${active
-      ? '<section class="card active-prog"><strong>Programa activo</strong><span class="muted small">Es el que estás usando: lo que cambies aquí se aplica a tu plan.</span></section>'
+      ? `<section class="card active-prog"><strong>Programa activo</strong><span class="muted small">Es el que estás usando: lo que cambies aquí se aplica a tu semana.</span>
+          <button class="link small" data-action="myprog-stop" style="justify-self:start">Dejar de usar</button></section>`
       : '<button class="btn primary block" data-action="myprog-use" style="margin:0 0 14px">Usar este programa</button>'}
     ${p.from ? `<p class="muted small" style="margin:0 0 8px">Te lo envió ${esc(p.from)}</p>` : ''}
     <label class="field"><span>Nombre del programa</span>
@@ -4385,10 +4342,7 @@ const levelToggle = () => `<div class="range" role="group" aria-label="Nivel">${
 
 function viewPrograms() {
   const act = activeProgram();
-  const loose = planIsLoose() ? `<section class="card stack">
-      <span class="muted">Tu plan actual no está guardado como programa.</span>
-      <button class="btn block" data-action="plan-save-prog">Guardar mi plan como programa</button></section>` : '';
-  const mine = loose + db.programs.slice().sort((a, b) => (b === act) - (a === act)).map(p => `<a class="card prog-item ${p === act ? 'active-prog' : ''}" href="#/miprograma/${p.id}">
+  const mine = db.programs.slice().sort((a, b) => (b === act) - (a === act)).map(p => `<a class="card prog-item ${p === act ? 'active-prog' : ''}" href="#/miprograma/${p.id}">
       <div class="grow"><strong>${esc(p.name || '(sin nombre)')}</strong>
         <span class="prog-badges">${p === act ? '<span class="badge on">Activo</span>' : ''}<span class="badge">${plural(myProgDays(p.days), 'día')}</span></span>
         ${p.from ? `<span class="muted small">De ${esc(p.from)}</span>` : ''}
@@ -4902,6 +4856,7 @@ async function handleUser(u) {
   pendingBody = null;
 
   status = 'ready';
+  migrateLoosePlan();
   // Si el teléfono cerró la app en medio del entrenamiento, al abrirla vuelves a él (no al inicio)
   if (firstOpen && db.draft && routeParts()[0] === '') location.replace('#/entrenar');
   firstOpen = false;
@@ -5242,8 +5197,10 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       save(); render();
       break;
     }
-    case 'plan-save-prog':
-      if (db.plan) savePlanAsProgram();
+    case 'myprog-stop':
+      if (!confirm('¿Dejar de usar este programa? No se borra; sigue en Mis programas. Mientras no tengas uno activo, la app no te dirá qué te toca cada día.')) return;
+      db.plan = null;
+      save(); render();
       break;
     case 'myprog-use': {
       const p = db.programs.find(x => x.id === routeParts()[1]);
@@ -5661,20 +5618,6 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
     case 'photo-del':
       if (confirm('¿Quitar tu foto de perfil?')) setMyPhoto(null);
       break;
-    case 'plan-weeks': {
-      // Si bajas el número, las semanas que sobran se ocultan pero no se borran (vuelven si lo subes de nuevo)
-      const p = (db.plan ||= defaultPlan()), n = Number(el.dataset.v);
-      while (p.days.length < n) p.days.push({ r: Array(7).fill(null) });
-      p.weeks = n;
-      programFromPlan();
-      save(); render();
-      break;
-    }
-    case 'plan-del':
-      if (!confirm('¿Quitar tu plan? Tus rutinas no se borran.')) return;
-      db.plan = null;
-      save(); render();
-      break;
     case 'photo-view':
       photoView = true;
       render();
@@ -5873,13 +5816,6 @@ $app.addEventListener('input', e => {
       const sub = $app.querySelector('.bar .sub');
       if (sub) sub.textContent = `${plural(myProgDays(p.days), 'día')} por semana`;
     }
-    save();
-    return;
-  }
-  if (bind === 'plan-day') {
-    const p = (db.plan ||= defaultPlan());
-    p.days[+el.dataset.w].r[+el.dataset.d] = el.value || null;
-    programFromPlan();
     save();
     return;
   }
