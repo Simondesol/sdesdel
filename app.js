@@ -4408,7 +4408,7 @@ function viewReadyPrograms() {
   const list = PROGRAMS.filter(p => !progDays || p.days === progDays);
   const days = [...new Set(PROGRAMS.map(p => p.days))].sort((a, b) => a - b);
   return `${header('Programas listos', { back: true, sub: 'Hechos por un coach' })}
-    <p class="muted" style="margin:0 0 12px">Elige tu nivel y cuántos días puedes entrenar: el programa agrega sus rutinas y arma tu plan.</p>
+    <p class="muted" style="margin:0 0 12px">Elige tu nivel y cuántos días puedes entrenar. Añádelo a Mis programas para usarlo como tu plan, o cámbialo y envíaselo a un alumno.</p>
     ${levelToggle()}
     <div class="skin-views">${[0, ...days].map(n => `<button class="chip toggle ${n === progDays ? 'on' : ''}" data-action="prog-days" data-n="${n}">${n ? `${n} días` : 'Todos'}</button>`).join('')}</div>
     ${list.map(p => `<a class="card prog-item" href="#/programa/${p.id}">
@@ -4436,10 +4436,10 @@ function viewProgram(id) {
     <p class="muted" style="margin:0 0 12px">${esc(p.desc)}</p>
     ${levelToggle()}
     ${week}
-    <button class="btn primary block" data-action="prog-use" style="margin:0 0 16px">Usar este programa</button>
+    <button class="btn primary block" data-action="prog-add" style="margin:0 0 16px">Añadir a mis programas</button>
     ${routines}
-    <p class="muted small">Cada ejercicio trae sus series, reps, RIR objetivo, descanso y guía de técnica. Las rutinas quedan como tuyas: puedes cambiarlas cuando quieras.</p>
-    <button class="btn primary block" data-action="prog-use">Usar este programa</button>`;
+    <p class="muted small">Queda en Mis programas: desde ahí lo usas como tu plan, o lo cambias y se lo envías a un alumno. Cada ejercicio trae sus series, repeticiones, RIR, descanso y guía de técnica.</p>
+    <button class="btn primary block" data-action="prog-add">Añadir a mis programas</button>`;
 }
 
 // Copia una rutina del programa a tus rutinas (si ya hiciste ese ejercicio, se usa el tuyo para mantener tu historial)
@@ -4459,25 +4459,24 @@ function routineFromProgram(rt) {
   };
 }
 
-function useProgram(p) {
-  const lv = p.levels[progLevel], keys = progKeys(lv);
-  const hasPlan = !!(db.plan && db.plan.days.some(w => w.r.some(Boolean)));
-  if (!confirm(`¿Usar "${p.name}" · ${p.days} días (${LEVELS[progLevel]})?\n\nSe agregarán ${plural(keys.length, 'rutina')} a tus rutinas y ${hasPlan
-    ? 'se reemplazará tu plan actual. Tus rutinas actuales no se borran.' : 'se armará tu plan de la semana.'}`)) return;
-  const prevPlan = db.plan ? clone(db.plan) : null, ids = {};
+// Añade el programa listo a Mis programas (con sus rutinas), sin cambiar tu plan: lo puedes usar o
+// tomarlo como base, cambiarlo y enviárselo a un alumno
+function addReadyProgram(p) {
+  const lv = p.levels[progLevel], keys = progKeys(lv), ids = {};
   for (const k of keys) { const r = routineFromProgram(lv.routines[k]); db.routines.push(r); ids[k] = r.id; }
-  const prevPrograms = clone(db.programs), prog = { id: uid(), name: `${p.name} ${p.days} días`, weeks: 1, days: [{ r: lv.week.map(k => (k ? ids[k] : null)) }] };
+  let name = `${p.name} ${p.days} días · ${LEVELS[progLevel]}`;
+  for (let n = 2; db.programs.some(x => sameName(x.name, name)); n++) name = `${p.name} ${p.days} días · ${LEVELS[progLevel]} ${n}`;
+  const prog = { id: uid(), name, weeks: 1, days: [{ r: lv.week.map(k => (k ? ids[k] : null)) }] };
   db.programs.push(prog);
-  activateProgram(prog);
   save();
-  go('#/programas');
+  go('#/miprograma/' + prog.id);
   const added = Object.values(ids);
   // Después de cambiar de pantalla (al cambiar de pantalla se esconden los avisos)
-  setTimeout(() => showUndo(`Listo: ${p.name} es tu programa activo`, () => {
+  setTimeout(() => showUndo(`Añadido a Mis programas con ${plural(keys.length, 'rutina')}`, () => {
     db.routines = db.routines.filter(r => !added.includes(r.id));
-    db.programs = prevPrograms;
-    db.plan = prevPlan;
-    save(); render();
+    db.programs = db.programs.filter(x => x !== prog);
+    save();
+    location.replace('#/listos');
   }), 100);
 }
 
@@ -5268,9 +5267,9 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       progDays = +el.dataset.n;
       render();
       break;
-    case 'prog-use': {
+    case 'prog-add': {
       const p = progById(routeParts()[1]);
-      if (p) useProgram(p);
+      if (p) addReadyProgram(p);
       break;
     }
     case 'prog-add-one': {
