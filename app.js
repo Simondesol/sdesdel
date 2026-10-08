@@ -4018,6 +4018,7 @@ function render() {
     case 'pliegues': html = viewSkinfolds(); break;
     case 'programas': html = viewPrograms(); tab = 'programas'; break;
     case 'miprograma': html = viewMyProgram(arg); break;
+    case 'listos': html = viewReadyPrograms(); break;
     case 'programa': html = viewProgram(arg); break;
     case 'medidas': html = viewMeasures(); break;
     case 'fotos': html = viewProgressPhotos(); break;
@@ -4051,6 +4052,7 @@ function parentRoute() {
   return {
     rutina: '#/rutinas', plan: '#/rutinas', editar: '#/historial', sesion: '#/historial',
     progreso: arg ? '#/progreso' : '#/', ejercicio: '#/progreso',
+    listos: '#/programas', programa: '#/listos', miprograma: '#/programas',
     alimento: '#/nutricion/alimentos', dieta: '#/nutricion/dietas', objetivo: '#/nutricion/dietas',
     chat: '#/social', gymbro: '#/social', perfil: '#/social', privacidad: '#/perfil/yo', pliegues: '#/grasa',
   }[screen] || '#/';
@@ -4382,8 +4384,6 @@ const levelToggle = () => `<div class="range" role="group" aria-label="Nivel">${
   `<button class="${k === progLevel ? 'on' : ''}" data-action="prog-level" data-l="${k}">${name}</button>`).join('')}</div>`;
 
 function viewPrograms() {
-  const list = PROGRAMS.filter(p => !progDays || p.days === progDays);
-  const days = [...new Set(PROGRAMS.map(p => p.days))].sort((a, b) => a - b);
   const act = activeProgram();
   const loose = planIsLoose() ? `<section class="card stack">
       <span class="muted">Tu plan actual no está guardado como programa.</span>
@@ -4397,9 +4397,18 @@ function viewPrograms() {
   return `${header('Programas', { home: true, sub: 'Tu semana de entrenamiento' })}
     <h2>Mis programas</h2>
     ${mine || '<p class="muted small" style="margin:0 0 8px">Arma un programa con tus rutinas para usarlo como tu plan o enviárselo a tus alumnos y gymbros.</p>'}
-    <button class="btn block" data-action="myprog-new" style="margin-bottom:8px">+ Crear programa</button>
-    <h2>Programas listos</h2>
-    <p class="muted" style="margin:0 0 12px">Hechos por un coach. Elige tu nivel y cuántos días puedes entrenar: el programa agrega sus rutinas y arma tu plan.</p>
+    <div class="prog-actions">
+      <button class="btn" data-action="myprog-new">+ Crear programa</button>
+      <a class="btn primary" href="#/listos">Programas listos</a>
+    </div>`;
+}
+
+// Programas listos (hechos por un coach): se abren desde el botón en Programas
+function viewReadyPrograms() {
+  const list = PROGRAMS.filter(p => !progDays || p.days === progDays);
+  const days = [...new Set(PROGRAMS.map(p => p.days))].sort((a, b) => a - b);
+  return `${header('Programas listos', { back: true, sub: 'Hechos por un coach' })}
+    <p class="muted" style="margin:0 0 12px">Elige tu nivel y cuántos días puedes entrenar: el programa agrega sus rutinas y arma tu plan.</p>
     ${levelToggle()}
     <div class="skin-views">${[0, ...days].map(n => `<button class="chip toggle ${n === progDays ? 'on' : ''}" data-action="prog-days" data-n="${n}">${n ? `${n} días` : 'Todos'}</button>`).join('')}</div>
     ${list.map(p => `<a class="card prog-item" href="#/programa/${p.id}">

@@ -883,3 +883,5 @@ body:has(.quiz:not([hidden])) #app { padding-bottom: 440px; }
 section.active-prog { display: grid; gap: 4px; margin-bottom: 14px; }
 section.active-prog strong { color: var(--accent); }
 .prog-badges { display: flex; gap: 6px; flex-wrap: wrap; }
+.prog-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 4px; }
+.prog-actions .btn { display: flex; align-items: center; justify-content: center; text-align: center; white-space: nowrap; padding: 0 8px; font-size: 15px; }
