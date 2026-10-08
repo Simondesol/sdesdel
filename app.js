@@ -1,6 +1,7 @@
 import { BASE_FOODS, synonymsOf } from './foods-base.js';
 import { QUIZ, QUIZ_CATS } from './quiz.js';
 import { GUIDES, GUIDE_ZONES } from './ejercicios.js';
+import { PROGRAMS, LEVELS } from './programas.js';
 
 // ---------- Datos ----------
 // Cada usuario tiene una copia en el teléfono (para usar la app sin internet en el gym)
@@ -1148,10 +1149,16 @@ function viewHome() {
       </div>` : ''}
       <button class="btn primary" data-action="start" data-id="${r.id}" ${r.exercises.length ? '' : 'disabled'}>Empezar</button>
     </div>`).join('');
+  const progCard = `<a class="card plan-card prog-card" href="#/programas">
+      <div class="grow"><strong>Programas</strong>
+        <span class="muted small">Rutinas listas por días a la semana, hechas por un coach</span></div>
+      <span class="chev">›</span>
+    </a>`;
   return `${header('Rutinas', { home: true })}
     ${resume}
     ${planCard}
-    ${routines || '<p class="empty">Aún no tienes rutinas. Crea la primera abajo.</p>'}
+    ${progCard}
+    ${routines || '<p class="empty">Aún no tienes rutinas. Elige un programa listo arriba o crea la tuya abajo.</p>'}
     <form class="add-row" data-form="new-routine">
       <input name="title" placeholder="Nueva rutina (ej. Brazo)" autocomplete="off" required>
       <button class="btn">Crear</button>
@@ -3993,6 +4000,8 @@ function render() {
     case 'plan': html = viewPlan(); break;
     case 'grasa': html = viewBodyFat(); break;
     case 'pliegues': html = viewSkinfolds(); break;
+    case 'programas': html = viewPrograms(); break;
+    case 'programa': html = viewProgram(arg); break;
     case 'medidas': html = viewMeasures(); break;
     case 'fotos': html = viewProgressPhotos(); break;
     default: html = viewHub();   // Inicio: sin pestañas
@@ -4199,6 +4208,91 @@ function setTimer(t) {
   if (!t) quizCur = null;   // terminó el descanso: se va la pregunta
   paintTimer();
   paintQuiz();
+}
+
+// ---------- Programas (rutinas listas + plan semanal) ----------
+let progDays = 0;      // filtro por días a la semana (0 = todos)
+let progLevel = 'p';   // Principiante o Intermedio
+const BW_GUIDES = new Set(['dominadas', 'dominadas-supinas', 'fondos']);   // se anota el lastre
+const DAY_SHORT = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+const progById = id => PROGRAMS.find(p => p.id === id);
+const progKeys = lv => [...new Set(lv.week.filter(Boolean))];   // rutinas en el orden de la semana
+const weekLine = lv => lv.week.map((k, d) => (k ? `${DAY_SHORT[d]} ${lv.routines[k].name}` : null)).filter(Boolean).join(' · ');
+const levelToggle = () => `<div class="range" role="group" aria-label="Nivel">${Object.entries(LEVELS).map(([k, name]) =>
+  `<button class="${k === progLevel ? 'on' : ''}" data-action="prog-level" data-l="${k}">${name}</button>`).join('')}</div>`;
+
+function viewPrograms() {
+  const list = PROGRAMS.filter(p => !progDays || p.days === progDays);
+  const days = [...new Set(PROGRAMS.map(p => p.days))].sort((a, b) => a - b);
+  return `${header('Programas', { back: true, sub: 'Rutinas listas, hechas por un coach' })}
+    <p class="muted" style="margin:0 0 12px">Elige cuántos días puedes entrenar y tu nivel. El programa agrega sus rutinas y arma tu plan de la semana.</p>
+    ${levelToggle()}
+    <div class="skin-views">${[0, ...days].map(n => `<button class="chip toggle ${n === progDays ? 'on' : ''}" data-action="prog-days" data-n="${n}">${n ? `${n} días` : 'Todos'}</button>`).join('')}</div>
+    ${list.map(p => `<a class="card prog-item" href="#/programa/${p.id}">
+      <div class="grow"><strong>${esc(p.name)}</strong><span class="badge on">${p.days} días</span>
+        <span class="muted small">${esc(p.desc)}</span>
+        <span class="muted small prog-week">${esc(weekLine(p.levels[progLevel]))}</span></div>
+      <span class="chev">›</span></a>`).join('')}`;
+}
+
+function viewProgram(id) {
+  const p = progById(id);
+  if (!p) { location.replace('#/programas'); return ''; }
+  const lv = p.levels[progLevel];
+  const week = `<div class="prog-days">${lv.week.map((k, d) => `<div class="${k ? 'on' : ''}"><b>${DAY_SHORT[d]}</b><span>${k ? esc(lv.routines[k].name) : '–'}</span></div>`).join('')}</div>`;
+  const routines = progKeys(lv).map(k => {
+    const rt = lv.routines[k];
+    return `<section class="card prog-routine">
+      <div class="goal-top"><strong>${esc(rt.name)}</strong><span class="muted small">${plural(rt.ex.length, 'ejercicio')}</span></div>
+      <ul class="prog-ex">${rt.ex.map(([gid, sets, reps, rir, rest]) => `<li><span>${esc(GUIDE_BY_ID.get(gid).name)}</span>
+        <span class="muted small">${sets} × ${reps} · RIR ${rir} · ${fmtRest(rest)}</span></li>`).join('')}</ul>
+      <button class="link small" data-action="prog-add-one" data-k="${k}">Agregar solo esta rutina</button>
+    </section>`;
+  }).join('');
+  return `${header(p.name, { back: true, sub: `${p.days} días por semana` })}
+    <p class="muted" style="margin:0 0 12px">${esc(p.desc)}</p>
+    ${levelToggle()}
+    ${week}
+    <button class="btn primary block" data-action="prog-use" style="margin:0 0 16px">Usar este programa</button>
+    ${routines}
+    <p class="muted small">Cada ejercicio trae sus series, reps, RIR objetivo, descanso y guía de técnica. Las rutinas quedan como tuyas: puedes cambiarlas cuando quieras.</p>
+    <button class="btn primary block" data-action="prog-use">Usar este programa</button>`;
+}
+
+// Copia una rutina del programa a tus rutinas (si ya hiciste ese ejercicio, se usa el tuyo para mantener tu historial)
+function routineFromProgram(rt) {
+  const used = new Set();
+  const taken = name => db.routines.some(r => sameName(r.name, name));
+  let name = rt.name;
+  for (let n = 2; taken(name); n++) name = `${rt.name} ${n}`;
+  return {
+    id: uid(), name,
+    exercises: rt.ex.map(([gid, sets, reps, rir, rest]) => {
+      const g = GUIDE_BY_ID.get(gid), found = findExercise(g.name), mine = found && !used.has(found.id) ? found : null;
+      if (mine) used.add(mine.id);
+      return { id: mine ? mine.id : uid(), name: mine ? mine.name : g.name, unit: mine ? mine.unit : 'kg', rest,
+        rir: true, goalSets: sets, goalReps: reps, goalRir: rir, guide: gid, ...(BW_GUIDES.has(gid) ? { bw: true } : {}) };
+    }),
+  };
+}
+
+function useProgram(p) {
+  const lv = p.levels[progLevel], keys = progKeys(lv);
+  const hasPlan = !!(db.plan && db.plan.days.some(w => w.r.some(Boolean)));
+  if (!confirm(`¿Usar "${p.name}" · ${p.days} días (${LEVELS[progLevel]})?\n\nSe agregarán ${plural(keys.length, 'rutina')} a tus rutinas y ${hasPlan
+    ? 'se reemplazará tu plan actual. Tus rutinas actuales no se borran.' : 'se armará tu plan de la semana.'}`)) return;
+  const prevPlan = db.plan ? clone(db.plan) : null, ids = {};
+  for (const k of keys) { const r = routineFromProgram(lv.routines[k]); db.routines.push(r); ids[k] = r.id; }
+  db.plan = { weeks: 1, start: dayKeyOf(mondayOf(new Date())), days: [{ r: lv.week.map(k => (k ? ids[k] : null)) }] };
+  save();
+  go('#/rutinas');
+  const added = Object.values(ids);
+  // Después de cambiar de pantalla (al cambiar de pantalla se esconden los avisos)
+  setTimeout(() => showUndo(`Listo: ${p.name} está en tu plan`, () => {
+    db.routines = db.routines.filter(r => !added.includes(r.id));
+    db.plan = prevPlan;
+    save(); render();
+  }), 100);
 }
 
 // ---------- Guías de técnica ----------
@@ -4941,6 +5035,28 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       const t = db.draft.timer;
       if (t && t.i === i && t.endsAt > Date.now()) setTimer(null);    // tocar de nuevo lo detiene (si ya terminó, empieza otro)
       else { setTimer({ i, endsAt: Date.now() + db.draft.exercises[i].rest * 1000 }); startQuiz(); }
+      break;
+    }
+    case 'prog-level':
+      progLevel = el.dataset.l;
+      render();
+      break;
+    case 'prog-days':
+      progDays = +el.dataset.n;
+      render();
+      break;
+    case 'prog-use': {
+      const p = progById(routeParts()[1]);
+      if (p) useProgram(p);
+      break;
+    }
+    case 'prog-add-one': {
+      const p = progById(routeParts()[1]), rt = p && p.levels[progLevel].routines[el.dataset.k];
+      if (!rt) return;
+      const r = routineFromProgram(rt);
+      db.routines.push(r);
+      save(); render();
+      showUndo(`Rutina "${r.name}" agregada a tus rutinas`, () => { db.routines = db.routines.filter(x => x.id !== r.id); save(); render(); });
       break;
     }
     case 'guide-view':

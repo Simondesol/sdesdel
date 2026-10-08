@@ -862,3 +862,18 @@ body:has(.quiz:not([hidden])) #app { padding-bottom: 440px; }
 .guide-zone { margin: 10px 0 2px; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
 .guide-list .food-pick .grow, .ex-sugg .food-pick .grow { display: grid; gap: 2px; white-space: normal; }
 .picker-top { position: sticky; top: -12px; z-index: 1; display: grid; gap: 10px; margin: -12px -12px 0; padding: 12px 12px 10px; background: var(--surface); border-radius: var(--r) var(--r) 0 0; }
+
+/* Programas */
+.prog-item .grow { display: grid; gap: 4px; }
+.prog-item .grow strong { display: inline; margin-right: 6px; }
+.prog-item .badge { justify-self: start; }
+.prog-week { color: var(--accent); }
+.prog-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; margin: 0 0 12px; }
+.prog-days div { display: grid; gap: 2px; align-content: start; padding: 6px 2px; border: 1px solid var(--border); border-radius: 8px; text-align: center; font-size: 11px; color: var(--muted); min-width: 0; overflow-wrap: anywhere; }
+.prog-days div.on { border-color: var(--accent); color: var(--text); background: var(--surface2); }
+.prog-days b { font-size: 12px; color: var(--muted); }
+.prog-routine { display: grid; gap: 8px; }
+.prog-ex { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.prog-ex li { display: grid; gap: 1px; padding-bottom: 6px; border-bottom: 1px solid var(--border); font-size: 14px; }
+.prog-ex li:last-child { border-bottom: 0; padding-bottom: 0; }
+.prog-routine .link { justify-self: start; }
