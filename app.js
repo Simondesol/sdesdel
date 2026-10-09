@@ -35,6 +35,7 @@ const openHistory = new Set();   // ejercicios con el historial desplegado
 let editingNote = null;          // ejercicio cuya nota se está editando
 let editBuf = null;              // copia de un entrenamiento guardado que se está editando
 let justFinished = null;         // entrenamiento recién guardado (para mostrar el resumen)
+let saveAsOpen = null, saveAsDone = null;   // "Guardar como rutina" de un entreno libre: abierto / descartado
 
 function persistLocal() {
   if (user) localStorage.setItem(userKey(user.uid), JSON.stringify({ db, synced }));
@@ -1143,9 +1144,18 @@ function viewHome() {
       </div>` : ''}
       <button class="btn primary" data-action="start" data-id="${r.id}" ${r.exercises.length ? '' : 'disabled'}>Empezar</button>
     </div>`).join('');
+  const free = d ? '' : routines
+    ? '<button class="btn block" data-action="start-free" style="margin:0 0 12px">Entrenar sin rutina</button>'
+    : `<section class="card stack free-start">
+        <strong>¿Vas a entrenar ahora?</strong>
+        <span class="muted small">Anota tus ejercicios a medida que los haces, sin armar nada antes.</span>
+        <button class="btn primary block" data-action="start-free">Entrenar sin rutina</button>
+        <a class="btn block center" href="#/programas">Elegir un programa</a>
+      </section>`;
   return `${header('Rutinas', { home: true })}
     ${resume}
-    ${routines || '<p class="empty">Aún no tienes rutinas. Elige un programa en la pestaña Programas o crea la tuya abajo.</p>'}
+    ${free}
+    ${routines || '<p class="empty">O arma tu propia rutina: escribe su nombre abajo.</p>'}
     <form class="add-row" data-form="new-routine">
       <input name="title" placeholder="Nueva rutina (ej. Brazo)" autocomplete="off" required>
       <button class="btn">Crear</button>
@@ -1307,9 +1317,93 @@ const groupIndex = (groups, pos) => Math.max(0, groups.findIndex(g => g.includes
 const groupName = (d, g) => g.map(k => d.exercises[k].name).join(' + ');
 const letterOf = n => String.fromCharCode(65 + n);   // A, B, C… en un superset
 
+// Entreno libre (sin rutina): eliges cada ejercicio y cuántas series vas a hacer.
+// freeAdd = null (cerrado), {} (eligiendo ejercicio) o { name, guide, known } (eligiendo cuántas series)
+let freeAdd = null, freeQ = '';
+const FREE_REST = 120;   // descanso por defecto de un ejercicio nuevo en el entreno libre
+
+// Tus ejercicios (historial y rutinas), del más reciente al más antiguo, sin repetir
+function ownExercises() {
+  const seen = new Set(), out = [];
+  const add = n => { const k = normText(n.trim()); if (k && !seen.has(k)) { seen.add(k); out.push(n); } };
+  for (let i = db.workouts.length - 1; i >= 0; i--) for (const ex of db.workouts[i].exercises) add(ex.name);
+  for (const r of db.routines) for (const ex of r.exercises) add(ex.name);
+  return out;
+}
+const freePickBtn = (name, sub, g = '') => `<button type="button" class="food-pick" data-action="free-pick" data-name="${esc(name)}" data-g="${g}">
+    <span class="grow"><strong>${esc(name)}</strong><span class="muted small">${esc(sub)}</span></span><span class="chev">+</span></button>`;
+function freeSuggHtml(q) {
+  const own = ownExercises(), text = q.trim();
+  if (!text) {
+    return own.length ? `<span class="muted small">Recientes</span>${own.slice(0, 6).map(n => freePickBtn(n, 'Ya lo has hecho')).join('')}`
+      : '<span class="muted small">Escribe el nombre y elige de la lista. Si no aparece, agrégalo igual.</span>';
+  }
+  const mine = own.filter(n => normText(n).includes(normText(text))).slice(0, 3);
+  const guides = searchGuides(text, 6).filter(g => !mine.some(n => sameName(n, g.name))).slice(0, 6 - mine.length);
+  const exact = [...mine, ...guides.map(g => g.name)].some(n => sameName(n, text));
+  return mine.map(n => freePickBtn(n, 'Ya lo has hecho')).join('')
+    + guides.map(g => freePickBtn(g.name, g.musc, g.id)).join('')
+    + (exact ? '' : freePickBtn(text[0].toUpperCase() + text.slice(1), 'Agregar este ejercicio'));
+}
+function freePickerHtml(d) {
+  const fp = freeAdd || {};
+  if (fp.name) {
+    return `<section class="card stack free-pick">
+      <strong>¿Cuántas series de ${esc(fp.name)}?</strong>
+      <div class="free-sets">${[1, 2, 3, 4, 5, 6].map(n => `<button class="btn" data-action="free-sets" data-n="${n}">${n}</button>`).join('')}</div>
+      ${fp.known ? '' : `<label class="free-unit muted small">Unidad ${unitSelect()}</label>`}
+      <span class="muted small">Si después haces más, agregas otra con "+ serie".</span>
+      <button class="link small" data-action="free-change" style="justify-self:start">Cambiar ejercicio</button>
+    </section>`;
+  }
+  return `<section class="card stack free-pick">
+      <strong>${d.exercises.length ? '¿Qué ejercicio sigue?' : '¿Qué ejercicio vas a hacer?'}</strong>
+      <input data-bind="free-q" value="${esc(freeQ)}" placeholder="Ej. press militar" autocomplete="off" aria-label="Nombre del ejercicio">
+      <div class="ex-sugg free-sugg">${freeSuggHtml(freeQ)}</div>
+      ${d.exercises.length ? '<button class="link small" data-action="free-cancel" style="justify-self:start">Cancelar</button>' : ''}
+    </section>`;
+}
+function startFree() {
+  if (db.draft && !confirm(`Tienes un entrenamiento de "${db.draft.routineName}" sin guardar. ¿Descartarlo y empezar uno nuevo?`)) return;
+  setTimer(null);
+  db.draft = { free: true, routineId: null, routineName: 'Entreno libre', start: new Date().toISOString(), timer: null, exercises: [] };
+  freeAdd = null; freeQ = '';
+  save();
+  go('#/entrenar');
+}
+function addFreeExercise(n) {
+  const d = cur(), fp = freeAdd;
+  if (!d || !fp || !fp.name) return;
+  const found = findExercise(fp.name), id = found ? found.id : uid();
+  if (d.exercises.some(e => e.exerciseId === id)) { alert(`"${fp.name}" ya está en este entrenamiento.`); return; }
+  const sel = $app.querySelector('.free-pick select[name="unit"]');
+  if (sel) lastUnit = sel.value;
+  const rir = !!(found && found.rir);
+  const sets = prefillSets(lastFor(id, beforeIndex(d)), rir, n).slice(0, n);
+  // El que estabas haciendo queda con ✓ si anotaste algo
+  const prev = d.exercises[d.pos || 0];
+  if (prev && (d.touched || {})[prev.exerciseId] && !(d.done ||= []).includes(prev.exerciseId)) d.done.push(prev.exerciseId);
+  d.exercises.push({
+    exerciseId: id, name: found ? found.name : fp.name, unit: found ? found.unit : lastUnit,
+    rest: (found && found.rest) || FREE_REST, rir, extra: true,
+    ...(fp.guide ? { guide: fp.guide } : {}),
+    sets,
+  });
+  d.pos = d.exercises.length - 1;
+  freeAdd = null; freeQ = '';
+  save(); render();
+  window.scrollTo(0, 0);
+}
+
 function viewWorkout() {
   const d = cur();
   if (!d) { location.replace(isEditing() ? '#/historial' : '#/rutinas'); return ''; }
+  // Entreno libre recién empezado: primero se elige el ejercicio
+  if (!d.exercises.length) {
+    return `${header(d.routineName, { back: true, sub: `Duración ${elapsedClock(d.start)}` })}
+      ${freePickerHtml(d)}
+      <div class="actions"><button class="btn ghost block danger-text" data-action="discard">Descartar entrenamiento</button></div>`;
+  }
   const editing = !!d.editOf;
   const before = beforeIndex(d);
 
@@ -1446,13 +1540,14 @@ function viewWorkout() {
   return `${header(title, { back: true, sub: `Ejercicio ${gi + 1} de ${groups.length} · ${editing ? fmtDate(d.start) : `Duración ${elapsedClock(d.start)}`}` })}
     ${steps}
     ${group.length > 1 ? supersetBlock(group) : exerciseBlock(d.exercises[group[0]], group[0])}
+    ${d.free && isLast ? (freeAdd ? freePickerHtml(d) : '<button class="btn block free-more" data-action="free-open">+ Otro ejercicio</button>') : ''}
     ${nav}
     ${isLast ? `
-    <form class="add-row" data-form="extra-ex">
+    ${d.free ? '' : `<form class="add-row" data-form="extra-ex">
       <input name="title" placeholder="+ Ejercicio extra" autocomplete="off" required>
       ${unitSelect()}
       <button class="btn">Agregar</button>
-    </form>
+    </form>`}
     <div class="actions">
       ${editing
         ? '<button class="btn ghost block" data-action="back">Cancelar</button>'
@@ -1988,8 +2083,19 @@ function viewSession(id) {
       <div class="legend-line muted small"><span class="mark up">▲</span> superaste · <span class="mark eq">=</span> igualaste · <span class="mark down">▼</span> bajo tu récord</div>
     </section>`;
 
+  // Entreno libre: se puede guardar como rutina (justo al terminar se ofrece; después, un botón chico)
+  const asRoutine = !w.free || w.routineId || saveAsDone === w.id ? ''
+    : justFinished === id || saveAsOpen === id ? `<form class="card stack" data-form="save-as-routine" data-id="${w.id}">
+        <strong>¿Guardar estos ejercicios como rutina?</strong>
+        <span class="muted small">La próxima vez la empiezas con un toque y te muestra lo que hiciste hoy.</span>
+        <input name="title" value="" placeholder="Nombre (ej. Pecho y hombros)" autocomplete="off" required aria-label="Nombre de la rutina">
+        <button class="btn primary block">Guardar como rutina</button>
+        <button type="button" class="link small" data-action="saveas-no" data-id="${w.id}" style="justify-self:start">No, gracias</button>
+      </form>`
+    : `<button class="btn block" data-action="saveas-open" data-id="${w.id}" style="margin:0 0 10px">Guardar como rutina</button>`;
   return `${header(w.routineName, { back: true, sub: fmtLongDate(w.date) })}
     ${summary}
+    ${asRoutine}
     ${prsSent && prsSent.id === w.id ? `<p class="pr-note">🔥 ¡${prsSent.n === 1 ? 'Nuevo PR' : `${prsSent.n} PRs nuevos`}! Se lo avisamos a tus gymbros.</p>` : ''}
     <button class="btn primary block" data-action="share-workout" data-id="${w.id}" style="margin:0 0 10px">📤 Compartir entrenamiento</button>
     ${blocks}
@@ -4134,13 +4240,39 @@ function finishWorkout() {
   setTimer(null);
   const id = uid();
   const durationSec = Math.max(0, Math.round((Date.now() - new Date(d.start).getTime()) / 1000));
-  const w = { id, routineId: d.routineId, routineName: d.routineName, date: d.start, durationSec, exercises };
+  const w = { id, routineId: d.routineId, routineName: d.routineName, date: d.start, durationSec, exercises, ...(d.free ? { free: true } : {}) };
   db.workouts.push(w);
   db.draft = null;
   save();
   announcePRs(w);
   justFinished = id;
   location.replace('#/sesion/' + id);
+}
+
+// Entreno libre → rutina: mismos ejercicios (mismo historial) y sus series como objetivo
+function saveFreeAsRoutine(id, title) {
+  const w = db.workouts.find(x => x.id === id);
+  if (!w) return;
+  const rests = new Map();
+  for (const r of db.routines) for (const ex of r.exercises) if (ex.rest && !rests.has(ex.id)) rests.set(ex.id, ex.rest);
+  const r = {
+    id: uid(), name: uniqueRoutineName(title),
+    exercises: w.exercises.map(ex => ({
+      id: ex.exerciseId, name: ex.name, unit: ex.unit, rest: rests.get(ex.exerciseId) || FREE_REST, goalSets: ex.sets.length,
+      ...(ex.rir ? { rir: true } : {}), ...(ex.bw ? { bw: true } : {}),
+    })),
+  };
+  const before = { routineId: w.routineId, routineName: w.routineName };
+  db.routines.push(r);
+  w.routineId = r.id;
+  w.routineName = r.name;
+  save();
+  go('#/rutinas');
+  setTimeout(() => showUndo(`Rutina "${r.name}" guardada`, () => {
+    db.routines = db.routines.filter(x => x !== r);
+    Object.assign(w, before);
+    save(); render();
+  }), 100);
 }
 
 function makeEditBuf(id) {
@@ -4996,6 +5128,44 @@ $app.addEventListener('click', e => {
       goBack();
       break;
 
+    case 'start-free':
+      startFree();
+      break;
+    case 'free-open':
+      freeAdd = {}; freeQ = '';
+      render();
+      $app.querySelector('[data-bind="free-q"]')?.focus();
+      break;
+    case 'free-cancel':
+      freeAdd = null;
+      render();
+      break;
+    case 'free-change':
+      freeAdd = {};
+      render();
+      $app.querySelector('[data-bind="free-q"]')?.focus();
+      break;
+    case 'free-pick': {
+      const d = cur(), name = el.dataset.name, g = el.dataset.g, found = findExercise(name);
+      const id2 = found && found.id;
+      if (d && id2 && d.exercises.some(e => e.exerciseId === id2)) { alert(`"${found.name}" ya está en este entrenamiento.`); return; }
+      freeAdd = { name: found ? found.name : name, guide: g || null, known: !!found };
+      render();
+      $app.querySelector('.free-pick')?.scrollIntoView({ block: 'nearest' });
+      break;
+    }
+    case 'free-sets':
+      addFreeExercise(+el.dataset.n);
+      break;
+    case 'saveas-open':
+      saveAsOpen = el.dataset.id;
+      render();
+      $app.querySelector('[data-form="save-as-routine"] input')?.focus();
+      break;
+    case 'saveas-no':
+      saveAsDone = el.dataset.id;
+      render();
+      break;
     case 'start': {
       const r = db.routines.find(x => x.id === id);
       if (!r) return;
@@ -5807,6 +5977,12 @@ $app.addEventListener('input', e => {
   if (!bind) return;
   if (bind === 'progress-search') { progressQuery = el.value; filterProgress(); return; }
   if (bind === 'food-search') { foodQuery = el.value; filterFoods(); return; }
+  if (bind === 'free-q') {
+    freeQ = el.value;
+    const box = $app.querySelector('.free-sugg');
+    if (box) box.innerHTML = freeSuggHtml(freeQ);
+    return;
+  }
   if (bind === 'ex-title') {
     const box = $app.querySelector('.ex-sugg'), res = searchGuides(el.value, 5);
     if (box) box.innerHTML = res.length ? `<span class="muted small">Con guía de técnica:</span>${res.map(g => `<button type="button" class="food-pick" data-action="sugg-ex" data-g="${g.id}">
@@ -5993,7 +6169,8 @@ $app.addEventListener('submit', e => {
   }
   const title = f.elements.title.value.trim();
   if (!title) return;
-  if (f.dataset.form === 'new-routine') {
+  if (f.dataset.form === 'save-as-routine') saveFreeAsRoutine(f.dataset.id, title);
+  else if (f.dataset.form === 'new-routine') {
     const r = { id: uid(), name: title, exercises: [] };
     db.routines.push(r);
     save();

@@ -885,3 +885,13 @@ section.active-prog strong { color: var(--accent); }
 .prog-badges { display: flex; gap: 6px; flex-wrap: wrap; }
 .prog-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 4px; }
 .prog-actions .btn { display: flex; align-items: center; justify-content: center; text-align: center; white-space: nowrap; padding: 0 8px; font-size: 15px; }
+
+/* Entreno libre */
+.free-start { margin-bottom: 14px; }
+.free-pick { margin-bottom: 12px; }
+.free-pick input { width: 100%; }
+.free-sets { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
+.free-sets .btn { padding-left: 0; padding-right: 0; font-size: 18px; font-weight: 700; }
+.free-unit { display: flex; align-items: center; gap: 8px; }
+.free-unit select { width: auto; }
+.free-more { margin-bottom: 12px; }
