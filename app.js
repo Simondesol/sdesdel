@@ -4031,7 +4031,16 @@ function render() {
 
 const go = hash => { location.hash = hash; };
 
-window.addEventListener('hashchange', () => { hideToast(); render(); window.scrollTo(0, 0); });
+// Al volver atrás, la pantalla queda donde la dejaste; al entrar a una pantalla nueva, parte arriba
+const scrollPos = new Map(), visited = [location.hash];
+window.addEventListener('scroll', () => scrollPos.set(visited[visited.length - 1], window.scrollY), { passive: true });
+window.addEventListener('hashchange', () => {
+  hideToast();
+  const back = visited.length > 1 && visited[visited.length - 2] === location.hash;
+  if (back) visited.pop(); else visited.push(location.hash);
+  render();
+  window.scrollTo(0, back ? scrollPos.get(location.hash) || 0 : 0);
+});
 
 // Pantalla "de arriba" de cada pantalla (para volver cuando no hay historial)
 function parentRoute() {
