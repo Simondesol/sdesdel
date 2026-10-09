@@ -1264,6 +1264,10 @@ function viewRoutine() {
     <label class="field"><span>Nombre de la rutina</span>
       <input data-bind="routine-name" value="${esc(r.name)}" autocomplete="off">
     </label>
+    <section class="card stack edit-hint" style="margin-top:14px">
+      <span class="muted small">Aquí armas la rutina: ejercicios, series y repeticiones. Los pesos de cada serie se anotan al entrenar.</span>
+      <button class="btn primary block" data-action="start" data-id="${r.id}" ${r.exercises.length ? '' : 'disabled'}>Empezar rutina</button>
+    </section>
     <h2>Ejercicios</h2>
     <ul class="list ex-edit">${items || '<p class="empty">Agrega los ejercicios de esta rutina.</p>'}</ul>
     <form class="add-row" data-form="new-ex">
@@ -1277,6 +1281,16 @@ function viewRoutine() {
     <button class="btn block" data-action="dup-routine">Duplicar rutina</button>
     <button class="btn ghost block danger-text" data-action="del-routine">Eliminar rutina</button>
     ${guidePickerHtml()}`;
+}
+
+// Agregar un ejercicio que ya está en la rutina: casi siempre se quería hacer otra serie
+function okRepeatedEx(name) {
+  const r = curRoutine(), k = r.exercises.findIndex(ex => sameName(ex.name, name));
+  if (k < 0) return true;
+  if (confirm(`"${r.exercises[k].name}" ya está en esta rutina.\n\nSi quieres hacer más series, no lo agregues otra vez: cambia el número de Series. Cada serie, con su peso, se anota al entrenar (Empezar rutina).\n\n¿Agregarlo igual?`)) return true;
+  openEx = k;   // se abre el que ya estaba, para cambiar sus series
+  render();
+  return false;
 }
 
 // Superset: los ejercicios unidos con el siguiente (ssNext) se hacen juntos, intercalando sus series
@@ -5292,6 +5306,7 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       const g = GUIDE_BY_ID.get(el.dataset.g), f = $app.querySelector('[data-form="new-ex"]');
       if (!g || !f) return;
       lastUnit = f.elements.unit.value;
+      if (!okRepeatedEx(g.name)) return;
       curRoutine().exercises.push({ id: uid(), name: g.name, unit: lastUnit, rest: 0, guide: g.id });
       openEx = curRoutine().exercises.length - 1;
       save(); render();
@@ -5976,6 +5991,7 @@ $app.addEventListener('submit', e => {
     go('#/rutina/' + r.id);
   } else if (f.dataset.form === 'new-ex') {
     lastUnit = f.elements.unit.value;
+    if (!okRepeatedEx(title)) return;
     curRoutine().exercises.push({ id: uid(), name: title, unit: lastUnit, rest: 0 });
     openEx = curRoutine().exercises.length - 1;   // el nuevo queda abierto para configurarlo
     save(); render();
