@@ -895,3 +895,22 @@ section.active-prog strong { color: var(--accent); }
 .free-unit { display: flex; align-items: center; gap: 8px; }
 .free-unit select { width: auto; }
 .free-more { margin-bottom: 12px; }
+
+/* Tutorial */
+.tour-wrap { z-index: 60; }
+.tour { text-align: center; gap: 14px; padding: 20px 18px; }
+.tour-top { display: flex; justify-content: space-between; align-items: center; min-height: 24px; }
+.tour-icon { font-size: 56px; line-height: 1; width: 96px; height: 96px; margin: 4px auto 0; display: grid; place-items: center;
+  border-radius: 50%; background: var(--surface2); border: 1px solid var(--border); }
+.tour h2 { font-size: 22px; }
+.tour-text { margin: 0; color: var(--muted); line-height: 1.5; min-height: 6em; }
+.tour-dots { display: flex; justify-content: center; gap: 6px; }
+.tour-dots span { width: 8px; height: 8px; border-radius: 50%; background: var(--border); }
+.tour-dots span.on { background: var(--accent, #4cad34); width: 20px; border-radius: 4px; }
+.tour-nav { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.tour-offer { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.tour-offer .grow { display: grid; gap: 2px; min-width: 0; }
+.tour-offer .btn { flex: none; white-space: nowrap; }
+.tip-card { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 12px; font-size: 14px; line-height: 1.45; color: var(--muted); }
+.tip-card span { flex: 1; }
+.tip-card .icon { flex: none; }

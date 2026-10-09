@@ -232,8 +232,14 @@ function viewHub() {
   maybeAskSleep();
   const d = db.draft;
   const ml = waterToday(), goal = waterGoal().ml, streak = waterStreak();
+  const tourOffer = tourSeen() || tourOpen ? '' : `<section class="card tour-offer">
+      <div class="grow"><strong>¿Conoces todo lo que tiene Desdel?</strong><span class="muted small">Un recorrido corto por la app.</span></div>
+      <button class="btn primary" data-action="tour-open">Ver tutorial</button>
+      <button class="icon small" data-action="tour-offer-no" aria-label="No mostrar">✕</button>
+    </section>`;
   return `${header('Desdel', { sub: 'Entrena. Anota. Supera.', right: GEAR })}
     <div class="hub-wrap">
+    ${tourOffer}
     ${entrenoCard()}
 
     ${nutritionCard()}
@@ -1541,7 +1547,7 @@ function viewWorkout() {
     ${steps}
     ${group.length > 1 ? supersetBlock(group) : exerciseBlock(d.exercises[group[0]], group[0])}
     ${d.free && isLast ? (freeAdd ? freePickerHtml(d) : '<button class="btn block free-more" data-action="free-open">+ Otro ejercicio</button>') : ''}
-    ${nav}
+    ${d.free && freeAdd ? '' : nav}
     ${isLast ? `
     ${d.free ? '' : `<form class="add-row" data-form="extra-ex">
       <input name="title" placeholder="+ Ejercicio extra" autocomplete="off" required>
@@ -1719,6 +1725,12 @@ function viewAccount() {
 
     <section class="card" data-sync style="margin-top:16px">${syncHtml()}</section>
     <p class="muted hint">Tus datos se guardan en tu cuenta. Inicia sesión con el mismo correo en otro teléfono para verlos.</p>
+
+    <h2>Ayuda</h2>
+    <section class="card stack">
+      <button class="btn block" data-action="tour-open">Ver tutorial</button>
+      <button class="btn ghost block" data-action="tips-reset">Volver a mostrar los consejos</button>
+    </section>
 
     <h2>Quiz entre series</h2>
     <section class="card stack">
@@ -3855,8 +3867,76 @@ function sleepAvg(days) {
   return list.length ? list.reduce((a, e) => a + e.h, 0) / list.length : null;
 }
 
+// ---------- Tutorial ----------
+// Bienvenida de 5 pantallas: se abre sola al crear la cuenta y se puede ver de nuevo en Cuenta.
+// A quien ya usaba la app se le ofrece una vez en el inicio. Se guarda en este teléfono.
+const tourKey = () => `desdel-tour-${user.uid}`;
+const tipsKey = () => `desdel-tips-${user.uid}`;
+let tourOpen = false, tourStep = 0;
+const tourSeen = () => { try { return !!localStorage.getItem(tourKey()); } catch (e) { return true; } };
+function setTourSeen() { try { localStorage.setItem(tourKey(), 'done'); } catch (e) { /* sin almacenamiento */ } }
+const TOUR = [
+  { icon: '💪', title: 'Bienvenido a Desdel', text: 'Anota tu entreno y mira si de verdad estás progresando. Gratis y con todo en un solo lugar.' },
+  { icon: '📅', title: 'Rutinas y programas', text: 'Elige un programa listo según los días que tienes y tu nivel, o arma tu propia rutina. Si prefieres, también puedes entrenar sin rutina.' },
+  { icon: '🏋️', title: 'Entrenar', text: 'Toca Empezar y anota el peso y las repeticiones de cada serie. Te muestra lo que hiciste la vez anterior para que lo superes, y en el descanso te hace preguntas para aprender.' },
+  { icon: '📈', title: 'Progreso', text: 'Mira el gráfico de cada ejercicio y tus récords: así sabes si estás subiendo o si te estancaste.' },
+  { icon: '🧩', title: 'Todo lo demás', text: 'Peso, medidas, % de grasa y fotos. Dieta, agua y sueño. Y tus gymbros: chat, rutinas compartidas y récords. Todo está en el inicio.' },
+];
+function tourHtml() {
+  const t = TOUR[tourStep], last = tourStep === TOUR.length - 1;
+  return `<div class="modal-wrap tour-wrap">
+    <div class="modal-back"></div>
+    <section class="modal card tour" role="dialog" aria-modal="true" aria-labelledby="tour-title">
+      <div class="tour-top">
+        <span class="muted small">${tourStep + 1} de ${TOUR.length}</span>
+        ${last ? '' : '<button class="link small" data-action="tour-close">Saltar</button>'}
+      </div>
+      <div class="tour-icon" aria-hidden="true">${t.icon}</div>
+      <h2 id="tour-title">${t.title}</h2>
+      <p class="tour-text">${t.text}</p>
+      <div class="tour-dots" aria-hidden="true">${TOUR.map((_, k) => `<span class="${k === tourStep ? 'on' : ''}"></span>`).join('')}</div>
+      ${last ? `
+        <button class="btn primary block" data-action="tour-go" data-to="free">Entrenar sin rutina</button>
+        <button class="btn block" data-action="tour-go" data-to="#/listos">Elegir un programa</button>
+        <button class="btn ghost block" data-action="tour-close">Explorar la app</button>`
+      : `<div class="tour-nav">
+          ${tourStep ? '<button class="btn" data-action="tour-prev">‹ Atrás</button>' : '<span></span>'}
+          <button class="btn primary" data-action="tour-next">Siguiente ›</button>
+        </div>`}
+    </section>
+  </div>`;
+}
+function openTour() { tourOpen = true; tourStep = 0; setTourSeen(); render(); }
+function closeTour() { tourOpen = false; setTourSeen(); render(); }
+
+// Consejo la primera vez que entras a una sección (se cierra con ✕ y no vuelve a salir)
+const TIPS = {
+  rutinas: 'Toca una rutina para editarla y Empezar para entrenarla. Si tienes un programa activo, la que te toca hoy aparece marcada.',
+  entrenar: 'Anota peso y repeticiones de cada serie; vienen con lo de la vez anterior. ▲ superaste tu mejor serie, = igualaste, ▼ quedaste bajo. Si el ejercicio tiene Rest, tócalo al terminar cada serie.',
+  programas: 'Los programas listos traen la semana armada según tus días y nivel. El programa activo es el que te dice qué rutina te toca cada día.',
+  historial: 'Toca un día del calendario para ver lo que entrenaste. Desde cada entreno lo puedes editar o compartir.',
+  progreso: 'Toca un ejercicio para ver su gráfico y tus récords.',
+  peso: 'Pésate en ayunas, varias veces por semana: el promedio de la semana dice más que un día suelto.',
+  grasa: 'Anota tu % de grasa (o calcúlalo con pliegues) y mira tu FFMI: cuánto músculo tienes para tu estatura.',
+  medidas: 'Mide cada 2 a 4 semanas, siempre en las mismas condiciones: así los gráficos muestran cambios reales.',
+  fotos: 'Sácate las fotos con la misma luz, ropa y pose cada vez: así se nota el cambio.',
+  nutricion: 'Arma tu dieta con alimentos y cantidades, y marca cada día las comidas que te comiste. Las calorías y proteínas se suman solas.',
+  agua: 'Toca los botones para sumar lo que tomas. La meta se calcula con tu peso, y la puedes cambiar.',
+  sueno: 'Anota cuántas horas dormiste. Cada mañana, al abrir la app, te lo pregunta.',
+  social: 'Agrega a tus gymbros con su código: pueden chatear, mandarse rutinas, dietas y programas, y ver sus récords.',
+};
+function tipsClosed() { try { return JSON.parse(localStorage.getItem(tipsKey())) || []; } catch (e) { return []; } }
+function closeTip(k) { try { localStorage.setItem(tipsKey(), JSON.stringify([...new Set([...tipsClosed(), k])])); } catch (e) { /* sin almacenamiento */ } }
+function tipHtml(screen, arg) {
+  const k = screen === 'entrenar' ? (arg ? null : 'entrenar') : screen === 'progreso' && arg ? null : screen;
+  if (!k || !TIPS[k] || tourOpen || tipsClosed().includes(k)) return '';
+  return `<div class="card tip-card" data-tip="${k}"><span>💡 ${TIPS[k]}</span>
+    <button class="icon small" data-action="tip-close" data-k="${k}" aria-label="Cerrar consejo">✕</button></div>`;
+}
+
 // Una vez al día, al abrir la app, pregunta cuántas horas dormiste (si todavía no lo anotas)
 function maybeAskSleep() {
+  if (tourOpen) return;
   if (localStorage.getItem(sleepAskedKey()) === todayKey()) return;
   localStorage.setItem(sleepAskedKey(), todayKey());
   if (!db.sleep.some(e => e.date === todayKey())) sleepAsk = true;
@@ -4118,6 +4198,9 @@ function render() {
     default: html = viewHub();   // Inicio: sin pestañas
   }
   const stepsLeft = $app.querySelector('.steps')?.scrollLeft;   // fila de ejercicios del entrenamiento
+  const tip = tipHtml(screen, arg);
+  if (tip) html = html.replace('</header>', '</header>' + tip);
+  if (tourOpen) html += tourHtml();
   $app.innerHTML = html;
   const steps = $app.querySelector('.steps');
   if (steps) {
@@ -4172,6 +4255,18 @@ function goBack() {
     if (!moved) location.replace(fallback);
   }, 350);
 }
+
+// Bienvenida: deslizar a la izquierda avanza, a la derecha vuelve
+let tourTouch = null;
+$app.addEventListener('touchstart', e => { tourTouch = e.target.closest('.tour') ? e.touches[0].clientX : null; }, { passive: true });
+$app.addEventListener('touchend', e => {
+  if (tourTouch == null || !tourOpen) return;
+  const dx = e.changedTouches[0].clientX - tourTouch;
+  tourTouch = null;
+  if (Math.abs(dx) < 50) return;
+  const next = Math.min(Math.max(tourStep + (dx < 0 ? 1 : -1), 0), TOUR.length - 1);
+  if (next !== tourStep) { tourStep = next; render(); }
+});
 
 // ---------- Aviso con "Deshacer" ----------
 const $toast = document.createElement('div');
@@ -5022,8 +5117,13 @@ async function handleUser(u) {
   const legacy = readLegacy();
   if (legacy) migrateLegacy(legacy);
   // Estatura y sexo que pusiste al crear la cuenta
+  const fresh = pendingBody !== null;
   if (pendingBody && Object.keys(pendingBody).length) db.body = { ...pendingBody, ...db.body };
   pendingBody = null;
+  if (fresh && !tourSeen()) {
+    tourOpen = true; tourStep = 0; setTourSeen();
+    try { localStorage.setItem(sleepAskedKey(), todayKey()); } catch (e) { /* sin almacenamiento */ }
+  }
 
   status = 'ready';
   migrateLoosePlan();
@@ -5131,10 +5231,43 @@ $app.addEventListener('click', e => {
     case 'start-free':
       startFree();
       break;
-    case 'free-open':
+    case 'tour-open':
+      openTour();
+      break;
+    case 'tour-offer-no':
+      setTourSeen();
+      render();
+      break;
+    case 'tour-next':
+      tourStep = Math.min(tourStep + 1, TOUR.length - 1);
+      render();
+      break;
+    case 'tour-prev':
+      tourStep = Math.max(tourStep - 1, 0);
+      render();
+      break;
+    case 'tour-close':
+      closeTour();
+      break;
+    case 'tour-go':
+      tourOpen = false;
+      if (el.dataset.to === 'free') startFree();
+      else go(el.dataset.to);
+      render();
+      break;
+    case 'tip-close':
+      closeTip(el.dataset.k);
+      el.closest('.tip-card')?.remove();
+      break;
+    case 'tips-reset':
+      try { localStorage.removeItem(tipsKey()); } catch (e) { /* sin almacenamiento */ }
+      alert('Listo: los consejos volverán a aparecer al entrar a cada sección.');
+      break;
+    case 'free-open':   // mientras eliges el ejercicio no se muestra "Terminar y guardar" (no se toca sin querer)
       freeAdd = {}; freeQ = '';
       render();
-      $app.querySelector('[data-bind="free-q"]')?.focus();
+      $app.querySelector('.free-pick')?.scrollIntoView({ block: 'start' });
+      $app.querySelector('[data-bind="free-q"]')?.focus({ preventScroll: true });
       break;
     case 'free-cancel':
       freeAdd = null;
