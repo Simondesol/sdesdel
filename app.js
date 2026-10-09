@@ -3414,17 +3414,24 @@ function saveSkinfolds(f) {
 
 
 // ---------- Medidas con huincha ----------
-// db.measures = [{ date: 'AAAA-MM-DD', m: { cintura: 82.5, … } }] en cm; cada medida es opcional
+// db.measures = [{ date: 'AAAA-MM-DD', m: { cintura: 82.5, … } }] en cm; cada medida es opcional.
+// Brazo, muslo y pantorrilla van por lado: 'brazo' es el derecho (así se medía antes) y 'brazoI' el izquierdo.
 const MEASURE_SITES = [
   ['cuello', 'Cuello', 'Justo debajo de la manzana de Adán'],
   ['hombros', 'Hombros', 'En la parte más ancha, con los brazos relajados'],
   ['pecho', 'Pecho', 'A la altura de los pezones, después de botar el aire normal'],
-  ['brazo', 'Brazo', 'En la parte más gruesa, con el bíceps flexionado'],
   ['cintura', 'Cintura', 'A la altura del ombligo, sin meter el estómago'],
   ['cadera', 'Cadera', 'En la parte más ancha de los glúteos'],
-  ['muslo', 'Muslo', 'En la parte más gruesa, justo debajo del glúteo'],
-  ['pantorrilla', 'Pantorrilla', 'En la parte más gruesa'],
+  ['brazo', 'Brazo der.', 'En la parte más gruesa, con el bíceps flexionado'],
+  ['brazoI', 'Brazo izq.', 'En la parte más gruesa, con el bíceps flexionado'],
+  ['muslo', 'Muslo der.', 'En la parte más gruesa, justo debajo del glúteo'],
+  ['musloI', 'Muslo izq.', 'En la parte más gruesa, justo debajo del glúteo'],
+  ['pantorrilla', 'Pantorrilla der.', 'En la parte más gruesa'],
+  ['pantorrillaI', 'Pantorrilla izq.', 'En la parte más gruesa'],
 ];
+const MEASURE_PAIRS = { brazo: 'brazoI', muslo: 'musloI', pantorrilla: 'pantorrillaI' };
+// [derecho, izquierdo] si la medida va por lado
+const measurePair = k => (MEASURE_PAIRS[k] ? [k, MEASURE_PAIRS[k]] : Object.entries(MEASURE_PAIRS).find(([, i]) => i === k) || null);
 let measureView = 'cintura', measureRange = '3m';
 // Último valor anotado de una medida (para mostrarlo de ejemplo)
 const lastMeasure = k => { for (let n = db.measures.length - 1; n >= 0; n--) if (db.measures[n].m[k] != null) return db.measures[n].m[k]; return null; };
@@ -3435,7 +3442,7 @@ function viewMeasures() {
       <span class="muted small">${today ? 'Hoy ya mediste con huincha; puedes corregirlo.' : 'Medidas de hoy con huincha, en cm. Anota solo las que quieras.'}</span>
       <div class="measure-inputs">${MEASURE_SITES.map(([k, name]) => {
         const last = lastMeasure(k);
-        return `<label class="field"><span>${name}</span>
+        return `<label class="field"${MEASURE_PAIRS[k] ? ' style="grid-column:1"' : ''}><span>${name}</span>
           <input name="${k}" inputmode="decimal" value="${today && today.m[k] != null ? toField(today.m[k]) : ''}" placeholder="${last != null ? toField(last) : 'cm'}" autocomplete="off" aria-label="${name} en cm">
         </label>`;
       }).join('')}</div>
@@ -3444,8 +3451,9 @@ function viewMeasures() {
     </form>`;
   const howTo = `${sectionHead('medidas-como', 'Cómo medir')}
     ${openSections.has('medidas-como') ? `<section class="card stack">
-      ${MEASURE_SITES.map(([, name, how]) => `<div><strong>${name}:</strong> <span class="muted">${how}.</span></div>`).join('')}
-      <span class="muted small">La huincha debe quedar recta y pegada a la piel, sin apretar. Mide el lado derecho, en ayunas y antes de entrenar, siempre a la misma hora.</span>
+      ${MEASURE_SITES.filter(([k]) => !Object.values(MEASURE_PAIRS).includes(k)).map(([k, name, how]) =>
+        `<div><strong>${MEASURE_PAIRS[k] ? `${name.replace(' der.', '')} (cada lado)` : name}:</strong> <span class="muted">${how}.</span></div>`).join('')}
+      <span class="muted small">La huincha debe quedar recta y pegada a la piel, sin apretar. Mide en ayunas y antes de entrenar, siempre a la misma hora. Es normal una diferencia pequeña entre lados: el lado dominante suele ser un poco más grande.</span>
     </section>` : ''}`;
 
   // Evolución de una medida a la vez (solo las que has anotado)
@@ -3464,9 +3472,14 @@ function viewMeasures() {
     const first = points[0], last = points[points.length - 1], h = db.body.heightCm;
     // Cintura / estatura: menos de 0,5 se considera saludable
     const whtr = measureView === 'cintura' && h ? last.y / h : null;
+    // Derecho vs izquierdo: la última vez que mediste los dos lados
+    const pair = measurePair(measureView);
+    const both = pair && db.measures.slice().reverse().find(e => e.m[pair[0]] != null && e.m[pair[1]] != null);
+    const side = both ? round1(both.m[pair[0]] - both.m[pair[1]]) : null;
     body = `<div class="stats">
         <div class="stat"><span class="muted">Última</span><strong>${fmtNum(last.y)} cm</strong><span class="muted">${bwDate(dayKeyOf(last.date))}</span></div>
         ${points.length > 1 ? `<div class="stat"><span class="muted">Cambio</span><strong>${signed(last.y - first.y)} cm</strong><span class="muted">desde ${bwDate(dayKeyOf(first.date))}</span></div>` : ''}
+        ${both ? `<div class="stat"><span class="muted">Der. vs izq.</span><strong>${side ? `${fmtNum(Math.abs(side))} cm` : 'Iguales'}</strong><span class="muted">${side ? `más grande el ${side > 0 ? 'derecho' : 'izquierdo'}` : bwDate(both.date)}</span></div>` : ''}
         ${whtr ? `<div class="stat"><span class="muted">Cintura / estatura</span><strong>${whtr.toFixed(2).replace('.', ',')}</strong><span class="muted">${whtr < 0.5 ? 'saludable (bajo 0,5)' : 'sobre 0,5'}</span></div>` : ''}
       </div>
       <section class="card chart-card">
