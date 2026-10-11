@@ -2,6 +2,7 @@ import { BASE_FOODS, synonymsOf } from './foods-base.js';
 import { QUIZ, QUIZ_CATS } from './quiz.js';
 import { GUIDES, GUIDE_ZONES } from './ejercicios.js';
 import { PROGRAMS, LEVELS } from './programas.js';
+import { ANIMS, mountAnim } from './animaciones.js';
 
 // ---------- Datos ----------
 // Cada usuario tiene una copia en el teléfono (para usar la app sin internet en el gym)
@@ -128,6 +129,7 @@ function bestSets(exerciseId, before = db.workouts.length, unit = null) {
 // Compara lo que se está escribiendo con la mejor marca (null si no hay nada que comparar)
 function liveCmp(s, ex, best) {
   if (!best) return null;
+  if (s.pw != null || s.pr != null || s.done) { if (!setCounts(s)) return null; s = { ...s, ...effSet(s) }; }
   const w = num(s.w), r = num(s.r);
   if (w == null && r == null) return null;
   return cmpSet({ w, r, rir: num(s.rir), unit: ex.unit, bw: bwFor(ex, new Date().toISOString()) }, best);
@@ -154,12 +156,26 @@ const GEAR = `<a class="icon gear" href="#/cuenta" aria-label="Cuenta y configur
 const bar = (value, goal) => `<div class="meter" role="progressbar" aria-valuemin="0" aria-valuemax="${goal}" aria-valuenow="${value}">
   <span style="width:${Math.min(100, goal ? (value / goal) * 100 : 0)}%"></span></div>`;
 
+// "hoy", "ayer", "hace 3 días"
+function agoText(iso) {
+  const days = Math.round((Date.parse(bwIso(todayKey())) - Date.parse(bwIso(dayKeyOf(iso)))) / 86400000);
+  return days <= 0 ? 'hoy' : days === 1 ? 'ayer' : `hace ${days} días`;
+}
 function entrenoCard() {
   const d = db.draft, t = todayKey(), plan = plannedRoutine(t);
   let body;
   if (d) body = `<a class="muted" href="#/entrenar">Entrenamiento en curso: ${esc(d.routineName)} ›</a>`;
-  else if (plan === undefined) body = '<span class="muted">Rutinas · Historial · Progreso</span>';
-  else if (plan === null) body = '<span class="muted">Hoy: descanso</span>';
+  else if (plan === undefined) {
+    // Sin programa activo: se sugiere la rutina que hace más tiempo no haces
+    const lastDone = id => { for (let k = db.workouts.length - 1; k >= 0; k--) if (db.workouts[k].routineId === id) return db.workouts[k].date; return ''; };
+    const next = db.routines.filter(r => r.exercises.length).map(r => ({ r, at: lastDone(r.id) })).sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0))[0];
+    body = next
+      ? `<div class="hub-value">Sugerida: <strong>${esc(next.r.name)}</strong>${next.at ? ` <span class="small">· última vez ${esc(agoText(next.at))}</span>` : ''}</div>
+        <div class="hub-btns"><button class="btn primary" data-action="start" data-id="${next.r.id}">Empezar</button><a class="btn center" href="#/rutinas">Otra rutina</a></div>`
+      : '<button class="btn primary block" data-action="start-free">Entrenar sin rutina</button>';
+  }
+  else if (plan === null) body = `<span class="muted">Hoy: descanso</span>
+      <div class="hub-btns"><a class="btn center" href="#/rutinas">Entrenar igual</a></div>`;
   else if (trainedOn(t, plan.id)) body = `<span class="muted">Hoy ya entrenaste <strong>${esc(plan.name)}</strong></span>`;
   else body = `<div class="hub-value">Hoy te toca: <strong>${esc(plan.name)}</strong></div>
       <button class="btn primary" data-action="start" data-id="${plan.id}" ${plan.exercises.length ? '' : 'disabled'}>Empezar</button>`;
@@ -1065,20 +1081,31 @@ function historyFor(exerciseId, skipId = null) {
   return rows.reverse();
 }
 
-// Series prellenadas con la última vez (peso, reps y RIR si el ejercicio lo usa)
-// Series al empezar: las de la última vez (o una vacía); si el objetivo pide más series, se agregan vacías
+// Series al empezar: vacías, con lo de la última vez en gris (pw, pr, prir) como referencia.
+// Al tocar ✓ la serie queda hecha y lo que dejaste vacío se completa con lo de la vez pasada.
+// Si el objetivo pide más series que la última vez, las nuevas traen de referencia la última serie.
 function prefillSets(prev, rir, goalSets = 0, dropset = false) {
-  const empty = () => ({ w: '', r: '', ...(rir ? { rir: '' } : {}) });
+  const ph = s => ({ w: '', r: '', ...(rir ? { rir: '' } : {}), pw: toField(s.w), pr: toField(s.r), ...(rir && s.rir != null ? { prir: toField(s.rir) } : {}) });
   const sets = prev ? prev.ex.sets.map(s => ({
-    w: toField(s.w), r: toField(s.r), ...(rir ? { rir: toField(s.rir) } : {}),
-    ...(s.drops && s.drops.length ? { drops: s.drops.map(x => ({ w: toField(x.w), r: toField(x.r) })) } : {}),
+    ...ph(s),
+    ...(s.drops && s.drops.length ? { drops: s.drops.map(x => ({ w: '', r: '', pw: toField(x.w), pr: toField(x.r) })) } : {}),
   })) : [];
-  while (sets.length < Math.max(1, goalSets || 0)) sets.push(empty());
+  while (sets.length < Math.max(1, goalSets || 0)) {
+    const last = sets[sets.length - 1];
+    sets.push(last ? { w: '', r: '', ...(rir ? { rir: '' } : {}), pw: last.pw, pr: last.pr } : { w: '', r: '', ...(rir ? { rir: '' } : {}) });
+  }
   // Dropset: la última serie trae lista una fila para la primera bajada
   const lastSet = sets[sets.length - 1];
   if (dropset && !(lastSet.drops && lastSet.drops.length)) lastSet.drops = [{ w: '', r: '' }];
   return sets;
 }
+// Lo que vale de una serie: lo escrito o, si está vacío, lo de la vez pasada
+const effSet = s => ({ w: s.w !== '' && s.w != null ? s.w : s.pw ?? '', r: s.r !== '' && s.r != null ? s.r : s.pr ?? '', rir: s.rir !== '' && s.rir != null ? s.rir : s.prir ?? '' });
+// La serie cuenta si la marcaste con ✓ o si escribiste algo en ella
+const setCounts = s => !!s.done || (s.w !== '' && s.w != null) || (s.r !== '' && s.r != null);
+// Siguiente serie: trae de referencia la anterior
+const nextSet = (sets, rir) => { const last = sets[sets.length - 1], e = last ? effSet(last) : null;
+  return { w: '', r: '', ...(rir ? { rir: '' } : {}), ...(e && e.w !== '' ? { pw: e.w } : {}), ...(e && e.r !== '' ? { pr: e.r } : {}) }; };
 
 // Objetivo opcional por ejercicio: series, rango de reps ("8-10") y RIR objetivo ("2" o "1-2")
 function parseRange(text, maxV) {
@@ -1138,18 +1165,23 @@ function viewHome() {
       <span class="chev">›</span>
     </a>` : '';
   const last = db.routines.length - 1, todays = plannedRoutine(todayKey());
-  const routines = db.routines.map((r, i) => `
+  const lastDone = id => { for (let k = db.workouts.length - 1; k >= 0; k--) if (db.workouts[k].routineId === id) return db.workouts[k].date; return ''; };
+  const routines = db.routines.map((r, i) => {
+    const at = lastDone(r.id);
+    return `
     <div class="card routine">
       <a href="#/rutina/${r.id}">
         <strong>${esc(r.name) || '(sin nombre)'}${todays && todays.id === r.id ? ' <span class="badge on">Hoy</span>' : ''}</strong>
-        <span class="muted">${plural(r.exercises.length, 'ejercicio')} · editar</span>
+        <span class="muted small">${plural(r.exercises.length, 'ejercicio')}</span>${at ? `<span class="muted small" title="Última vez que la hiciste">${esc(agoText(at)[0].toUpperCase() + agoText(at).slice(1))}</span>` : ''}
       </a>
-      ${last > 0 ? `<div class="order">
+      ${routineSort ? `<div class="order">
         <button class="icon small" data-action="move-routine" data-i="${i}" data-d="-1" ${i === 0 ? 'disabled' : ''} aria-label="Subir rutina">↑</button>
         <button class="icon small" data-action="move-routine" data-i="${i}" data-d="1" ${i === last ? 'disabled' : ''} aria-label="Bajar rutina">↓</button>
-      </div>` : ''}
-      <button class="btn primary" data-action="start" data-id="${r.id}" ${r.exercises.length ? '' : 'disabled'}>Empezar</button>
-    </div>`).join('');
+      </div>` : `<a class="btn center routine-edit" href="#/rutina/${r.id}">Editar</a>
+      <button class="btn primary" data-action="start" data-id="${r.id}" ${r.exercises.length ? '' : 'disabled'}>Empezar</button>`}
+    </div>`;
+  }).join('')
+    + (last > 0 ? `<button class="link small routine-sort" data-action="routine-sort">${routineSort ? 'Listo' : 'Ordenar rutinas'}</button>` : '');
   const free = d ? '' : routines
     ? '<button class="btn block" data-action="start-free" style="margin:0 0 12px">Entrenar sin rutina</button>'
     : `<section class="card stack free-start">
@@ -1220,6 +1252,7 @@ const moreBtn = (key, total) => (total > 7
   ? `<button class="btn ghost block" data-action="toggle-sec" data-k="${key}">${openSections.has(key) ? 'Ver menos' : `Ver todos (${total})`}</button>` : '');
 
 let openEx = null;   // ejercicio abierto en el editor de rutina (los demás se ven como resumen)
+let routineSort = false;   // Rutinas: modo para cambiar el orden (flechas en vez de Editar / Empezar)
 
 // "4 × 8-10 · RIR 2 · Dropset · Rest 1:30"
 function exSummary(ex) {
@@ -1426,27 +1459,31 @@ function viewWorkout() {
   // Fila de una serie, con sus bajadas de dropset debajo (label: "1", o "A1" en un superset)
   const setRow = (ex, i, s, j, label) => {
     const best = bests.get(i);
+    const okCol = editing ? '' : 'has-ok';
     const drops = (s.drops || []).map((x, k) => `
-      <div class="set drop ${ex.rir ? 'has-rir' : ''}">
+      <div class="set drop ${ex.rir ? 'has-rir' : ''} ${okCol}">
         <span class="n">↓</span>
-        <input inputmode="decimal" data-bind="dw" data-i="${i}" data-j="${j}" data-k="${k}" value="${esc(x.w)}" placeholder="${ex.unit === 'placas' ? 'placas' : 'peso'}" aria-label="Peso bajada ${k + 1} de la serie ${label}">
+        <input inputmode="decimal" data-bind="dw" data-i="${i}" data-j="${j}" data-k="${k}" value="${esc(x.w)}" placeholder="${esc(x.pw || (ex.unit === 'placas' ? 'placas' : 'peso'))}" aria-label="Peso bajada ${k + 1} de la serie ${label}">
         <span class="u">${unitShort(ex.unit)}</span>
         <span class="x">×</span>
-        <input inputmode="numeric" data-bind="dr" data-i="${i}" data-j="${j}" data-k="${k}" value="${esc(x.r)}" placeholder="reps" aria-label="Repeticiones bajada ${k + 1} de la serie ${label}">
+        <input inputmode="numeric" data-bind="dr" data-i="${i}" data-j="${j}" data-k="${k}" value="${esc(x.r)}" placeholder="${esc(x.pr || 'reps')}" aria-label="Repeticiones bajada ${k + 1} de la serie ${label}">
         ${ex.rir ? '<span></span>' : ''}
         <span></span>
-        <button class="icon danger" data-action="del-drop" data-i="${i}" data-j="${j}" data-k="${k}" aria-label="Quitar bajada">✕</button>
+        ${editing ? '' : '<span></span>'}
+        <button class="set-del" data-action="del-drop" data-i="${i}" data-j="${j}" data-k="${k}" aria-label="Quitar bajada">✕</button>
       </div>`).join('');
+    const wPh = s.pw || (ex.unit === 'placas' ? 'placas' : isBwEx(ex) ? 'lastre' : 'peso');
     return `
-      <div class="set ${ex.rir ? 'has-rir' : ''}">
+      <div class="set ${ex.rir ? 'has-rir' : ''} ${okCol} ${s.done && !editing ? 'done' : ''}">
         <span class="n">${label}</span>
-        <input inputmode="decimal" data-bind="w" data-i="${i}" data-j="${j}" value="${esc(s.w)}" placeholder="${ex.unit === 'placas' ? 'placas' : isBwEx(ex) ? 'lastre' : 'peso'}" aria-label="${ex.unit === 'placas' ? 'Placas' : isBwEx(ex) ? 'Lastre' : 'Peso'} serie ${label}">
+        <input inputmode="decimal" data-bind="w" data-i="${i}" data-j="${j}" value="${esc(s.w)}" placeholder="${esc(wPh)}" aria-label="${ex.unit === 'placas' ? 'Placas' : isBwEx(ex) ? 'Lastre' : 'Peso'} serie ${label}">
         <span class="u">${unitShort(ex.unit)}</span>
         <span class="x">×</span>
-        <input inputmode="numeric" data-bind="r" data-i="${i}" data-j="${j}" value="${esc(s.r)}" placeholder="reps" aria-label="Repeticiones serie ${label}">
-        ${ex.rir ? `<input class="rir" inputmode="numeric" data-bind="rir" data-i="${i}" data-j="${j}" value="${esc(s.rir ?? '')}" placeholder="RIR" aria-label="RIR serie ${label}">` : ''}
+        <input inputmode="numeric" data-bind="r" data-i="${i}" data-j="${j}" value="${esc(s.r)}" placeholder="${esc(s.pr || 'reps')}" aria-label="Repeticiones serie ${label}">
+        ${ex.rir ? `<input class="rir" inputmode="numeric" data-bind="rir" data-i="${i}" data-j="${j}" value="${esc(s.rir ?? '')}" placeholder="${esc(s.prir || 'RIR')}" aria-label="RIR serie ${label}">` : ''}
         <span class="mark-cell" data-mark="${i}-${j}">${markSpan(liveCmp(s, ex, best[j]))}</span>
-        <button class="icon danger" data-action="del-set" data-i="${i}" data-j="${j}" aria-label="Borrar serie">✕</button>
+        ${editing ? '' : `<button class="set-ok ${s.done ? 'on' : ''}" data-action="set-done" data-i="${i}" data-j="${j}" aria-pressed="${!!s.done}" aria-label="Serie ${label} hecha">✓</button>`}
+        <button class="set-del" data-action="del-set" data-i="${i}" data-j="${j}" aria-label="Borrar serie">✕</button>
       </div>
       ${drops}
       <div class="set-ref"><span>${best[j] ? `Mejor: ${fmtNum(best[j].w)} ${best[j].unit} × ${fmtNum(best[j].r)}` : ''}</span>
@@ -3912,7 +3949,7 @@ function closeTour() { tourOpen = false; setTourSeen(); render(); }
 // Consejo la primera vez que entras a una sección (se cierra con ✕ y no vuelve a salir)
 const TIPS = {
   rutinas: 'Toca una rutina para editarla y Empezar para entrenarla. Si tienes un programa activo, la que te toca hoy aparece marcada.',
-  entrenar: 'Anota peso y repeticiones de cada serie; vienen con lo de la vez anterior. ▲ superaste tu mejor serie, = igualaste, ▼ quedaste bajo. Si el ejercicio tiene Rest, tócalo al terminar cada serie.',
+  entrenar: 'En gris está lo que hiciste la vez anterior. Al terminar cada serie anota peso y repeticiones (o déjalas vacías si fueron iguales) y toca ✓: queda guardada y parte el descanso. ▲ superaste tu mejor serie, = igualaste, ▼ quedaste bajo.',
   programas: 'Los programas listos traen la semana armada según tus días y nivel. El programa activo es el que te dice qué rutina te toca cada día.',
   historial: 'Toca un día del calendario para ver lo que entrenaste. Desde cada entreno lo puedes editar o compartir.',
   progreso: 'Toca un ejercicio para ver su gráfico y tus récords.',
@@ -4150,6 +4187,7 @@ function render() {
   if (screen !== 'agua') waterEditing = null;
   if (screen !== 'peso') goalEditing = false;
   if (screen !== 'rutina') openEx = null;
+  if (screen !== 'rutinas') routineSort = false;
   if (screen !== 'perfil' && photoEdit) { URL.revokeObjectURL(photoEdit.src); photoEdit = null; }
   if (screen !== 'perfil') photoView = false;
   if (screen !== 'fotos') { closeProgressNew(); progOpen = null; }
@@ -4216,6 +4254,9 @@ function render() {
   if (screen === 'chat') scrollChatBottom();
   paintTimer();
   paintQuiz();
+  // Animación de técnica (si la guía abierta tiene una)
+  const anim = $app.querySelector('.guide-anim');
+  if (anim) mountAnim(anim, anim.dataset.anim);
 }
 
 const go = hash => { location.hash = hash; };
@@ -4318,9 +4359,11 @@ const cleanExercises = d => d.exercises
     ...(ex.rir ? { rir: true } : {}),
     ...(ex.bw ? { bw: true } : {}),
     sets: ex.sets
+      .filter(setCounts)
       .map(s => {
-        const set = { w: num(s.w), r: num(s.r) }; const rir = num(s.rir); if (ex.rir && rir != null) set.rir = rir;
-        const drops = (s.drops || []).map(x => ({ w: num(x.w), r: num(x.r) })).filter(x => x.w != null || x.r != null);
+        const e = effSet(s);
+        const set = { w: num(e.w), r: num(e.r) }; const rir = num(e.rir); if (ex.rir && rir != null) set.rir = rir;
+        const drops = (s.drops || []).map(x => (s.done ? effSet(x) : x)).map(x => ({ w: num(x.w), r: num(x.r) })).filter(x => x.w != null || x.r != null);
         if (drops.length) set.drops = drops;   // bajadas del dropset
         return set;
       })
@@ -4781,6 +4824,7 @@ function guideViewHtml() {
   const g = guideFor(ex.name, ex.guide);
   const body = g
     ? `<span class="muted small">${guideKey(g.name) === guideKey(ex.name) ? '' : `${esc(g.name)} · `}Trabaja: ${esc(g.musc)}</span>
+       ${ANIMS[g.id] && isLocal ? `<div class="guide-anim" data-anim="${g.id}" title="Toca para pausar"></div>` : ''}
        ${g.video ? `<video class="guide-video" src="${esc(g.video)}" controls playsinline muted loop preload="metadata"></video>` : ''}
        <h3>Puntos clave</h3>
        <ul class="guide-ul">${g.cues.map(c => `<li>${esc(c)}</li>`).join('')}</ul>
@@ -5231,6 +5275,10 @@ $app.addEventListener('click', e => {
     case 'start-free':
       startFree();
       break;
+    case 'routine-sort':
+      routineSort = !routineSort;
+      render();
+      break;
     case 'tour-open':
       openTour();
       break;
@@ -5463,10 +5511,25 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       save(); render();
       break;
     }
-    case 'add-set':
-      cur().exercises[i].sets.push({ w: '', r: '', ...(cur().exercises[i].rir ? { rir: '' } : {}) });
+    case 'add-set': {
+      const ex = cur().exercises[i];
+      ex.sets.push(nextSet(ex.sets, ex.rir));
       save(); render();
       break;
+    }
+    case 'set-done': {
+      // ✓: la serie queda hecha (lo vacío se completa con lo de la vez pasada) y parte el descanso
+      const d = cur(), ex = d.exercises[i], st = ex.sets[j];
+      if (st.done) { st.done = false; save(); render(); break; }
+      const e = effSet(st);
+      if (e.w === '' && e.r === '') { alert('Anota el peso y las repeticiones de esta serie.'); return; }
+      Object.assign(st, { w: e.w, r: e.r, ...(ex.rir && e.rir !== '' ? { rir: e.rir } : {}), done: true });
+      for (const x of st.drops || []) Object.assign(x, effSet(x));
+      (d.touched ||= {})[ex.exerciseId] = true;
+      if (!d.editOf && ex.rest) { setTimer({ i, endsAt: Date.now() + ex.rest * 1000 }); startQuiz(); }
+      save(); render();
+      break;
+    }
     case 'del-set': {
       const d = cur(), sets = d.exercises[i].sets;
       const [removed] = sets.splice(j, 1);
@@ -5489,7 +5552,7 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
     case 'add-round': {
       // Superset: una serie más para cada ejercicio
       const d = cur();
-      for (const k of groupsOf(d).find(g => g.includes(i))) d.exercises[k].sets.push({ w: '', r: '', ...(d.exercises[k].rir ? { rir: '' } : {}) });
+      for (const k of groupsOf(d).find(g => g.includes(i))) d.exercises[k].sets.push(nextSet(d.exercises[k].sets, d.exercises[k].rir));
       save(); render();
       break;
     }
