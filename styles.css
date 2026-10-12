@@ -943,3 +943,23 @@ section.active-prog strong { color: var(--accent); }
 .routine .routine-edit { flex: none; padding: 0 14px; }
 .routine a > span { display: block; }
 .routine-sort { display: block; margin: -2px 0 14px auto; }
+
+/* Avisos y confirmaciones */
+.dlg-wrap { position: fixed; inset: 0; z-index: 90; display: grid; place-items: center; padding: 16px; }
+.dlg-wrap[hidden] { display: none; }
+.dlg { max-width: 380px; }
+.dlg-msg { margin: 0; white-space: pre-line; line-height: 1.5; font-size: 16px; }
+.dlg-btns { display: flex; gap: 8px; }
+.dlg-btns .btn { flex: 1; }
+.dlg-danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+
+/* ⓘ */
+.info-btn { background: none; border: 0; color: var(--muted); font: inherit; font-size: 17px; line-height: 1; padding: 4px 6px; cursor: pointer; vertical-align: middle; }
+.info-btn.on { color: var(--accent); }
+.info-box { margin: 6px 0 8px; padding: 10px 12px; border-radius: 10px; background: var(--surface2); border: 1px solid var(--border); color: var(--muted); font-size: 14px; line-height: 1.45; }
+.goal-chips .info-btn { align-self: center; }
+
+/* Progreso: tendencia de cada ejercicio */
+.trend { font-weight: 700; }
+.trend.up { color: var(--accent); }
+.trend.down, .trend.eq { color: var(--text); }

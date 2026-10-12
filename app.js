@@ -224,11 +224,15 @@ function weekSummary(offset) {
 function weekCard() {
   const s = weekSummary(weekOffset);
   const stat = (label, value, sub = '') => `<div class="wk-stat"><span class="muted small">${label}</span><strong>${value}</strong>${sub ? `<span class="muted small">${sub}</span>` : ''}</div>`;
+  // Solo lo que usas: peso y sueño si alguna vez los anotaste; agua y dieta si las anotaste en las últimas 2 semanas
+  const recent = Array.from({ length: 14 }, (_, k) => { const d = new Date(); d.setDate(d.getDate() - k); return dayKeyOf(d); });
+  const usesWater = recent.some(k => waterDay(k).length);
+  const usesDiet = N().diets.length && recent.some(k => { const log = N().log[k]; return log && (log.done || []).length; });
   const stats = [
-    stat('Peso promedio', s.kg != null ? fmtKg(s.kg) : '—', s.kg != null && s.kgPrev != null ? (Math.abs(s.kg - s.kgPrev) < 0.05 ? 'igual que la anterior' : `${signed(s.kg - s.kgPrev)} kg vs la anterior`) : ''),
-    stat('Sueño promedio', s.sleep != null ? fmtH(s.sleep) : '—'),
-    stat('Meta de agua', `${s.water} de ${s.past} días`),
-    ...(N().diets.length ? [stat('Dieta completa', `${s.dietOk} de ${s.past} días`)] : []),
+    ...(db.bodyweight.length ? [stat('Peso promedio', s.kg != null ? fmtKg(s.kg) : '—', s.kg != null && s.kgPrev != null ? (Math.abs(s.kg - s.kgPrev) < 0.05 ? 'igual que la anterior' : `${signed(s.kg - s.kgPrev)} kg vs la anterior`) : '')] : []),
+    ...(db.sleep.length ? [stat('Sueño promedio', s.sleep != null ? fmtH(s.sleep) : '—')] : []),
+    ...(usesWater ? [stat('Meta de agua', `${s.water} de ${s.past} días`)] : []),
+    ...(usesDiet ? [stat('Dieta completa', `${s.dietOk} de ${s.past} días`)] : []),
   ];
   return `<section class="card hub week-card">
       <div class="hub-top"><span class="hub-icon">📅</span><strong>Tu semana</strong>
@@ -239,7 +243,7 @@ function weekCard() {
         <div class="wk-days" aria-hidden="true">${s.days.map((d, k) =>
           `<span class="wk-day ${d.trained ? 'done' : d.planned && !d.future ? 'missed' : d.planned ? 'planned' : ''}">${WEEK_LETTERS[k]}</span>`).join('')}</div>
       </div>
-      <div class="wk-stats">${stats.join('')}</div>
+      ${stats.length ? `<div class="wk-stats">${stats.join('')}</div>` : ''}
       ${s.prs.length ? `<span class="muted small">${s.prs.length === 1 ? 'Récord' : `${s.prs.length} récords`}: <strong class="wk-prs">${s.prs.map(esc).join(', ')}</strong></span>` : ''}
     </section>`;
 }
@@ -556,7 +560,7 @@ function saveFood(f) {
     delete existing.per; delete existing.unitName;
     Object.assign(existing, data);
     const used = N().diets.some(d => d.meals.some(m => m.items.some(it => it.foodId === existing.id)));
-    if (changed && used) alert(`Cambiaste "${name}" a ${unit ? 'por unidad' : 'por 100 g'}. Revisa las cantidades en tus dietas: ahora se cuentan en ${unit ? 'unidades' : 'gramos'}.`);
+    if (changed && used) notice(`Cambiaste "${name}" a ${unit ? 'por unidad' : 'por 100 g'}. Revisa las cantidades en tus dietas: ahora se cuentan en ${unit ? 'unidades' : 'gramos'}.`);
   } else {
     N().foods.push({ id: uid(), ...data });
   }
@@ -797,8 +801,9 @@ function targetLine(dietKcal) {
   const ct = calorieTarget();
   if (!ct.target) return '<a class="target-line" href="#/objetivo">Calcula tus kcal objetivo ›</a>';
   const diff = Math.round(dietKcal - ct.target);
-  const cmp = Math.abs(diff) < 50 ? 'tu dieta calza' : `tu dieta ${diff > 0 ? '+' : '−'}${fmtKcal(Math.abs(diff))}`;
-  return `<a class="target-line" href="#/objetivo">Objetivo calculado: <strong>${fmtKcal(ct.target)} kcal</strong> · ${cmp} ›</a>`;
+  const cmp = Math.abs(diff) < 50 ? 'Tu dieta calza con tu objetivo calculado'
+    : `Tu dieta tiene ${fmtKcal(Math.abs(diff))} kcal ${diff > 0 ? 'más' : 'menos'} que tu objetivo calculado`;
+  return `<a class="target-line" href="#/objetivo">${cmp} ›</a>`;
 }
 
 function viewTarget() {
@@ -924,10 +929,10 @@ function readFoodForm(f) {
   const typed = normText(f.elements.q.value.trim());
   const exact = typed && [...N().foods, ...BASE_FOODS].find(x => normText(x.name) === typed);
   const foodId = f.dataset.food || (exact && exact.id), g = num(f.elements.g.value);
-  if (!foodId) { alert('Busca el alimento y elígelo de la lista.'); f.elements.q.focus(); return null; }
+  if (!foodId) { notice('Busca el alimento y elígelo de la lista.'); f.elements.q.focus(); return null; }
   const food = foodById(foodId), portions = !!food.unitG && f.dataset.mode === 'u' && f.dataset.food === foodId;
   const count = isUnit(food) || portions;
-  if (g == null || g <= 0 || g > (count ? 100 : 5000)) { alert(count ? 'Escribe la cantidad (ej. 2).' : 'Escribe los gramos (ej. 120).'); f.elements.g.focus(); return null; }
+  if (g == null || g <= 0 || g > (count ? 100 : 5000)) { notice(count ? 'Escribe la cantidad (ej. 2).' : 'Escribe los gramos (ej. 120).'); f.elements.g.focus(); return null; }
   return portions ? { foodId, n: round1(g) } : { foodId, g: round1(g) };
 }
 
@@ -1252,6 +1257,15 @@ const moreBtn = (key, total) => (total > 7
   ? `<button class="btn ghost block" data-action="toggle-sec" data-k="${key}">${openSections.has(key) ? 'Ver menos' : `Ver todos (${total})`}</button>` : '');
 
 let openEx = null;   // ejercicio abierto en el editor de rutina (los demás se ven como resumen)
+// ⓘ: explicación corta de una palabra técnica (se abre y se cierra al tocarla)
+const INFO = {
+  rm: '1RM = el peso máximo que podrías levantar 1 vez. Desdel lo estima con tu 1ª serie (peso y repeticiones), así ves si te estás haciendo más fuerte aunque cambies las repeticiones.',
+  rir: 'RIR = repeticiones en reserva: cuántas más podrías haber hecho con buena técnica. RIR 0 es llegar al fallo; RIR 2, que te quedaban 2.',
+  opts: 'RIR: al entrenar anotas cuántas repeticiones te quedaban en cada serie (y puedes ponerle un RIR objetivo). Dropset: la última serie trae una fila para anotar la bajada de peso. Peso corporal: para dominadas, fondos y similares; lo que anotas es el lastre.',
+};
+const infoOpen = new Set();
+const infoBtn = k => `<button class="info-btn ${infoOpen.has(k) ? 'on' : ''}" data-action="info" data-k="${k}" aria-label="¿Qué es?" aria-expanded="${infoOpen.has(k)}">ⓘ</button>`;
+const infoBox = k => (infoOpen.has(k) ? `<p class="info-box">${INFO[k]}</p>` : '');
 let routineSort = false;   // Rutinas: modo para cambiar el orden (flechas en vez de Editar / Empezar)
 
 // "4 × 8-10 · RIR 2 · Dropset · Rest 1:30"
@@ -1294,6 +1308,8 @@ function viewRoutine() {
         <button class="chip toggle ${ex.dropset ? 'on' : ''}" data-action="toggle-drop" data-i="${i}" aria-pressed="${!!ex.dropset}">Dropset</button>
         <button class="chip toggle ${ex.bw ? 'on' : ''}" data-action="toggle-bw" data-i="${i}" aria-pressed="${!!ex.bw}" title="Dominadas, dips…: lo que anotas es el lastre">Peso corporal</button>
       </div>
+      <button class="link small" data-action="info" data-k="opts" style="justify-self:start">${infoOpen.has('opts') ? 'Ocultar' : '¿Qué hace cada opción?'}</button>
+      ${infoBox('opts')}
       ${(g => {
         // Elegida por ti o con el mismo nombre: está bien. Conectada por un nombre parecido: puede ser otra
         const sure = g && ((ex.guide && ex.guide !== 'none') || guideKey(g.name) === guideKey(ex.name));
@@ -1333,10 +1349,10 @@ function viewRoutine() {
 }
 
 // Agregar un ejercicio que ya está en la rutina: casi siempre se quería hacer otra serie
-function okRepeatedEx(name) {
+async function okRepeatedEx(name) {
   const r = curRoutine(), k = r.exercises.findIndex(ex => sameName(ex.name, name));
   if (k < 0) return true;
-  if (confirm(`"${r.exercises[k].name}" ya está en esta rutina.\n\nSi quieres hacer más series, no lo agregues otra vez: cambia el número de Series. Cada serie, con su peso, se anota al entrenar (Empezar rutina).\n\n¿Agregarlo igual?`)) return true;
+  if (await ask(`"${r.exercises[k].name}" ya está en esta rutina.\n\nSi quieres hacer más series, no lo agregues otra vez: cambia el número de Series. Cada serie, con su peso, se anota al entrenar (Empezar rutina).\n\n¿Agregarlo igual?`, 'Agregar igual')) return true;
   openEx = k;   // se abre el que ya estaba, para cambiar sus series
   render();
   return false;
@@ -1402,8 +1418,8 @@ function freePickerHtml(d) {
       ${d.exercises.length ? '<button class="link small" data-action="free-cancel" style="justify-self:start">Cancelar</button>' : ''}
     </section>`;
 }
-function startFree() {
-  if (db.draft && !confirm(`Tienes un entrenamiento de "${db.draft.routineName}" sin guardar. ¿Descartarlo y empezar uno nuevo?`)) return;
+async function startFree() {
+  if (db.draft && !await ask(`Tienes un entrenamiento de "${db.draft.routineName}" sin guardar. ¿Descartarlo y empezar uno nuevo?`, 'Descartar y empezar')) return;
   setTimer(null);
   db.draft = { free: true, routineId: null, routineName: 'Entreno libre', start: new Date().toISOString(), timer: null, exercises: [] };
   freeAdd = null; freeQ = '';
@@ -1414,7 +1430,7 @@ function addFreeExercise(n) {
   const d = cur(), fp = freeAdd;
   if (!d || !fp || !fp.name) return;
   const found = findExercise(fp.name), id = found ? found.id : uid();
-  if (d.exercises.some(e => e.exerciseId === id)) { alert(`"${fp.name}" ya está en este entrenamiento.`); return; }
+  if (d.exercises.some(e => e.exerciseId === id)) { notice(`"${fp.name}" ya está en este entrenamiento.`); return; }
   const sel = $app.querySelector('.free-pick select[name="unit"]');
   if (sel) lastUnit = sel.value;
   const rir = !!(found && found.rir);
@@ -1504,7 +1520,7 @@ function viewWorkout() {
         hint = `<p class="goal-hint">💡 La última vez llegaste a ${top} reps en todas las series: prueba subir el peso.</p>`;
       }
     }
-    return `${goals.length ? `<div class="goal-chips">${goals.map(([k, v]) => `<span class="goal-chip"><small>${k}</small>${esc(String(v))}</span>`).join('')}</div>` : ''}
+    return `${goals.length ? `<div class="goal-chips">${goals.map(([k, v]) => `<span class="goal-chip"><small>${k}</small>${esc(String(v))}</span>`).join('')}${ex.rir ? infoBtn('rir') : ''}</div>${ex.rir ? infoBox('rir') : ''}` : ''}
       ${hint}
       ${noteHtml(ex.exerciseId, i)}
       ${bests.get(i).length ? '' : '<p class="prev">Primera vez</p>'}`;
@@ -1798,7 +1814,7 @@ function viewAccount() {
     <button class="btn ghost block danger-text" data-action="logout" style="margin-top:32px">Cerrar sesión</button>`;
 }
 
-const formMsgOr = (f, text) => (f.querySelector('.form-msg') ? formMsg(f, text) : alert(text));
+const formMsgOr = (f, text) => (f.querySelector('.form-msg') ? formMsg(f, text) : notice(text));
 
 // Muestra un mensaje bajo un formulario (error en rojo o confirmación en verde)
 function formMsg(f, text, ok = false) {
@@ -1890,7 +1906,7 @@ async function shareWithCode(btn, data, result) {
         return;
       } catch (e) {
         if (e.code === 'permission-denied' && attempt < 2) continue;   // código repetido: se prueba otro
-        alert(e.code === 'auth/network-request-failed'
+        notice(e.code === 'auth/network-request-failed'
           ? 'Se necesita internet para compartir.'
           : 'No se pudo generar el código. Intenta de nuevo en un rato.');
         return;
@@ -1902,7 +1918,7 @@ async function shareWithCode(btn, data, result) {
 
 async function shareRoutine(btn) {
   const r = curRoutine();
-  if (!r.exercises.length) { alert('Agrega ejercicios a la rutina antes de compartirla.'); return; }
+  if (!r.exercises.length) { notice('Agrega ejercicios a la rutina antes de compartirla.'); return; }
   // Solo se comparten los ejercicios: sin pesos, historial ni notas
   await shareWithCode(btn, { routine: routinePayload(r) }, { id: r.id, name: r.name, kind: 'routine' });
 }
@@ -1911,7 +1927,7 @@ const routinePayload = r => ({ name: r.name, exercises: r.exercises.map(ex => ({
 // Se comparten las comidas con sus cantidades y los alimentos propios que usa (los de la base ya los tiene todo el mundo)
 async function shareDiet(btn) {
   const d = dietById(routeParts()[1]);
-  if (!d.meals.some(m => m.items.length)) { alert('Agrega alimentos a la dieta antes de compartirla.'); return; }
+  if (!d.meals.some(m => m.items.length)) { notice('Agrega alimentos a la dieta antes de compartirla.'); return; }
   await shareWithCode(btn, { diet: dietPayload(d) }, { id: d.id, name: d.name, kind: 'diet' });
 }
 function dietPayload(d) {
@@ -1952,7 +1968,7 @@ async function importFromLink() {
   const code = localStorage.getItem(PENDING_IMPORT);
   if (!code) return;
   localStorage.removeItem(PENDING_IMPORT);
-  await importByCode(code, text => alert(text));
+  await importByCode(code, text => notice(text));
 }
 
 async function importByCode(code, showError) {
@@ -1975,11 +1991,11 @@ async function importByCode(code, showError) {
   importRoutineData(data);
 }
 
-function importRoutineData(data) {
+async function importRoutineData(data) {
   const r = data.routine;
   const repeated = db.routines.some(x => sameName(x.name, r.name))
     ? `\n\nYa tienes una rutina llamada "${r.name}"; se agregará otra.` : '';
-  if (!confirm(`¿Agregar la rutina "${r.name}"${data.ownerName ? ` de ${data.ownerName}` : ''} (${plural(r.exercises.length, 'ejercicio')})?${repeated}`)) return;
+  if (!await ask(`¿Agregar la rutina "${r.name}"${data.ownerName ? ` de ${data.ownerName}` : ''} (${plural(r.exercises.length, 'ejercicio')})?${repeated}`)) return;
   // Si ya tienes un ejercicio con el mismo nombre, se usa ese para mantener tu historial
   const used = new Set();
   const routine = {
@@ -2009,11 +2025,11 @@ function sharedDietKcal(d) {
   }, 0), 0);
 }
 
-function importDiet(data) {
+async function importDiet(data) {
   const d = data.diet, from = data.ownerName || '';
   const kcal = sharedDietKcal(d);
   const repeated = N().diets.some(x => sameName(x.name, d.name)) ? `\n\nYa tienes una dieta llamada "${d.name}"; se agregará otra.` : '';
-  if (!confirm(`¿Agregar la dieta "${d.name}"${from ? ` de ${from}` : ''} (${plural(d.meals.length, 'comida')}, ${fmtKcal(kcal)} kcal)?${repeated}`)) return;
+  if (!await ask(`¿Agregar la dieta "${d.name}"${from ? ` de ${from}` : ''} (${plural(d.meals.length, 'comida')}, ${fmtKcal(kcal)} kcal)?${repeated}`)) return;
   // Alimentos propios de quien la compartió: si ya tienes uno igual (mismo nombre y macros) se usa el tuyo; si no, se crea
   const ids = new Map();
   for (const f of d.foods || []) {
@@ -2364,7 +2380,7 @@ async function addGymbro(code, inv, showError) {
   let existing = chats.find(c => c.id === id);
   if (!existing) { try { existing = await withTimeout(cloud.getChat(id)); } catch (e) { /* se intenta crear */ } }
   if (!existing) {
-    if (!confirm(`¿Agregar a ${inv.ownerName || 'este usuario'} como gymbro?`)) return;
+    if (!await ask(`¿Agregar a ${inv.ownerName || 'este usuario'} como gymbro?`)) return;
     try {
       await withTimeout(cloud.createChat(id, {
         members, via: code, last: null,
@@ -2502,7 +2518,7 @@ function attachPanel() {
 
 function sendMsg(chatId, msg, preview) {
   return cloud.sendMessage(chatId, { from: user.uid, ...msg }, preview.slice(0, 120))
-    .catch(() => alert('No se pudo enviar el mensaje. Revisa tu internet e intenta de nuevo.'));
+    .catch(() => notice('No se pudo enviar el mensaje. Revisa tu internet e intenta de nuevo.'));
 }
 
 function sendText(f) {
@@ -2540,7 +2556,7 @@ function saveMsgEdit(text) {
     const isLast = chatMsgs.list[chatMsgs.list.length - 1] === m;
     m.text = text; m.edited = true;   // se ve al tiro; la nube lo confirma después
     cloud.editMessage(chatId, id, text, isLast ? { text: text.slice(0, 120), from: m.from, at: m.at } : undefined)
-      .catch(() => alert('No se pudo editar el mensaje. Revisa tu internet e intenta de nuevo.'));
+      .catch(() => notice('No se pudo editar el mensaje. Revisa tu internet e intenta de nuevo.'));
   }
   render();
 }
@@ -2587,7 +2603,7 @@ function deleteMessage(id) {
   selectedMsg = null;
   chatMsgs.list = rest;   // se quita al tiro de la pantalla
   paintMessages();
-  cloud.deleteMessage(chatId, id, last).catch(() => alert('No se pudo eliminar el mensaje. Revisa tu internet e intenta de nuevo.'));
+  cloud.deleteMessage(chatId, id, last).catch(() => notice('No se pudo eliminar el mensaje. Revisa tu internet e intenta de nuevo.'));
 }
 
 // Agregar a tu app la dieta o rutina que te mandaron
@@ -2696,7 +2712,7 @@ async function setMyPhoto(url) {
     myPhoto = prev;
     if (prev) localStorage.setItem(photoKey(), prev); else localStorage.removeItem(photoKey());
     render();
-    alert('No se pudo guardar la foto. Revisa tu internet e intenta de nuevo.');
+    notice('No se pudo guardar la foto. Revisa tu internet e intenta de nuevo.');
   }
 }
 
@@ -2716,7 +2732,7 @@ function openPhotoEditor(file) {
     photoEdit = newCrop(img, src, CROP_BOX, CROP_BOX);
     render();
   };
-  img.onerror = () => { URL.revokeObjectURL(src); alert('No se pudo usar esa imagen. Prueba con otra.'); };
+  img.onerror = () => { URL.revokeObjectURL(src); notice('No se pudo usar esa imagen. Prueba con otra.'); };
   img.src = src;
 }
 const cropScale = e => e.base * e.zoom;
@@ -3175,11 +3191,21 @@ function viewProgress() {
   const others = [...byId.values()].filter(e => !inRoutine.has(e.id)).sort((a, b) => a.name.localeCompare(b.name, 'es'));
   if (others.length) groups.push({ name: 'Otros', items: others });
 
+  // Tendencia: el 1RM estimado de la última sesión contra el de hace ~1 mes (o la primera, si hay menos historial)
+  const trend = id => {
+    const { unit, points } = progressPoints(id, 3650);
+    if (points.length < 2) return '';
+    const last = points[points.length - 1], monthAgo = last.t - 25 * 86400000;
+    const older = points.filter(q => q.t <= monthAgo), base = older.length ? older[older.length - 1] : points[0];
+    const d = round1(last.y - base.y), when = older.length ? 'en 1 mes' : `desde ${fmtDate(base.date)}`;
+    if (Math.abs(d) < 0.5) return `<span class="trend eq">= igual ${when}</span>`;
+    return `<span class="trend ${d > 0 ? 'up' : 'down'}">${d > 0 ? '▲ +' : '▼ −'}${fmtNum(Math.abs(d))} ${unit} ${when}</span>`;
+  };
   const item = e => `
     <a class="card" href="#/progreso/${encodeURIComponent(e.id)}" data-search="${esc(normText(e.name))}">
       <div class="grow">
         <strong>${esc(e.name)}</strong>
-        <span class="muted">${plural(e.count, 'sesión', 'sesiones')} · última: ${fmtDate(e.date)}</span>
+        <span class="muted">${trend(e.id) || plural(e.count, 'sesión', 'sesiones')} · última: ${fmtDate(e.date)}</span>
       </div>
       <span class="chev">›</span>
     </a>`;
@@ -3460,7 +3486,7 @@ function saveGoal(f) {
 
 function saveBf(f) {
   const t = f.elements.bf.value.trim(), v = num(t);
-  if (t && (v == null || v < 3 || v > 60)) { alert('El % de grasa debe estar entre 3 y 60.'); return; }
+  if (t && (v == null || v < 3 || v > 60)) { notice('El % de grasa debe estar entre 3 y 60.'); return; }
   if (t) db.body.bf = round1(v);
   else { db.body.bf = null; db.bodyweight.forEach(e => delete e.bf); }   // vacío: se borra
   save();
@@ -3747,7 +3773,7 @@ const daysBetween = (a, b) => Math.round((Date.parse(bwIso(b)) - Date.parse(bwIs
 function openProgressNew(file) {
   const src = URL.createObjectURL(file), img = new Image();
   img.onload = () => { progNew = { crop: newCrop(img, src, ...PROG_BOX), pose: progPose || 'frente', date: todayKey() }; render(); };
-  img.onerror = () => { URL.revokeObjectURL(src); alert('No se pudo usar esa imagen. Prueba con otra.'); };
+  img.onerror = () => { URL.revokeObjectURL(src); notice('No se pudo usar esa imagen. Prueba con otra.'); };
   img.src = src;
 }
 function closeProgressNew() {
@@ -3756,7 +3782,7 @@ function closeProgressNew() {
 }
 async function saveProgressNew(btn) {
   const n = progNew, date = n.date;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || date > todayKey()) return alert('Elige una fecha válida (hoy o antes).');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || date > todayKey()) return notice('Elige una fecha válida (hoy o antes).');
   // Grande: hasta 810×1080 (sin agrandar más de lo que trae la foto); miniatura 240×320
   const c = n.crop, h = Math.round(Math.min(1080, c.bh / cropScale(c)));
   const full = cropToCanvas(c, Math.round(h * 3 / 4), h, 0.8), thumb = cropToCanvas(c, 240, 320, 0.7), id = uid();
@@ -3765,7 +3791,7 @@ async function saveProgressNew(btn) {
     try {
       await withTimeout(cloud.putProgress(user.uid, id, meta, thumb, full));
     } catch (e) {
-      alert('No se pudo subir la foto. Revisa tu internet e intenta de nuevo.');
+      notice('No se pudo subir la foto. Revisa tu internet e intenta de nuevo.');
       return;
     }
     progFull.set(id, full);
@@ -3779,10 +3805,10 @@ async function saveProgressNew(btn) {
   });
 }
 async function deleteProgress(id) {
-  if (!confirm('¿Borrar esta foto? No se puede recuperar.')) return;
+  if (!await ask('¿Borrar esta foto? No se puede recuperar.')) return;
   try {
     await withTimeout(cloud.deleteProgress(user.uid, id));
-  } catch (e) { alert('No se pudo borrar. Revisa tu internet e intenta de nuevo.'); return; }
+  } catch (e) { notice('No se pudo borrar. Revisa tu internet e intenta de nuevo.'); return; }
   progList = progList.filter(x => x.id !== id);
   progFull.delete(id);
   progOpen = null;
@@ -4089,7 +4115,7 @@ function viewProgressExercise(id) {
 
   const range = rangeButtons(EX_RANGES, progressRange, 'ex');
   const bwEx = isBwEx({ exerciseId: id, bw: rows[0].ex.bw });
-  const sub = bwEx ? 'Lastre máximo estimado de la 1ª serie' : 'Récord estimado (1RM) de la 1ª serie';
+  const sub = bwEx ? 'Lastre máximo estimado' : 'Tu fuerza estimada (1RM)';
 
   if (!points.length) {
     return `${header(name, { back: true, sub })}${range}
@@ -4100,9 +4126,9 @@ function viewProgressExercise(id) {
   const first = points[0], last = points[points.length - 1];
   const diff = round1(last.y - first.y);
   const stats = `<div class="stats">
-    <div class="stat"><span class="muted">${bwEx ? 'Mejor lastre del período' : 'Mejor 1RM del período'}</span><strong>${bwEx ? '+' : ''}${fmtNum(max.y)} ${unit}</strong><span class="muted">${fmtDate(max.date)}</span></div>
+    <div class="stat"><span class="muted">${bwEx ? 'Mejor lastre del período' : `Mejor 1RM del período ${infoBtn('rm')}`}</span><strong>${bwEx ? '+' : ''}${fmtNum(max.y)} ${unit}</strong><span class="muted">${fmtDate(max.date)}</span></div>
     ${points.length > 1 ? `<div class="stat"><span class="muted">Cambio</span><strong>${diff > 0 ? '+' : ''}${fmtNum(diff)} ${unit}</strong><span class="muted">desde ${fmtDate(first.date)}</span></div>` : ''}
-  </div>`;
+  </div>${bwEx ? '' : infoBox('rm')}`;
 
   const table = points.slice().reverse().map(p => `
     <div class="prog-row"><span class="muted">${fmtDate(p.date)}</span><span>${setText(p.set, p.set.unit)} <span class="muted">→ ${bwEx ? '+' : ''}${fmtNum(p.y)} ${unit}</span></span></div>`).join('');
@@ -4309,6 +4335,45 @@ $app.addEventListener('touchend', e => {
   if (next !== tourStep) { tourStep = next; render(); }
 });
 
+// ---------- Avisos y confirmaciones ----------
+// Reemplazan a alert() y confirm() del navegador (que en el teléfono muestran "simondesol.github.io dice…").
+// Van fuera de #app para que un render() no los borre. Uno a la vez: si llega otro, espera su turno.
+const $dialog = document.createElement('div');
+$dialog.className = 'dlg-wrap';
+$dialog.hidden = true;
+document.body.appendChild($dialog);
+let dlgQueue = Promise.resolve();
+function dialog(msg, { ok = 'Aceptar', cancel = null, danger = false } = {}) {
+  const run = () => new Promise(resolve => {
+    $dialog.innerHTML = `<div class="modal-back"></div>
+      <section class="modal card dlg" role="alertdialog" aria-modal="true"><p class="dlg-msg"></p>
+        <div class="dlg-btns">${cancel ? `<button class="btn" data-r="0">${esc(cancel)}</button>` : ''}<button class="btn ${danger ? 'dlg-danger' : 'primary'}" data-r="1">${esc(ok)}</button></div>
+      </section>`;
+    $dialog.querySelector('.dlg-msg').textContent = msg;
+    $dialog.hidden = false;
+    const key = e => { if (e.key === 'Escape') done(false); };
+    const done = r => { $dialog.hidden = true; $dialog.innerHTML = ''; $dialog.onclick = null; document.removeEventListener('keydown', key); resolve(r); };
+    $dialog.onclick = e => {
+      const b = e.target.closest('[data-r]');
+      if (b) done(b.dataset.r === '1');
+      else if (e.target.classList.contains('modal-back')) done(false);
+    };
+    document.addEventListener('keydown', key);
+    $dialog.querySelector('[data-r="1"]').focus({ preventScroll: true });
+  });
+  const pr = dlgQueue.then(run);
+  dlgQueue = pr.catch(() => {});
+  return pr;
+}
+// Aviso con un solo botón (no hace falta esperarlo)
+const notice = msg => dialog(msg);
+// Pregunta Sí/No: el botón dice lo que va a pasar ("Eliminar", "Descartar"…); lo que borra va en rojo
+function ask(msg, okLabel) {
+  const m = /^¿(Eliminar|Borrar|Descartar|Quitar|Cerrar sesión|Agregar|Usar|Dejar de usar)/.exec(msg);
+  const danger = !!m && /^(Eliminar|Borrar|Descartar|Quitar|Cerrar sesión)$/.test(m[1]);
+  return dialog(msg, { ok: okLabel || (m ? m[1] : 'Aceptar'), cancel: 'Cancelar', danger });
+}
+
 // ---------- Aviso con "Deshacer" ----------
 const $toast = document.createElement('div');
 $toast.className = 'toast';
@@ -4374,7 +4439,7 @@ const cleanExercises = d => d.exercises
 function finishWorkout() {
   const d = db.draft;
   const exercises = cleanExercises(d);
-  if (!exercises.length) { alert('No hay series anotadas todavía.'); return; }
+  if (!exercises.length) { notice('No hay series anotadas todavía.'); return; }
   setTimer(null);
   const id = uid();
   const durationSec = Math.max(0, Math.round((Date.now() - new Date(d.start).getTime()) / 1000));
@@ -4434,7 +4499,7 @@ function makeEditBuf(id) {
 function saveEdit() {
   const w = db.workouts.find(x => x.id === editBuf.editOf);
   const exercises = cleanExercises(editBuf);
-  if (!exercises.length) { alert('El entrenamiento quedó sin series. Si quieres borrarlo, usa "Eliminar este entrenamiento".'); return; }
+  if (!exercises.length) { notice('El entrenamiento quedó sin series. Si quieres borrarlo, usa "Eliminar este entrenamiento".'); return; }
   w.exercises = exercises;
   save();
   goBack();
@@ -4457,7 +4522,7 @@ function addExtraExercise(name, unit) {
   const d = cur();
   const found = findExercise(name);
   const id = found ? found.id : uid();
-  if (d.exercises.some(e => e.exerciseId === id)) { alert(`"${name}" ya está en este entrenamiento.`); return; }
+  if (d.exercises.some(e => e.exerciseId === id)) { notice(`"${name}" ya está en este entrenamiento.`); return; }
   const before = beforeIndex(d);
   d.exercises.push({
     exerciseId: id,
@@ -4521,11 +4586,11 @@ const payloadDays = pr => ((pr.days[0] || {}).r || []).filter(k => k != null).le
 
 // Programa recibido (por chat o código): agrega sus rutinas y queda en Mis programas.
 // Si ya tenías una versión anterior, se reemplaza (y si era tu programa activo, sigue activo con los cambios).
-function useSharedProgram(pr, from) {
-  if (!pr || !Array.isArray(pr.routines) || !Array.isArray(pr.days) || !pr.routines.length) { alert('Este programa no trae rutinas.'); return; }
+async function useSharedProgram(pr, from) {
+  if (!pr || !Array.isArray(pr.routines) || !Array.isArray(pr.days) || !pr.routines.length) { notice('Este programa no trae rutinas.'); return; }
   const prev = db.routines.filter(r => r.prog && r.prog === pr.pid);
   if ((prev.length || db.programs.some(p => p.id === pr.pid))
-    && !confirm(`Ya tienes "${pr.name}" en Mis programas. ¿Reemplazarlo por esta versión${from ? ` de ${from}` : ''}?\n\nTu historial se mantiene.`)) return;
+    && !await ask(`Ya tienes "${pr.name}" en Mis programas. ¿Reemplazarlo por esta versión${from ? ` de ${from}` : ''}?\n\nTu historial se mantiene.`)) return;
   const before = { routines: clone(db.routines), plan: db.plan ? clone(db.plan) : null, programs: clone(db.programs) };
   const oldEx = new Map();
   for (const r of prev) for (const ex of r.exercises) oldEx.set(guideKey(ex.name), ex);
@@ -4587,10 +4652,10 @@ function migrateLoosePlan() {
 }
 
 // Uno tuyo: pasa a ser el activo (tu plan)
-function useMyProgram(p) {
-  if (!myProgDays(p.days)) { alert('Elige al menos una rutina en algún día.'); return; }
+async function useMyProgram(p) {
+  if (!myProgDays(p.days)) { notice('Elige al menos una rutina en algún día.'); return; }
   const act = activeProgram();
-  if (!confirm(`¿Usar "${p.name || 'este programa'}" como tu programa activo?${act ? `\n\nDejarás de usar "${act.name || 'tu programa actual'}" (no se borra, sigue en Mis programas).` : ''}`)) return;
+  if (!await ask(`¿Usar "${p.name || 'este programa'}" como tu programa activo?${act ? `\n\nDejarás de usar "${act.name || 'tu programa actual'}" (no se borra, sigue en Mis programas).` : ''}`)) return;
   const before = db.plan ? clone(db.plan) : null;
   activateProgram(p);
   save(); render();
@@ -4599,7 +4664,7 @@ function useMyProgram(p) {
 
 function checkSendable(p) {
   const pr = programPayload(p);
-  if (!pr.routines.length) { alert('El programa no tiene rutinas con ejercicios. Elige qué rutina va cada día.'); return null; }
+  if (!pr.routines.length) { notice('El programa no tiene rutinas con ejercicios. Elige qué rutina va cada día.'); return null; }
   return pr;
 }
 
@@ -5113,7 +5178,7 @@ async function loadFromCloud() {
 // Sube a la cuenta lo que se guardó en este teléfono antes de tener cuenta
 function migrateLegacy(legacy) {
   const cloudEmpty = !db.routines.length && !db.workouts.length;
-  const merge = cloudEmpty || confirm(
+  const merge = cloudEmpty || window.confirm(
     `Este celular tiene ${plural(legacy.routines.length, 'rutina')} y ${plural(legacy.workouts.length, 'entrenamiento')} ` +
     'guardados de antes de tener cuenta.\n\n¿Agregarlos a tu cuenta?');
   if (merge) {
@@ -5189,7 +5254,7 @@ async function logout() {
   const msg = pending
     ? 'Hay cambios que todavía no se suben a la nube (sin internet). Si cierras sesión ahora, se pierden.\n\n¿Cerrar sesión igual?'
     : `¿Cerrar sesión?${db.draft ? ' Se descarta el entrenamiento en curso.' : ''} Tus datos quedan guardados en tu cuenta.`;
-  if (!confirm(msg)) return;
+  if (!await ask(msg)) return;
   keepScreenOn(false);
   stopListening();
   stopSocial();
@@ -5251,17 +5316,17 @@ async function submitAuth(f) {
 
 async function resetPassword() {
   const email = ($app.querySelector('[name="email"]') || {}).value?.trim();
-  if (!email) { alert('Escribe tu correo arriba y vuelve a tocar "¿Olvidaste tu contraseña?".'); return; }
+  if (!email) { notice('Escribe tu correo arriba y vuelve a tocar "¿Olvidaste tu contraseña?".'); return; }
   try {
     await cloud.resetPassword(email);
-    alert(`Si existe una cuenta con ${email}, te llegará un correo para crear una contraseña nueva. Revisa también la carpeta de spam.`);
+    notice(`Si existe una cuenta con ${email}, te llegará un correo para crear una contraseña nueva. Revisa también la carpeta de spam.`);
   } catch (e) {
-    alert(authError(e));
+    notice(authError(e));
   }
 }
 
 // ---------- Acciones ----------
-$app.addEventListener('click', e => {
+$app.addEventListener('click', async e => {
   const el = e.target.closest('[data-action]');
   if (!el || el.disabled) return;
   const { action, id } = el.dataset;
@@ -5274,6 +5339,10 @@ $app.addEventListener('click', e => {
 
     case 'start-free':
       startFree();
+      break;
+    case 'info':
+      if (infoOpen.has(el.dataset.k)) infoOpen.delete(el.dataset.k); else infoOpen.add(el.dataset.k);
+      render();
       break;
     case 'routine-sort':
       routineSort = !routineSort;
@@ -5309,7 +5378,7 @@ $app.addEventListener('click', e => {
       break;
     case 'tips-reset':
       try { localStorage.removeItem(tipsKey()); } catch (e) { /* sin almacenamiento */ }
-      alert('Listo: los consejos volverán a aparecer al entrar a cada sección.');
+      notice('Listo: los consejos volverán a aparecer al entrar a cada sección.');
       break;
     case 'free-open':   // mientras eliges el ejercicio no se muestra "Terminar y guardar" (no se toca sin querer)
       freeAdd = {}; freeQ = '';
@@ -5329,7 +5398,7 @@ $app.addEventListener('click', e => {
     case 'free-pick': {
       const d = cur(), name = el.dataset.name, g = el.dataset.g, found = findExercise(name);
       const id2 = found && found.id;
-      if (d && id2 && d.exercises.some(e => e.exerciseId === id2)) { alert(`"${found.name}" ya está en este entrenamiento.`); return; }
+      if (d && id2 && d.exercises.some(e => e.exerciseId === id2)) { notice(`"${found.name}" ya está en este entrenamiento.`); return; }
       freeAdd = { name: found ? found.name : name, guide: g || null, known: !!found };
       render();
       $app.querySelector('.free-pick')?.scrollIntoView({ block: 'nearest' });
@@ -5350,7 +5419,7 @@ $app.addEventListener('click', e => {
     case 'start': {
       const r = db.routines.find(x => x.id === id);
       if (!r) return;
-      if (db.draft && !confirm(`Tienes un entrenamiento de "${db.draft.routineName}" sin guardar. ¿Descartarlo y empezar "${r.name}"?`)) return;
+      if (db.draft && !await ask(`Tienes un entrenamiento de "${db.draft.routineName}" sin guardar. ¿Descartarlo y empezar "${r.name}"?`, 'Descartar y empezar')) return;
       startWorkout(r);
       break;
     }
@@ -5445,7 +5514,7 @@ $app.addEventListener('click', e => {
       break;
     case 'del-ex': {
       const r = curRoutine();
-      if (!confirm(`¿Quitar "${r.exercises[i].name}" de la rutina? Su historial se mantiene.`)) return;
+      if (!await ask(`¿Quitar "${r.exercises[i].name}" de la rutina? Su historial se mantiene.`)) return;
       r.exercises.splice(i, 1);
       openEx = null;
       save(); render();
@@ -5475,7 +5544,7 @@ $app.addEventListener('click', e => {
       const warn = uses.length ? `
 
 Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
-      if (!confirm(`¿Eliminar la rutina "${r.name}"? Tu historial se mantiene.${warn}`)) return;
+      if (!await ask(`¿Eliminar la rutina "${r.name}"? Tu historial se mantiene.${warn}`)) return;
       db.routines = db.routines.filter(x => x !== r);
       if (db.plan) for (const wk of db.plan.days) wk.r = wk.r.map(id => (id === r.id ? null : id));
       for (const pg of db.programs) for (const wk of pg.days) wk.r = wk.r.map(id => (id === r.id ? null : id));
@@ -5502,7 +5571,7 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
     }
     case 'del-extra': {
       const d = cur(), ex = d.exercises[i];
-      if (!ex || !confirm(`¿Quitar "${ex.name}" de este entrenamiento?`)) return;
+      if (!ex || !await ask(`¿Quitar "${ex.name}" de este entrenamiento?`)) return;
       d.exercises.splice(i, 1);
       d.done = (d.done || []).filter(x => x !== ex.exerciseId);
       d.pos = Math.max(0, Math.min(i, d.exercises.length - 1));
@@ -5522,7 +5591,7 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       const d = cur(), ex = d.exercises[i], st = ex.sets[j];
       if (st.done) { st.done = false; save(); render(); break; }
       const e = effSet(st);
-      if (e.w === '' && e.r === '') { alert('Anota el peso y las repeticiones de esta serie.'); return; }
+      if (e.w === '' && e.r === '') { notice('Anota el peso y las repeticiones de esta serie.'); return; }
       Object.assign(st, { w: e.w, r: e.r, ...(ex.rir && e.rir !== '' ? { rir: e.rir } : {}), done: true });
       for (const x of st.drops || []) Object.assign(x, effSet(x));
       (d.touched ||= {})[ex.exerciseId] = true;
@@ -5602,7 +5671,7 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       break;
     }
     case 'myprog-stop':
-      if (!confirm('¿Dejar de usar este programa? No se borra; sigue en Mis programas. Mientras no tengas uno activo, la app no te dirá qué te toca cada día.')) return;
+      if (!await ask('¿Dejar de usar este programa? No se borra; sigue en Mis programas. Mientras no tengas uno activo, la app no te dirá qué te toca cada día.')) return;
       db.plan = null;
       save(); render();
       break;
@@ -5613,7 +5682,7 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
     }
     case 'myprog-del': {
       const p = db.programs.find(x => x.id === routeParts()[1]);
-      if (!p || !confirm(`¿Eliminar el programa "${p.name || '(sin nombre)'}"? Tus rutinas y tu plan no se borran.`)) return;
+      if (!p || !await ask(`¿Eliminar el programa "${p.name || '(sin nombre)'}"? Tus rutinas y tu plan no se borran.`)) return;
       db.programs = db.programs.filter(x => x !== p);
       if (db.plan && db.plan.prog === p.id) delete db.plan.prog;   // tu plan sigue igual, pero ya no es de un programa
       save();
@@ -5681,7 +5750,7 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       const g = GUIDE_BY_ID.get(el.dataset.g), f = $app.querySelector('[data-form="new-ex"]');
       if (!g || !f) return;
       lastUnit = f.elements.unit.value;
-      if (!okRepeatedEx(g.name)) return;
+      if (!(await okRepeatedEx(g.name))) return;
       curRoutine().exercises.push({ id: uid(), name: g.name, unit: lastUnit, rest: 0, guide: g.id });
       openEx = curRoutine().exercises.length - 1;
       save(); render();
@@ -5723,7 +5792,7 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       finishWorkout();
       break;
     case 'discard':
-      if (!confirm('¿Descartar este entrenamiento? No se guardará nada.')) return;
+      if (!await ask('¿Descartar este entrenamiento? No se guardará nada.')) return;
       setTimer(null);
       db.draft = null;
       save(); location.replace('#/rutinas');
@@ -5872,7 +5941,7 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
     case 'food-del': {
       const food = foodById(routeParts()[1]);
       const uses = N().diets.filter(d => d.meals.some(m => m.items.some(it => it.foodId === food.id)));
-      if (!confirm(uses.length
+      if (!await ask(uses.length
         ? `"${food.name}" está en ${plural(uses.length, 'dieta')} (${uses.map(d => d.name).join(', ')}). Si lo eliminas, se quitará de ellas. ¿Eliminar?`
         : `¿Eliminar "${food.name}"?`)) return;
       for (const d of N().diets) for (const m of d.meals) m.items = m.items.filter(it => it.foodId !== food.id);
@@ -5929,7 +5998,7 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
     }
     case 'meal-del': {
       const diet = dietById(routeParts()[1]), meal = diet.meals[+el.dataset.m];
-      if (meal.items.length && !confirm(`¿Eliminar "${meal.name}" con sus alimentos?`)) return;
+      if (meal.items.length && !await ask(`¿Eliminar "${meal.name}" con sus alimentos?`)) return;
       diet.meals.splice(+el.dataset.m, 1);
       save(); render();
       break;
@@ -5943,7 +6012,7 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       break;
     case 'diet-del': {
       const diet = dietById(routeParts()[1]);
-      if (!confirm(`¿Eliminar la dieta "${diet.name}"?`)) return;
+      if (!await ask(`¿Eliminar la dieta "${diet.name}"?`)) return;
       N().diets = N().diets.filter(d => d !== diet);
       if (N().activeDietId === diet.id) N().activeDietId = N().diets[0] ? N().diets[0].id : null;
       save(); location.replace('#/nutricion/dietas');
@@ -5999,7 +6068,7 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       shareWorkout(el, el.dataset.id);
       break;
     case 'del-session':
-      if (!confirm('¿Eliminar este entrenamiento del historial?')) return;
+      if (!await ask('¿Eliminar este entrenamiento del historial?')) return;
       db.workouts = db.workouts.filter(w => w.id !== id);
       save(); goBack();
       break;
@@ -6010,7 +6079,7 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       break;
     case 'copy-code':
       navigator.clipboard.writeText(shareLink(shareResult.code))
-        .then(() => { el.textContent = 'Link copiado'; }, () => alert(`Link: ${shareLink(shareResult.code)}`));
+        .then(() => { el.textContent = 'Link copiado'; }, () => notice(`Link: ${shareLink(shareResult.code)}`));
       break;
     case 'share-diet':
       shareDiet(el);
@@ -6021,7 +6090,7 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       localStorage.setItem(autoPRKey(), el.checked ? '1' : '0');
       break;
     case 'photo-del':
-      if (confirm('¿Quitar tu foto de perfil?')) setMyPhoto(null);
+      if (await ask('¿Quitar tu foto de perfil?')) setMyPhoto(null);
       break;
     case 'photo-view':
       photoView = true;
@@ -6069,7 +6138,7 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
     }
     case 'copy-invite':
       navigator.clipboard.writeText(inviteLink(inviteCode()))
-        .then(() => { el.textContent = 'Link copiado'; }, () => alert(`Link: ${inviteLink(inviteCode())}`));
+        .then(() => { el.textContent = 'Link copiado'; }, () => notice(`Link: ${inviteLink(inviteCode())}`));
       break;
     case 'attach':
       attach = attach ? null : 'menu';
@@ -6102,12 +6171,12 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       cancelMsgEdit();
       break;
     case 'msg-del':
-      if (confirm('¿Eliminar este mensaje? Se borra para ti y para tu gymbro.')) deleteMessage(id);
+      if (await ask('¿Eliminar este mensaje? Se borra para ti y para tu gymbro.')) deleteMessage(id);
       break;
     case 'gymbro-del': {
       const c = chats.find(x => x.id === routeParts()[1]);
-      if (!c || !confirm(`¿Eliminar a ${gymbroName(c)} de tus gymbros? El chat se borra para los dos.`)) return;
-      cloud.deleteChat(c.id).then(() => location.replace('#/social'), () => alert('No se pudo eliminar. Revisa tu internet.'));
+      if (!c || !await ask(`¿Eliminar a ${gymbroName(c)} de tus gymbros? El chat se borra para los dos.`)) return;
+      cloud.deleteChat(c.id).then(() => location.replace('#/social'), () => notice('No se pudo eliminar. Revisa tu internet.'));
       break;
     }
     case 'send-code': {
@@ -6135,7 +6204,7 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       break;
     case 'handoff-copy':
       navigator.clipboard.writeText(fmtCode(handoffCode))
-        .then(() => { el.textContent = 'Código copiado. Ahora abre Desdel'; }, () => alert(`Código: ${fmtCode(handoffCode)}`));
+        .then(() => { el.textContent = 'Código copiado. Ahora abre Desdel'; }, () => notice(`Código: ${fmtCode(handoffCode)}`));
       break;
     case 'inapp-copy':
       navigator.clipboard.writeText(inApp.url)
@@ -6303,7 +6372,7 @@ $app.addEventListener('keydown', e => {
   if (e.key === 'Enter' && (bind === 'note' || bind === 'ex-rest' || bind === 'pace-amt' || bind.startsWith('ex-goal-'))) e.target.blur();
 });
 
-$app.addEventListener('submit', e => {
+$app.addEventListener('submit', async e => {
   e.preventDefault();
   const f = e.target;
   switch (f.dataset.form) {
@@ -6342,7 +6411,7 @@ $app.addEventListener('submit', e => {
     }
     case 'water-edit': {
       const ml = Math.round(num(f.elements.ml.value) || 0), entry = waterDay()[Number(f.dataset.k)];
-      if (ml < 10 || ml > 5000) { alert('Escribe una cantidad en ml (ej. 300).'); return; }
+      if (ml < 10 || ml > 5000) { notice('Escribe una cantidad en ml (ej. 300).'); return; }
       if (entry) entry.ml = ml;
       waterEditing = null;
       save(); render();
@@ -6373,7 +6442,7 @@ $app.addEventListener('submit', e => {
     go('#/rutina/' + r.id);
   } else if (f.dataset.form === 'new-ex') {
     lastUnit = f.elements.unit.value;
-    if (!okRepeatedEx(title)) return;
+    if (!(await okRepeatedEx(title))) return;
     curRoutine().exercises.push({ id: uid(), name: title, unit: lastUnit, rest: 0 });
     openEx = curRoutine().exercises.length - 1;   // el nuevo queda abierto para configurarlo
     save(); render();
