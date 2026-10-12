@@ -964,3 +964,15 @@ section.active-prog strong { color: var(--accent); }
 .trend { font-weight: 700; }
 .trend.up { color: var(--accent); }
 .trend.down, .trend.eq { color: var(--text); }
+
+/* Inicio = tu día: el título de cada tarjeta es una etiqueta chica, lo importante es el dato */
+.hub-wrap .hub-top strong { font-size: 15px; color: var(--muted); font-weight: 700; }
+.hub-wrap .hub-icon { font-size: 18px; }
+a.card.hub.hub-msg { display: flex; align-items: center; gap: 10px; border-color: var(--accent); }
+a.card.hub-msg strong { display: inline; }
+.hub-bw { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
+.hub-bw input { min-width: 0; text-align: center; }
+.hub-bw .btn { width: 100%; }
+.hub-bw .form-msg { grid-column: 1 / -1; }
+#tabs a { position: relative; }
+#tabs a.dot::after { content: ''; position: absolute; top: 7px; left: calc(50% + 9px); width: 9px; height: 9px; border-radius: 50%; background: var(--danger); border: 2px solid var(--surface); }

@@ -180,7 +180,7 @@ function entrenoCard() {
   else body = `<div class="hub-value">Hoy te toca: <strong>${esc(plan.name)}</strong></div>
       <button class="btn primary" data-action="start" data-id="${plan.id}" ${plan.exercises.length ? '' : 'disabled'}>Empezar</button>`;
   return `<div class="card hub">
-      <a class="hub-top" href="#/rutinas"><span class="hub-icon">🏋️</span><strong>Entreno</strong><span class="chev">›</span></a>
+      <a class="hub-top" href="#/rutinas"><span class="hub-icon">🏋️</span><strong>Entreno</strong></a>
       ${body}
     </div>`;
 }
@@ -260,14 +260,14 @@ function viewHub() {
   return `${header('Desdel', { sub: 'Entrena. Anota. Supera.', right: GEAR })}
     <div class="hub-wrap">
     ${tourOffer}
+    ${socialCard()}
+
     ${entrenoCard()}
 
     ${nutritionCard()}
 
-    ${socialCard()}
-
     <div class="card hub">
-      <a class="hub-top" href="#/agua"><span class="hub-icon">💧</span><strong>Agua</strong>${streak >= 2 ? `<span class="badge on" title="Días seguidos cumpliendo tu meta">🔥 ${streak}</span>` : ''}<span class="chev">›</span></a>
+      <a class="hub-top" href="#/agua"><span class="hub-icon">💧</span><strong>Agua</strong>${streak >= 2 ? `<span class="badge on" title="Días seguidos cumpliendo tu meta">🔥 ${streak}</span>` : ''}</a>
       <a class="hub-value" href="#/agua"><strong>${fmtL(ml)} / ${fmtL(goal)}</strong> L${ml >= goal ? ' · ¡Meta cumplida! 🎉' : ''}</a>
       ${bar(ml, goal)}
       <div class="ex-actions">
@@ -736,7 +736,7 @@ function paintDietTotals(diet) {
 function nutritionCard() {
   const t = todayNutrition();
   return `<a class="card hub" href="#/nutricion">
-    <div class="hub-top"><span class="hub-icon">🍽️</span><strong>Nutrición</strong><span class="chev">›</span></div>
+    <div class="hub-top"><span class="hub-icon">🍽️</span><strong>Nutrición</strong></div>
     ${t.diet
       ? `<div class="hub-value"><strong>${fmtKcal(t.eaten.kcal)} / ${fmtKcal(t.goal.kcal)}</strong> kcal</div>${bar(t.eaten.kcal, t.goal.kcal)}`
       : '<span class="muted">Crea tus alimentos y tu dieta</span>'}
@@ -2279,10 +2279,12 @@ function stopSocial() {
 }
 
 function socialCard() {
-  const n = chats.filter(isUnread).length;
-  return `<a class="card hub" href="#/social">
-      <div class="hub-top"><span class="hub-icon">👥</span><strong>Social</strong>${n ? `<span class="badge on">${n}</span>` : ''}<span class="chev">›</span></div>
-      <span class="muted">${n ? `${plural(n, 'chat')} con mensajes nuevos` : chats.length ? `${plural(chats.length, 'gymbro')} · Chatea y comparte` : 'Agrega a tus gymbros y chatea con ellos'}</span>
+  const unread = chats.filter(isUnread);
+  if (!unread.length) return '';
+  const names = unread.map(c => gymbroName(c));
+  const who = names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} y ${names[names.length - 1]}`;
+  return `<a class="card hub hub-msg" href="${unread.length === 1 ? `#/chat/${unread[0].id}` : '#/social'}">
+      <span class="hub-icon">💬</span><span><strong>${esc(who)}</strong> ${unread.length === 1 ? 'te escribió' : 'te escribieron'}</span>
     </a>`;
 }
 
@@ -3333,8 +3335,19 @@ function ffmiMissing() {
 function bodyweightCard() {
   const last = db.bodyweight[db.bodyweight.length - 1];
   const change = bwChange(30), gi = goalInfo();
+  if (!last || last.date !== todayKey()) {
+    return `<div class="card hub">
+      <a class="hub-top" href="#/peso"><span class="hub-icon">⚖️</span><strong>Cuerpo</strong></a>
+      <form class="hub-bw" data-form="bodyweight" novalidate>
+        <input name="kg" inputmode="decimal" placeholder="${last ? esc(toField(last.kg)) : 'kg'}" autocomplete="off" aria-label="Tu peso de hoy en kg">
+        <button class="btn primary">Anotar</button>
+        <p class="form-msg" hidden></p>
+      </form>
+      <span class="muted small">Tu peso de hoy${last ? ` · último ${fmtKg(last.kg)}` : ''}</span>
+    </div>`;
+  }
   return `<a class="card hub" href="#/peso">
-      <div class="hub-top"><span class="hub-icon">⚖️</span><strong>Cuerpo</strong><span class="chev">›</span></div>
+      <div class="hub-top"><span class="hub-icon">⚖️</span><strong>Cuerpo</strong></div>
       ${last
         ? `<div class="hub-value"><strong>${fmtKg(last.kg)}</strong></div>
            ${gi ? `${bar(gi.pct, 100)}<span class="muted">${gi.reached ? '🎉 ¡Llegaste a tu meta!' : `${Math.round(gi.pct)}% de tu meta · faltan ${fmtKg(gi.left)}`}</span>`
@@ -3470,7 +3483,8 @@ function saveBodyweight(f) {
   if (db.body.goal && db.body.goal.startKg == null) Object.assign(db.body.goal, { startKg: round1(kg), startDate: date });
   save();
   render();
-  formMsg($app.querySelector('[data-form="bodyweight"]'), `Guardado: ${fmtKg(kg)} hoy`, true);
+  const after = $app.querySelector('[data-form="bodyweight"]');
+  if (after) formMsg(after, `Guardado: ${fmtKg(kg)} hoy`, true);
 }
 
 // Meta de peso: la nueva parte desde tu último peso anotado
@@ -4046,7 +4060,7 @@ function sleepCard() {
   const last = db.sleep[db.sleep.length - 1], avg = sleepAvg(7);
   const today = last && last.date === todayKey();
   return `<a class="card hub" href="#/sueno">
-      <div class="hub-top"><span class="hub-icon">😴</span><strong>Sueño</strong><span class="chev">›</span></div>
+      <div class="hub-top"><span class="hub-icon">😴</span><strong>Sueño</strong></div>
       ${last
         ? `<div class="hub-value"><strong>${fmtH(last.h)}</strong> ${today ? 'anoche' : `· ${bwDate(last.date)}`}</div>
            <span class="muted">${today ? '' : 'Toca para anotar hoy · '}${avg != null ? `Promedio 7 días: ${fmtH(avg)}` : ''}</span>`
@@ -4284,6 +4298,7 @@ function render() {
   tab = ['entrenar', 'editar', 'chat'].includes(screen) ? null : NAV[screen] || 'inicio';
   $tabs.hidden = !tab;
   $tabs.querySelectorAll('a').forEach(a => { a.classList.toggle('active', a.dataset.tab === tab); a.toggleAttribute('aria-current', a.dataset.tab === tab); });
+  $tabs.querySelector('[data-tab="social"]').classList.toggle('dot', chats.some(isUnread));
   if (screen === 'progreso' && !arg && progressQuery) filterProgress();
   if (screen === 'nutricion' && arg === 'alimentos' && foodQuery) filterFoods();   // al volver, mantiene la búsqueda aplicada
   if (screen === 'gymbro') ensureInvite();
