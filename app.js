@@ -129,7 +129,8 @@ function bestSets(exerciseId, before = db.workouts.length, unit = null) {
 // Compara lo que se está escribiendo con la mejor marca (null si no hay nada que comparar)
 function liveCmp(s, ex, best) {
   if (!best) return null;
-  if (s.pw != null || s.pr != null || s.done) { if (!setCounts(s)) return null; s = { ...s, ...effSet(s) }; }
+  // ▲ = ▼ solo cuando escribes algo (con lo de la vez pasada sin tocar no hay nada que comparar)
+  if (s.pw != null || s.pr != null) { if (!typedSet(s) && !s.done) return null; s = { ...s, ...effSet(s) }; }
   const w = num(s.w), r = num(s.r);
   if (w == null && r == null) return null;
   return cmpSet({ w, r, rir: num(s.rir), unit: ex.unit, bw: bwFor(ex, new Date().toISOString()) }, best);
@@ -1089,7 +1090,7 @@ function historyFor(exerciseId, skipId = null) {
 }
 
 // Series al empezar: vacías, con lo de la última vez en gris (pw, pr, prir) como referencia.
-// Al tocar ✓ la serie queda hecha y lo que dejaste vacío se completa con lo de la vez pasada.
+// Al guardar, lo que dejaste vacío se completa con lo de la vez pasada (si no escribes nada, queda igual que esa vez).
 // Si el objetivo pide más series que la última vez, las nuevas traen de referencia la última serie.
 function prefillSets(prev, rir, goalSets = 0, dropset = false) {
   const ph = s => ({ w: '', r: '', ...(rir ? { rir: '' } : {}), pw: toField(s.w), pr: toField(s.r), ...(rir && s.rir != null ? { prir: toField(s.rir) } : {}) });
@@ -1108,8 +1109,9 @@ function prefillSets(prev, rir, goalSets = 0, dropset = false) {
 }
 // Lo que vale de una serie: lo escrito o, si está vacío, lo de la vez pasada
 const effSet = s => ({ w: s.w !== '' && s.w != null ? s.w : s.pw ?? '', r: s.r !== '' && s.r != null ? s.r : s.pr ?? '', rir: s.rir !== '' && s.rir != null ? s.rir : s.prir ?? '' });
-// La serie cuenta si la marcaste con ✓ o si escribiste algo en ella
-const setCounts = s => !!s.done || (s.w !== '' && s.w != null) || (s.r !== '' && s.r != null);
+const typedSet = s => (s.w !== '' && s.w != null) || (s.r !== '' && s.r != null);
+// La serie se guarda si tiene algo: lo que escribiste o, si no, lo de la vez pasada (para borrar una serie que no hiciste: ✕)
+const setCounts = s => { const e = effSet(s); return e.w !== '' || e.r !== ''; };
 // Siguiente serie: trae de referencia la anterior
 const nextSet = (sets, rir) => { const last = sets[sets.length - 1], e = last ? effSet(last) : null;
   return { w: '', r: '', ...(rir ? { rir: '' } : {}), ...(e && e.w !== '' ? { pw: e.w } : {}), ...(e && e.r !== '' ? { pr: e.r } : {}) }; };
@@ -1477,9 +1479,9 @@ function viewWorkout() {
   // Fila de una serie, con sus bajadas de dropset debajo (label: "1", o "A1" en un superset)
   const setRow = (ex, i, s, j, label) => {
     const best = bests.get(i);
-    const okCol = editing ? '' : 'has-ok';
+    const okCol = '';
     const drops = (s.drops || []).map((x, k) => `
-      <div class="set drop ${ex.rir ? 'has-rir' : ''} ${okCol}">
+      <div class="set drop ${ex.rir ? 'has-rir' : ''}">
         <span class="n">↓</span>
         <input inputmode="decimal" data-bind="dw" data-i="${i}" data-j="${j}" data-k="${k}" value="${esc(x.w)}" placeholder="${esc(x.pw || (ex.unit === 'placas' ? 'placas' : 'peso'))}" aria-label="Peso bajada ${k + 1} de la serie ${label}">
         <span class="u">${unitShort(ex.unit)}</span>
@@ -1487,12 +1489,11 @@ function viewWorkout() {
         <input inputmode="numeric" data-bind="dr" data-i="${i}" data-j="${j}" data-k="${k}" value="${esc(x.r)}" placeholder="${esc(x.pr || 'reps')}" aria-label="Repeticiones bajada ${k + 1} de la serie ${label}">
         ${ex.rir ? '<span></span>' : ''}
         <span></span>
-        ${editing ? '' : '<span></span>'}
         <button class="set-del" data-action="del-drop" data-i="${i}" data-j="${j}" data-k="${k}" aria-label="Quitar bajada">✕</button>
       </div>`).join('');
     const wPh = s.pw || (ex.unit === 'placas' ? 'placas' : isBwEx(ex) ? 'lastre' : 'peso');
     return `
-      <div class="set ${ex.rir ? 'has-rir' : ''} ${okCol} ${s.done && !editing ? 'done' : ''}">
+      <div class="set ${ex.rir ? 'has-rir' : ''}">
         <span class="n">${label}</span>
         <input inputmode="decimal" data-bind="w" data-i="${i}" data-j="${j}" value="${esc(s.w)}" placeholder="${esc(wPh)}" aria-label="${ex.unit === 'placas' ? 'Placas' : isBwEx(ex) ? 'Lastre' : 'Peso'} serie ${label}">
         <span class="u">${unitShort(ex.unit)}</span>
@@ -1500,7 +1501,6 @@ function viewWorkout() {
         <input inputmode="numeric" data-bind="r" data-i="${i}" data-j="${j}" value="${esc(s.r)}" placeholder="${esc(s.pr || 'reps')}" aria-label="Repeticiones serie ${label}">
         ${ex.rir ? `<input class="rir" inputmode="numeric" data-bind="rir" data-i="${i}" data-j="${j}" value="${esc(s.rir ?? '')}" placeholder="${esc(s.prir || 'RIR')}" aria-label="RIR serie ${label}">` : ''}
         <span class="mark-cell" data-mark="${i}-${j}">${markSpan(liveCmp(s, ex, best[j]))}</span>
-        ${editing ? '' : `<button class="set-ok ${s.done ? 'on' : ''}" data-action="set-done" data-i="${i}" data-j="${j}" aria-pressed="${!!s.done}" aria-label="Serie ${label} hecha">✓</button>`}
         <button class="set-del" data-action="del-set" data-i="${i}" data-j="${j}" aria-label="Borrar serie">✕</button>
       </div>
       ${drops}
@@ -3991,7 +3991,7 @@ function closeTour() { tourOpen = false; setTourSeen(); render(); }
 // Consejo la primera vez que entras a una sección (se cierra con ✕ y no vuelve a salir)
 const TIPS = {
   rutinas: 'Toca una rutina para editarla y Empezar para entrenarla. Si tienes un programa activo, la que te toca hoy aparece marcada.',
-  entrenar: 'En gris está lo que hiciste la vez anterior. Al terminar cada serie anota peso y repeticiones (o déjalas vacías si fueron iguales) y toca ✓: queda guardada y parte el descanso. ▲ superaste tu mejor serie, = igualaste, ▼ quedaste bajo.',
+  entrenar: 'En gris está lo que hiciste la vez anterior: si haces lo mismo, no escribas nada y se guarda así; si cambia, escribe lo nuevo. Si no hiciste una serie, bórrala con ✕. ▲ superaste tu mejor serie, = igualaste, ▼ quedaste bajo.',
   programas: 'Los programas listos traen la semana armada según tus días y nivel. El programa activo es el que te dice qué rutina te toca cada día.',
   historial: 'Toca un día del calendario para ver lo que entrenaste. Desde cada entreno lo puedes editar o compartir.',
   progreso: 'Toca un ejercicio para ver su gráfico y tus récords.',
@@ -4453,7 +4453,7 @@ const cleanExercises = d => d.exercises
       .map(s => {
         const e = effSet(s);
         const set = { w: num(e.w), r: num(e.r) }; const rir = num(e.rir); if (ex.rir && rir != null) set.rir = rir;
-        const drops = (s.drops || []).map(x => (s.done ? effSet(x) : x)).map(x => ({ w: num(x.w), r: num(x.r) })).filter(x => x.w != null || x.r != null);
+        const drops = (s.drops || []).map(effSet).map(x => ({ w: num(x.w), r: num(x.r) })).filter(x => x.w != null || x.r != null);
         if (drops.length) set.drops = drops;   // bajadas del dropset
         return set;
       })
@@ -5611,19 +5611,7 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       save(); render();
       break;
     }
-    case 'set-done': {
-      // ✓: la serie queda hecha (lo vacío se completa con lo de la vez pasada) y parte el descanso
-      const d = cur(), ex = d.exercises[i], st = ex.sets[j];
-      if (st.done) { st.done = false; save(); render(); break; }
-      const e = effSet(st);
-      if (e.w === '' && e.r === '') { notice('Anota el peso y las repeticiones de esta serie.'); return; }
-      Object.assign(st, { w: e.w, r: e.r, ...(ex.rir && e.rir !== '' ? { rir: e.rir } : {}), done: true });
-      for (const x of st.drops || []) Object.assign(x, effSet(x));
-      (d.touched ||= {})[ex.exerciseId] = true;
-      if (!d.editOf && ex.rest) { setTimer({ i, endsAt: Date.now() + ex.rest * 1000 }); startQuiz(); }
-      save(); render();
-      break;
-    }
+
     case 'del-set': {
       const d = cur(), sets = d.exercises[i].sets;
       const [removed] = sets.splice(j, 1);
