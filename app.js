@@ -419,6 +419,8 @@ function setTodayLog(dietId, done) {
 }
 
 // Cuerpo: Peso · % Grasa · Medidas · Fotos (como las pestañas de Nutrición)
+const entrenoTabs = active => `<div class="range" role="tablist">${[['rutinas', 'Rutinas'], ['programas', 'Programas'], ['historial', 'Historial'], ['progreso', 'Progreso']]
+  .map(([k, label]) => `<a class="${k === active ? 'on' : ''}" href="#/${k}" role="tab">${label}</a>`).join('')}</div>`;
 const bodyTabs = active => `<div class="range" role="tablist">${[['peso', 'Peso'], ['grasa', '% Grasa'], ['medidas', 'Medidas'], ['fotos', 'Fotos']]
   .map(([k, label]) => `<a class="${k === active ? 'on' : ''}" href="#/${k}" role="tab">${label}</a>`).join('')}</div>`;
 const nutriTabs = active => `<div class="range" role="tablist">${[['', 'Hoy'], ['dietas', 'Mis dietas'], ['alimentos', 'Mis alimentos']]
@@ -428,7 +430,7 @@ function viewNutrition(section) {
   if (section === 'alimentos') return viewFoods();
   if (section === 'dietas') return viewDiets();
   const { diet, done, eaten, goal, auto, manual } = todayNutrition();
-  const head = `${header('Nutrición', { home: true })}${nutriTabs('')}`;
+  const head = `${header('Nutrición', {})}${nutriTabs('')}`;
   if (!diet) {
     const ct = calorieTarget();
     return `${head}
@@ -484,7 +486,7 @@ function viewFoods() {
         <span class="muted small">${fmtKcal(f.kcal)} kcal · P ${fmtG(f.p)} · C ${fmtG(f.c)} · G ${fmtG(f.f)} <span class="per">${perText(f)}</span></span>
       </div><span class="chev">›</span>
     </a>`).join('');
-  return `${header('Nutrición', { home: true })}${nutriTabs('alimentos')}
+  return `${header('Nutrición', {})}${nutriTabs('alimentos')}
     <a class="btn primary block center" href="#/alimento/nuevo" style="margin:0 0 12px">+ Nuevo alimento</a>
     <input class="search" type="search" data-bind="food-search" value="${esc(foodQuery)}" placeholder="🔍 Buscar en mis alimentos y en la base…" autocomplete="off" aria-label="Buscar alimento">
     <div class="food-list">${list || '<p class="empty">Todavía no agregas alimentos propios. Al armar tu dieta puedes usar los de la base de Desdel, o crear los tuyos con su etiqueta.</p>'}</div>
@@ -627,7 +629,7 @@ function viewDiets() {
       <span class="chev">›</span>
     </a>`;
   }).join('');
-  return `${header('Nutrición', { home: true })}${nutriTabs('dietas')}
+  return `${header('Nutrición', {})}${nutriTabs('dietas')}
     ${targetBanner()}
     ${averageCard()}
     <button class="btn primary block" data-action="diet-new" style="margin:0 0 12px">+ Crear dieta</button>
@@ -1195,7 +1197,7 @@ function viewHome() {
         <button class="btn primary block" data-action="start-free">Entrenar sin rutina</button>
         <a class="btn block center" href="#/programas">Elegir un programa</a>
       </section>`;
-  return `${header('Rutinas', { home: true })}
+  return `${header('Entreno', {})}${entrenoTabs('rutinas')}
     ${resume}
     ${free}
     ${routines || '<p class="empty">O arma tu propia rutina: escribe su nombre abajo.</p>'}
@@ -1676,7 +1678,7 @@ function viewHistory() {
     : `${plural(monthWorkouts.length, 'entrenamiento')} en ${new Date(y, m, 1).toLocaleDateString('es', { month: 'long' })}`;
   const isCurrent = y === now.getFullYear() && m === now.getMonth();
 
-  return `${header('Historial', { home: true })}
+  return `${header('Entreno', {})}${entrenoTabs('historial')}
     <section class="card cal">
       <div class="cal-head">
         <button class="icon" data-action="hist-month" data-d="-1" aria-label="Mes anterior">‹</button>
@@ -2296,7 +2298,7 @@ function viewSocial() {
       ${isUnread(c) ? '<span class="dot-new" aria-label="Mensajes nuevos"></span>' : `<span class="muted small">${c.last ? fmtWhen(c.last.at) : ''}</span>`}
     </a>`;
   }).join('');
-  return `${header('Social', { home: true, sub: 'Chatea con tus gymbros' })}
+  return `${header('Social', { sub: 'Chatea con tus gymbros' })}
     <div class="social-top">
       <a class="btn primary center" href="#/gymbro">+ Agregar gymbro</a>
       <a class="btn center" href="#/perfil/yo">Mi perfil</a>
@@ -3178,7 +3180,7 @@ function viewProgress() {
     }
   }
   if (!byId.size) {
-    return `${header('Progreso', { home: true })}
+    return `${header('Entreno', {})}${entrenoTabs('progreso')}
       <p class="empty">Cuando guardes entrenamientos, aquí verás tu progreso en cada ejercicio.</p>`;
   }
 
@@ -3209,7 +3211,7 @@ function viewProgress() {
       </div>
       <span class="chev">›</span>
     </a>`;
-  return `${header('Progreso', { home: true, sub: 'Elige un ejercicio para ver su gráfico' })}
+  return `${header('Entreno', {})}${entrenoTabs('progreso')}
     <input class="search" type="search" data-bind="progress-search" value="${esc(progressQuery)}"
       placeholder="🔍 Buscar ejercicio…" autocomplete="off" aria-label="Buscar ejercicio">
     ${groups.map(g => `<section class="prog-group"><h2>${esc(g.name)}</h2>${g.items.map(item).join('')}</section>`).join('')}
@@ -3422,7 +3424,7 @@ function viewBodyweight() {
       </section>`;
   }
 
-  return `${header('Cuerpo', { home: true })}${bodyTabs('peso')}
+  return `${header('Cuerpo', {})}${bodyTabs('peso')}
     ${form}
     ${goalCard}
     ${rangeButtons(RANGES, bwRange, 'bw')}
@@ -3450,7 +3452,7 @@ function viewBodyFat() {
     </section>`
     : `<p class="muted card">Para ver tu FFMI falta ${ffmiMissing()}</p>`;
 
-  return `${header('Cuerpo', { home: true })}${bodyTabs('grasa')}
+  return `${header('Cuerpo', {})}${bodyTabs('grasa')}
     <section class="card stack">${bfForm}</section>
     <h2>FFMI · masa libre de grasa</h2>
     ${ffmi}`;
@@ -3692,7 +3694,7 @@ function viewMeasures() {
         <button class="icon small danger" data-action="del-measure" data-date="${e.date}" aria-label="Borrar medición">✕</button></span>
     </div>`).join('');
 
-  return `${header('Cuerpo', { home: true })}${bodyTabs('medidas')}
+  return `${header('Cuerpo', {})}${bodyTabs('medidas')}
     ${form}
     ${howTo}
     <h2>Evolución</h2>
@@ -3900,7 +3902,7 @@ function viewProgressPhotos() {
       </button>`).join('');
     body = `${filter}${cmp}<h2>Todas (${list.length})</h2><div class="prog-grid">${grid}</div>`;
   }
-  return `${header('Cuerpo', { home: true })}${bodyTabs('fotos')}
+  return `${header('Cuerpo', {})}${bodyTabs('fotos')}
     <p class="muted small prog-note">Fotos de progreso privadas: solo tú las ves.</p>
     ${add}
     ${body}
@@ -4126,7 +4128,7 @@ function viewProgressExercise(id) {
   const first = points[0], last = points[points.length - 1];
   const diff = round1(last.y - first.y);
   const stats = `<div class="stats">
-    <div class="stat"><span class="muted">${bwEx ? 'Mejor lastre del período' : `Mejor 1RM del período ${infoBtn('rm')}`}</span><strong>${bwEx ? '+' : ''}${fmtNum(max.y)} ${unit}</strong><span class="muted">${fmtDate(max.date)}</span></div>
+    <div class="stat"><span class="muted">${bwEx ? 'Mejor lastre del período' : `Mejor 1RM ${infoBtn('rm')}`}</span><strong>${bwEx ? '+' : ''}${fmtNum(max.y)} ${unit}</strong><span class="muted">${fmtDate(max.date)}</span></div>
     ${points.length > 1 ? `<div class="stat"><span class="muted">Cambio</span><strong>${diff > 0 ? '+' : ''}${fmtNum(diff)} ${unit}</strong><span class="muted">desde ${fmtDate(first.date)}</span></div>` : ''}
   </div>${bwEx ? '' : infoBox('rm')}`;
 
@@ -4272,9 +4274,17 @@ function render() {
     if (stepsLeft != null) steps.scrollLeft = stepsLeft;
     else if (chip) steps.scrollLeft = chip.offsetLeft - (steps.clientWidth - chip.offsetWidth) / 2;
   }
+  const NAV = {
+    rutinas: 'entreno', rutina: 'entreno', programas: 'entreno', miprograma: 'entreno', listos: 'entreno', programa: 'entreno',
+    historial: 'entreno', sesion: 'entreno', progreso: 'entreno', ejercicio: 'entreno',
+    nutricion: 'nutricion', alimento: 'nutricion', dieta: 'nutricion', objetivo: 'nutricion',
+    peso: 'cuerpo', grasa: 'cuerpo', pliegues: 'cuerpo', medidas: 'cuerpo', fotos: 'cuerpo',
+    social: 'social', gymbro: 'social', perfil: 'social', privacidad: 'social',
+  };
+  tab = ['entrenar', 'editar', 'chat'].includes(screen) ? null : NAV[screen] || 'inicio';
   $tabs.hidden = !tab;
-  $tabs.querySelectorAll('a').forEach(a => a.classList.toggle('active', a.dataset.tab === tab));
-  if (tab === 'progreso' && progressQuery) filterProgress();
+  $tabs.querySelectorAll('a').forEach(a => { a.classList.toggle('active', a.dataset.tab === tab); a.toggleAttribute('aria-current', a.dataset.tab === tab); });
+  if (screen === 'progreso' && !arg && progressQuery) filterProgress();
   if (screen === 'nutricion' && arg === 'alimentos' && foodQuery) filterFoods();   // al volver, mantiene la búsqueda aplicada
   if (screen === 'gymbro') ensureInvite();
   if (screen === 'chat') scrollChatBottom();
@@ -4721,7 +4731,7 @@ function viewPrograms() {
         ${p.from ? `<span class="muted small">De ${esc(p.from)}</span>` : ''}
         <span class="muted small prog-week">${esc(myWeekLine(p)) || 'Sin días todavía'}</span></div>
       <span class="chev">›</span></a>`).join('');
-  return `${header('Programas', { home: true, sub: 'Tu semana de entrenamiento' })}
+  return `${header('Entreno', {})}${entrenoTabs('programas')}
     <h2>Mis programas</h2>
     ${mine || '<p class="muted small" style="margin:0 0 8px">Arma un programa con tus rutinas para usarlo como tu plan o enviárselo a tus alumnos y gymbros.</p>'}
     <div class="prog-actions">

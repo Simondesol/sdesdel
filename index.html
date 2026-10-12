@@ -13,11 +13,12 @@
 </head>
 <body>
   <main id="app"></main>
-  <nav id="tabs">
-    <a href="#/rutinas" data-tab="rutinas">Rutinas</a>
-    <a href="#/programas" data-tab="programas">Programas</a>
-    <a href="#/historial" data-tab="historial">Historial</a>
-    <a href="#/progreso" data-tab="progreso">Progreso</a>
+  <nav id="tabs" aria-label="Secciones">
+    <a href="#/" data-tab="inicio"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11l8-7 8 7v9a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1z"/></svg><span>Inicio</span></a>
+    <a href="#/rutinas" data-tab="entreno"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 8v8M3 10v4M18 8v8M21 10v4M6 12h12"/></svg><span>Entreno</span></a>
+    <a href="#/nutricion" data-tab="nutricion"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3v8a2 2 0 0 0 4 0V3M9 11v10M17 3c-2 0-3 2-3 6s1 5 3 5v7"/></svg><span>Nutrición</span></a>
+    <a href="#/peso" data-tab="cuerpo"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="2"/><path d="M5 9h14M12 9v6M9 21l3-6 3 6"/></svg><span>Cuerpo</span></a>
+    <a href="#/social" data-tab="social"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2.5"/><path d="M3 20c0-3.5 2.7-6 6-6s6 2.5 6 6M15 14.5c3 0 6 1.8 6 5"/></svg><span>Social</span></a>
   </nav>
   <script type="module" src="app.js"></script>
 </body>
