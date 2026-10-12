@@ -1264,7 +1264,7 @@ let openEx = null;   // ejercicio abierto en el editor de rutina (los demás se 
 // ⓘ: explicación corta de una palabra técnica (se abre y se cierra al tocarla)
 const INFO = {
   rm: '1RM = el peso máximo que podrías levantar 1 vez. Desdel lo estima con tu 1ª serie (peso y repeticiones), así ves si te estás haciendo más fuerte aunque cambies las repeticiones.',
-  rir: 'RIR = repeticiones en reserva: cuántas más podrías haber hecho con buena técnica. RIR 0 es llegar al fallo; RIR 2, que te quedaban 2.',
+  rir: 'RIR = repeticiones en reserva: cuántas más podrías haber hecho con buena técnica. RIR 2 es que te quedaban 2; RIR 0, que no podías hacer otra. No es lo mismo que el fallo: al fallo intentas otra repetición y no la completas.',
   opts: 'RIR: al entrenar anotas cuántas repeticiones te quedaban en cada serie (y puedes ponerle un RIR objetivo). Dropset: la última serie trae una fila para anotar la bajada de peso. Peso corporal: para dominadas, fondos y similares; lo que anotas es el lastre.',
 };
 const infoOpen = new Set();
