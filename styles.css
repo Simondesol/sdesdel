@@ -819,10 +819,9 @@ button.link { color: var(--accent); font-weight: 600; background: none; border: 
 /* Cuerpo */
 .prog-note { margin: 0 0 8px; }
 
-/* Quiz entre series: sobre la barra del descanso */
-.quiz { position: fixed; left: 12px; right: 12px; z-index: 21; max-width: 536px; margin: 0 auto;
-  bottom: calc(144px + env(safe-area-inset-bottom)); display: grid; gap: 8px; padding: 12px 14px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, .55); max-height: calc(100dvh - 240px); overflow-y: auto; }
+/* Quiz entre series: justo debajo de las series (deja ver lo que anotaste) */
+.quiz { display: grid; gap: 8px; padding: 12px 14px; margin-bottom: 12px; border-color: var(--accent);
+  scroll-margin-bottom: calc(150px + env(safe-area-inset-bottom)); }
 .quiz[hidden] { display: none; }
 .quiz-top { display: flex; align-items: center; gap: 8px; }
 .quiz-top strong { color: var(--accent); }
@@ -837,7 +836,6 @@ button.link { color: var(--accent); font-weight: 600; background: none; border: 
 .quiz-why { margin: 0; font-size: 14px; color: var(--muted); line-height: 1.4; }
 .quiz-why strong { color: var(--text); }
 .quiz-off { justify-self: start; font-size: 13px; }
-body:has(.quiz:not([hidden])) #app { padding-bottom: 440px; }
 .quiz-hard { color: #f0b429; font-weight: 700; }
 /* Cuenta: interruptor del quiz (el botón no se achica) */
 .quiz-set { display: flex; align-items: center; gap: 12px; }

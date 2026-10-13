@@ -1600,6 +1600,7 @@ function viewWorkout() {
   return `${header(title, { back: true, sub: `Ejercicio ${gi + 1} de ${groups.length} · ${editing ? fmtDate(d.start) : `Duración ${elapsedClock(d.start)}`}` })}
     ${steps}
     ${group.length > 1 ? supersetBlock(group) : exerciseBlock(d.exercises[group[0]], group[0])}
+    ${editing ? '' : '<div id="quizcard" class="quiz card" hidden></div>'}
     ${d.free && isLast ? (freeAdd ? freePickerHtml(d) : '<button class="btn block free-more" data-action="free-open">+ Otro ejercicio</button>') : ''}
     ${d.free && freeAdd ? '' : nav}
     ${isLast ? `
@@ -1615,7 +1616,6 @@ function viewWorkout() {
     </div>` : ''}
     ${guideView != null ? guideViewHtml() : ''}
     ${guidePickerHtml()}
-    ${editing ? '' : '<div id="quizcard" class="quiz card" hidden></div>'}
     ${editing ? '' : `<div id="restbar" class="restbar" hidden>
       <span class="rb-text"></span>
       <button class="btn rest-plus" data-action="rest-add">+30 s</button>
@@ -5003,13 +5003,19 @@ function quizHtml() {
            <button class="btn small-btn" data-action="quiz-next">Otra pregunta</button></div>`
       : '<button class="link quiz-off" data-action="quiz-off">No mostrar más</button>'}`;
 }
-// Se muestra mientras corre el descanso, sobre la barra del Rest
+// Se muestra mientras corre el descanso, justo debajo de las series. La primera vez que aparece una pregunta,
+// la pantalla baja lo justo para que se vea entera (sin tapar las series).
+let quizShown = null;
 function paintQuiz() {
   const el = $app.querySelector('#quizcard');
   if (!el) return;
   const show = !!(quizCur && !quizCur.hidden && db.draft && db.draft.timer && routeParts()[0] === 'entrenar');
   el.hidden = !show;
   if (show) el.innerHTML = quizHtml();
+  if (show && quizShown !== quizCur) {
+    quizShown = quizCur;
+    requestAnimationFrame(() => el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
+  }
 }
 
 

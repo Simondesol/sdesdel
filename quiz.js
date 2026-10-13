@@ -403,6 +403,10 @@ export const QUIZ = [
     'Se ha visto sobre todo en esfuerzos de resistencia.', 2],
   ['n65', 'n', '¿El cardio en ayunas quema más grasa al final del día?', ['Sí: sin glucosa, el cuerpo usa solo grasa', 'No: la pérdida de grasa total es parecida a hacerlo comido', 'Sí, si lo haces a baja intensidad'], 1,
     'Quema más grasa durante la sesión, pero el cuerpo lo compensa el resto del día.', 2],
+  ['n66', 'n', '¿Qué parte de las calorías de los carbohidratos se gasta en digerirlos?', ['Aprox. 5 a 10 %', 'Aprox. 20 a 30 %', 'Aprox. 0 a 3 %'], 0,
+    'La proteína es la que más gasta al digerirse (aprox. 20 a 30 %) y la grasa, la que menos (aprox. 0 a 3 %).', 2],
+  ['n67', 'n', '¿Qué parte de las calorías de las grasas se gasta en digerirlas?', ['Aprox. 0 a 3 %', 'Aprox. 5 a 10 %', 'Aprox. 20 a 30 %'], 0,
+    'Es el macronutriente que menos energía gasta al digerirse. En los carbohidratos es aprox. 5 a 10 % y en la proteína aprox. 20 a 30 %.', 2],
 
   ['s51', 's', '¿Qué es el VO2 máx?', ['La máxima cantidad de oxígeno que tu cuerpo puede usar', 'La máxima frecuencia cardíaca que alcanzas', 'La capacidad total de tus pulmones'], 0,
     'Es uno de los mejores indicadores de condición física y de salud a largo plazo.', 2],
