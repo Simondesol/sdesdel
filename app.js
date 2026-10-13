@@ -223,6 +223,7 @@ function weekSummary(offset) {
 }
 
 function weekCard() {
+  if (!db.workouts.length) return '';
   const s = weekSummary(weekOffset);
   const stat = (label, value, sub = '') => `<div class="wk-stat"><span class="muted small">${label}</span><strong>${value}</strong>${sub ? `<span class="muted small">${sub}</span>` : ''}</div>`;
   // Solo lo que usas: peso y sueño si alguna vez los anotaste; agua y dieta si las anotaste en las últimas 2 semanas
@@ -1006,12 +1007,14 @@ function viewWater() {
         </span>
       </div>`)).reverse().join('');
 
-  // Últimos 7 días
+  // Últimos 7 días (si en esos días anotaste algo)
   const days = [];
+  let any7 = false;
   for (let k = 6; k >= 0; k--) {
     const d = new Date(); d.setDate(d.getDate() - k);
     const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     const total = waterDay(key).reduce((a, e) => a + e.ml, 0);
+    if (total) any7 = true;
     days.push(`<div class="water-day">
       <span class="muted">${k === 0 ? 'hoy' : d.toLocaleDateString('es', { weekday: 'short', day: 'numeric' })}</span>
       ${bar(total, g.ml)}
@@ -1036,8 +1039,8 @@ function viewWater() {
 
     ${entries ? `<h2>Hoy</h2><section class="card">${entries}</section>` : ''}
 
-    <h2>Últimos 7 días</h2>
-    <section class="card">${days.join('')}</section>
+    ${any7 ? `<h2>Últimos 7 días</h2>
+    <section class="card">${days.join('')}</section>` : ''}
 
     ${sectionHead('agua-ajustes', 'Ajustes: botones rápidos y meta diaria')}
     ${openSections.has('agua-ajustes') ? `
@@ -4001,13 +4004,20 @@ const TIPS = {
   nutricion: 'Arma tu dieta con alimentos y cantidades, y marca cada día las comidas que te comiste. Las calorías y proteínas se suman solas.',
   agua: 'Toca los botones para sumar lo que tomas. La meta se calcula con tu peso, y la puedes cambiar.',
   sueno: 'Anota cuántas horas dormiste. Cada mañana, al abrir la app, te lo pregunta.',
-  social: 'Agrega a tus gymbros con su código: pueden chatear, mandarse rutinas, dietas y programas, y ver sus récords.',
+  social: 'Con tus gymbros pueden chatear, mandarse rutinas, dietas y programas, y ver sus récords. Para sumar a otro, toca "Agregar gymbro" y mándale tu link.',
 };
 function tipsClosed() { try { return JSON.parse(localStorage.getItem(tipsKey())) || []; } catch (e) { return []; } }
 function closeTip(k) { try { localStorage.setItem(tipsKey(), JSON.stringify([...new Set([...tipsClosed(), k])])); } catch (e) { /* sin almacenamiento */ } }
+const TIP_READY = {
+  rutinas: () => db.routines.length, programas: () => db.programs.length, historial: () => db.workouts.length,
+  progreso: () => db.workouts.length, peso: () => db.bodyweight.length, grasa: () => currentBf() != null,
+  medidas: () => db.measures.length, fotos: () => progList && progList.length, nutricion: () => N().diets.length,
+  sueno: () => db.sleep.length, social: () => chats.length,
+};
 function tipHtml(screen, arg) {
   const k = screen === 'entrenar' ? (arg ? null : 'entrenar') : screen === 'progreso' && arg ? null : screen;
   if (!k || !TIPS[k] || tourOpen || tipsClosed().includes(k)) return '';
+  if (TIP_READY[k] && !TIP_READY[k]()) return '';
   return `<div class="card tip-card" data-tip="${k}"><span>💡 ${TIPS[k]}</span>
     <button class="icon small" data-action="tip-close" data-k="${k}" aria-label="Cerrar consejo">✕</button></div>`;
 }
@@ -4279,7 +4289,12 @@ function render() {
   }
   const stepsLeft = $app.querySelector('.steps')?.scrollLeft;   // fila de ejercicios del entrenamiento
   const tip = tipHtml(screen, arg);
-  if (tip) html = html.replace('</header>', '</header>' + tip);
+  if (tip) {
+    let at = html.indexOf('</header>') + '</header>'.length;
+    const tabsAt = html.indexOf('<div class="range" role="tablist">', at);
+    if (tabsAt >= 0 && !html.slice(at, tabsAt).trim()) at = html.indexOf('</div>', tabsAt) + '</div>'.length;
+    html = html.slice(0, at) + tip + html.slice(at);
+  }
   if (!['entrenar', 'editar', 'chat'].includes(screen)) maybeAskSleep();
   if (sleepAsk && !tourOpen && !['entrenar', 'editar', 'chat'].includes(screen)) html += sleepModal();
   if (tourOpen) html += tourHtml();
@@ -4758,7 +4773,7 @@ function viewPrograms() {
       <span class="chev">›</span></a>`).join('');
   return `${header('Entreno', {})}${entrenoTabs('programas')}
     <h2>Mis programas</h2>
-    ${mine || '<p class="muted small" style="margin:0 0 8px">Arma un programa con tus rutinas para usarlo como tu plan o enviárselo a tus alumnos y gymbros.</p>'}
+    ${mine || '<p class="muted small" style="margin:0 0 8px">Arma un programa con tus rutinas para usarlo como tu plan o enviárselo a un gymbro.</p>'}
     <div class="prog-actions">
       <button class="btn" data-action="myprog-new">+ Crear programa</button>
       <a class="btn primary" href="#/listos">Programas listos</a>
