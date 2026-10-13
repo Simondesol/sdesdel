@@ -250,7 +250,6 @@ function weekCard() {
 }
 
 function viewHub() {
-  maybeAskSleep();
   const d = db.draft;
   const ml = waterToday(), goal = waterGoal().ml, streak = waterStreak();
   const tourOffer = tourSeen() || tourOpen ? '' : `<section class="card tour-offer">
@@ -280,7 +279,7 @@ function viewHub() {
 
     ${weekCard()}
     </div>
-    ${sleepAsk ? sleepModal() : ''}`;
+`;
 }
 
 // ---------- Nutrición ----------
@@ -4013,9 +4012,10 @@ function tipHtml(screen, arg) {
     <button class="icon small" data-action="tip-close" data-k="${k}" aria-label="Cerrar consejo">✕</button></div>`;
 }
 
-// Una vez al día, al abrir la app, pregunta cuántas horas dormiste (si todavía no lo anotas)
+// Una vez al día, la primera vez que abres la app (en la pantalla que sea, salvo entrenando o en un chat),
+// pregunta cuántas horas dormiste si todavía no lo anotas. Antes de las 4 AM no pregunta (todavía es "anoche").
 function maybeAskSleep() {
-  if (tourOpen) return;
+  if (tourOpen || new Date().getHours() < 4) return;
   if (localStorage.getItem(sleepAskedKey()) === todayKey()) return;
   localStorage.setItem(sleepAskedKey(), todayKey());
   if (!db.sleep.some(e => e.date === todayKey())) sleepAsk = true;
@@ -4280,6 +4280,8 @@ function render() {
   const stepsLeft = $app.querySelector('.steps')?.scrollLeft;   // fila de ejercicios del entrenamiento
   const tip = tipHtml(screen, arg);
   if (tip) html = html.replace('</header>', '</header>' + tip);
+  if (!['entrenar', 'editar', 'chat'].includes(screen)) maybeAskSleep();
+  if (sleepAsk && !tourOpen && !['entrenar', 'editar', 'chat'].includes(screen)) html += sleepModal();
   if (tourOpen) html += tourHtml();
   $app.innerHTML = html;
   const steps = $app.querySelector('.steps');
@@ -4409,6 +4411,14 @@ let undoFn = null, toastTimer = null;
 function showUndo(text, fn) {
   undoFn = fn;
   $toast.innerHTML = `<span>${esc(text)}</span><button class="btn ghost" data-undo>Deshacer</button>`;
+  $toast.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(hideToast, 5000);
+}
+// Aviso corto sin "Deshacer"
+function showNote(text) {
+  undoFn = null;
+  $toast.innerHTML = `<span>${esc(text)}</span>`;
   $toast.hidden = false;
   clearTimeout(toastTimer);
   toastTimer = setTimeout(hideToast, 5000);
@@ -5042,8 +5052,8 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') {
     paintTimer();
     if (db.draft && db.draft.timer) keepScreenOn(true);
-    // Si la app quedó abierta y es un día nuevo, el inicio vuelve a preguntar por el sueño
-    if (status === 'ready' && routeParts()[0] === '' && user && localStorage.getItem(sleepAskedKey()) !== todayKey()) refresh();
+    // Si la app quedó abierta y es un día nuevo, vuelve a preguntar por el sueño (en la pantalla en que estés)
+    if (status === 'ready' && user && !['entrenar', 'editar', 'chat'].includes(routeParts()[0]) && localStorage.getItem(sleepAskedKey()) !== todayKey()) refresh();
   }
 });
 
@@ -5497,12 +5507,15 @@ $app.addEventListener('click', async e => {
       const ex = curRoutine().exercises[i], key = { 'toggle-drop': 'dropset', 'toggle-bw': 'bw', 'toggle-ss': 'ssNext' }[action];
       if (ex[key]) delete ex[key]; else ex[key] = true;
       save(); render();
+      if (ex[key] && action === 'toggle-drop') showNote('Dropset activado: cuando entrenes, la última serie trae una fila para anotar la bajada de peso.');
+      if (ex[key] && action === 'toggle-bw') showNote('Peso corporal activado: cuando entrenes, anota solo el lastre (0 si no usas).');
       break;
     }
     case 'toggle-rir': {
       const ex = curRoutine().exercises[i];
       ex.rir = !ex.rir;
       save(); render();
+      if (ex.rir) showNote('RIR activado: cuando entrenes, anotas cuántas repeticiones te quedaban en cada serie. Arriba puedes poner un RIR objetivo.');
       break;
     }
     case 'toggle-unit': {
