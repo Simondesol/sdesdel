@@ -3753,6 +3753,7 @@ const PROG_BOX = [240, 320];  // cuadro 3:4 en pantalla
 let progOpen = null;          // id de la foto abierta en grande
 let progPose = '';            // filtro de pose ('' = todas)
 let progCmp = null;           // [idAntes, idDespués] elegidos para comparar
+const progCmpBy = {};         // lo elegido en cada pose (para no perderlo al cambiar de filtro)
 let progUid = null;           // dueño de lo cargado (por si cambia la sesión)
 
 async function loadProgress(force = false) {
@@ -3834,6 +3835,8 @@ async function deleteProgress(id) {
   render();
 }
 
+// "2026-10-15" → "15/10/2026"
+const fmtDMY = key => (key ? key.split('-').reverse().join('/') : '');
 function progressNewHtml() {
   const n = progNew;
   return `<div class="modal-wrap">
@@ -3844,7 +3847,9 @@ function progressNewHtml() {
       <div class="link-chips" role="group" aria-label="Pose">${POSES.map(([k, label]) =>
         `<button class="chip toggle ${n.pose === k ? 'on' : ''}" data-action="prog-pose-new" data-k="${k}" aria-pressed="${n.pose === k}">${label}</button>`).join('')}</div>
       <label class="field"><span>Fecha de la foto</span>
-        <input type="date" data-bind="prog-date" value="${n.date}" max="${todayKey()}"></label>
+        <div class="date-field"><span class="date-show">${fmtDMY(n.date)}</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>
+          <input type="date" data-bind="prog-date" value="${n.date}" max="${todayKey()}" aria-label="Fecha de la foto"></div></label>
       <div class="ex-actions">
         <button class="btn ghost" data-action="prog-cancel">Cancelar</button>
         <button class="btn primary" data-action="prog-save">Guardar</button>
@@ -5941,8 +5946,9 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       deleteProgress(el.dataset.id);
       break;
     case 'prog-filter':
+      if (progCmp) progCmpBy[progPose] = progCmp;
       progPose = el.dataset.k;
-      progCmp = null;
+      progCmp = progCmpBy[progPose] || null;
       render();
       break;
     case 'prog-retry':
@@ -6277,7 +6283,12 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
 $app.addEventListener('change', async e => {
   const b = e.target.dataset.bind;
   if (b === 'prog-cmp') { progCmp[+e.target.dataset.k] = e.target.value; render(); return; }
-  if (b === 'prog-date') { if (progNew) progNew.date = e.target.value; return; }
+  if (b === 'prog-date') {
+    if (progNew && e.target.value) progNew.date = e.target.value;
+    const show = e.target.parentElement.querySelector('.date-show');
+    if (show && progNew) show.textContent = fmtDMY(progNew.date);
+    return;
+  }
   if (b === 'prog-file' && e.target.files && e.target.files[0]) { openProgressNew(e.target.files[0]); e.target.value = ''; return; }
   if (e.target.dataset.bind !== 'photo' || !e.target.files || !e.target.files[0]) return;
   openPhotoEditor(e.target.files[0]);
