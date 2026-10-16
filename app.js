@@ -112,9 +112,11 @@ const bwFor = (ex, dateIso) => (ex.unit !== 'placas' && isBwEx(ex) ? bwOn(dateIs
 
 // Mejor serie de cada posición (serie 1, serie 2...) en los entrenamientos anteriores a `before`
 // unit: solo compara con sesiones de la misma clase (placas con placas; kg y lb entre sí)
-function bestSets(exerciseId, before = db.workouts.length, unit = null) {
+// rid: solo los entrenos de esa rutina (en cada rutina rindes distinto según el orden y el cansancio); null = todos
+function bestSets(exerciseId, before = db.workouts.length, unit = null, rid = null) {
   const best = [];
   for (let k = 0; k < before; k++) {
+    if (rid && db.workouts[k].routineId !== rid) continue;
     const ex = db.workouts[k].exercises.find(e => e.exerciseId === exerciseId);
     if (!ex || (unit && unitKind(ex.unit) !== unitKind(unit))) continue;
     const bw = bwFor(ex, db.workouts[k].date);
@@ -1071,9 +1073,10 @@ function viewWater() {
 }
 
 // Última vez que se hizo un ejercicio (antes de la posición `before` del historial)
-function lastFor(exerciseId, before = db.workouts.length) {
+function lastFor(exerciseId, before = db.workouts.length, rid = null) {
   for (let i = before - 1; i >= 0; i--) {
     const w = db.workouts[i];
+    if (rid && w.routineId !== rid) continue;
     const ex = w.exercises.find(e => e.exerciseId === exerciseId);
     if (ex) return { date: w.date, ex };
   }
@@ -1474,7 +1477,8 @@ function viewWorkout() {
   d.pos = Math.min(Math.max(d.pos || 0, 0), d.exercises.length - 1);
   d.done = d.done || [];
   const gi = groupIndex(groups, d.pos), group = groups[gi], isLast = gi === groups.length - 1;
-  const bests = new Map(group.map(k => [k, bestSets(d.exercises[k].exerciseId, before, d.exercises[k].unit)]));
+  const ridOf = ex => (ex.extra ? null : d.routineId);
+  const bests = new Map(group.map(k => [k, bestSets(d.exercises[k].exerciseId, before, d.exercises[k].unit, ridOf(d.exercises[k]))]));
 
   // "↓ drop" solo en ejercicios marcados como Dropset en la rutina (o que ya tienen bajadas, al editar uno guardado)
   const canDrop = ex => ex.dropset || ex.sets.some(st => st.drops && st.drops.length);
@@ -1518,7 +1522,7 @@ function viewWorkout() {
     else if (!ex.rir && goals.length) goals.push(['Hasta', 'Fallo']);
     let hint = '';
     if (!editing && ex.goalReps) {
-      const prev = lastFor(ex.exerciseId, before), top = rangeTop(ex.goalReps);
+      const prev = lastFor(ex.exerciseId, before, ridOf(ex)), top = rangeTop(ex.goalReps);
       const done = prev ? prev.ex.sets.filter(x => x.w != null) : [];
       if (done.length && done.length >= (ex.goalSets || 1) && done.every(x => (x.r || 0) >= top)) {
         hint = `<p class="goal-hint">💡 La última vez llegaste a ${top} reps en todas las series: prueba subir el peso.</p>`;
@@ -2124,7 +2128,7 @@ function viewSession(id) {
 
   // Cada serie comparada con la mejor serie de esa posición en los entrenamientos anteriores
   const blocks = w.exercises.map(ex => {
-    const best = bestSets(ex.exerciseId, k, ex.unit);
+    const best = bestSets(ex.exerciseId, k, ex.unit, w.routineId);
     const count = { up: 0, eq: 0, down: 0 };
     const chips = ex.sets.map((s, j) => {
       const c = best[j] ? cmpSet({ ...s, unit: ex.unit, bw: bwFor(ex, w.date) }, best[j]) : null;
@@ -2177,7 +2181,7 @@ function workoutShareText(w, forChat = false) {
   const k = db.workouts.indexOf(w);
   let ups = 0;
   const lines = w.exercises.map(ex => {
-    const best = bestSets(ex.exerciseId, k, ex.unit);
+    const best = bestSets(ex.exerciseId, k, ex.unit, w.routineId);
     const sets = ex.sets.map((s, j) => {
       const c = best[j] ? cmpSet({ ...s, unit: ex.unit, bw: bwFor(ex, w.date) }, best[j]) : null;
       if (c > 0) ups++;
@@ -4463,7 +4467,7 @@ function startWorkout(r) {
     exercises: r.exercises.map((ex, k) => ({
       exerciseId: ex.id, name: ex.name, unit: ex.unit, rest: ex.rest || 0, rir: !!ex.rir, ...planFields(ex),
       ...(k === r.exercises.length - 1 ? { ssNext: false } : {}),   // el último no se une con nada
-      sets: prefillSets(lastFor(ex.id), ex.rir, ex.goalSets, ex.dropset),
+      sets: prefillSets(lastFor(ex.id, db.workouts.length, r.id), ex.rir, ex.goalSets, ex.dropset),
     })),
   };
   save();
@@ -4538,6 +4542,7 @@ function makeEditBuf(id) {
   if (!w) return null;
   return {
     editOf: w.id,
+    routineId: w.routineId,
     routineName: w.routineName,
     start: w.date,
     exercises: w.exercises.map(ex => ({
@@ -6377,7 +6382,7 @@ $app.addEventListener('input', e => {
     const d = cur(), ex = d.exercises[i];
     ex.sets[j][bind] = el.value;
     const cell = $app.querySelector(`[data-mark="${i}-${j}"]`);
-    if (cell) cell.innerHTML = markSpan(liveCmp(ex.sets[j], ex, bestSets(ex.exerciseId, beforeIndex(d), ex.unit)[j]));
+    if (cell) cell.innerHTML = markSpan(liveCmp(ex.sets[j], ex, bestSets(ex.exerciseId, beforeIndex(d), ex.unit, ex.extra ? null : d.routineId)[j]));
   }
   else if (bind === 'dw' || bind === 'dr') cur().exercises[i].sets[j].drops[+el.dataset.k][bind === 'dw' ? 'w' : 'r'] = el.value;
   else if (bind === 'note') {
