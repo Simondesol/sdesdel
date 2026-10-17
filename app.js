@@ -1327,7 +1327,7 @@ function viewRoutine() {
         <label>Rest<input data-bind="ex-rest" data-i="${i}" value="${ex.rest ? fmtRest(ex.rest) : ''}" placeholder="m:ss" autocomplete="off" aria-label="Descanso entre series"></label>
       </div>
       ${repsByOn(ex) ? repsByBlock(ex, i) : ''}
-      <button class="link small reps-by-toggle" data-action="reps-by" data-i="${i}">${repsByOn(ex) ? 'Usar un solo rango' : 'Distinto por serie'}</button>
+      <button class="link small reps-by-toggle" data-action="reps-by" data-i="${i}" ${repsByOn(ex) || ex.goalSets >= 2 ? '' : 'hidden'}>${repsByOn(ex) ? 'Usar un solo rango' : 'Distinto por serie'}</button>
       <div class="ex-toggles">
         <button class="chip toggle ${ex.rir ? 'on' : ''}" data-action="toggle-rir" data-i="${i}" aria-pressed="${!!ex.rir}">RIR</button>
         <button class="chip toggle ${ex.dropset ? 'on' : ''}" data-action="toggle-drop" data-i="${i}" aria-pressed="${!!ex.dropset}">Dropset</button>
@@ -6422,6 +6422,9 @@ $app.addEventListener('input', e => {
     const key = { 'ex-goal-sets': 'goalSets', 'ex-goal-reps': 'goalReps', 'ex-goal-rir': 'goalRir' }[bind];
     if (!text) delete ex[key];
     else if (key === 'goalSets') { const n = parseInt(text, 10); if (n >= 1 && n <= 20 && String(n) === text) ex.goalSets = n; }
+    // "Distinto por serie" solo tiene sentido con 2 series o más
+    const tgl = key === 'goalSets' && $app.querySelector(`.reps-by-toggle[data-i="${i}"]`);
+    if (tgl) tgl.hidden = !(repsByOn(ex) || ex.goalSets >= 2);
     if (key === 'goalSets' && repsByOn(ex)) {
       // Solo se agregan casillas (las nuevas copian la última); nunca se borran las que ya escribiste,
       // ni siquiera si la casilla de Series queda vacía un momento mientras escribes otro número

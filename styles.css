@@ -983,3 +983,5 @@ p.reps-by { display: block; }
 .reps-by { flex: 1 1 100%; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0; }
 .reps-by label { display: grid; gap: 4px; color: var(--muted); font-size: 13px; }
 .reps-by input { text-align: center; }
+
+.reps-by-toggle[hidden] { display: none; }
