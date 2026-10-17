@@ -1134,7 +1134,7 @@ const rangeTop = t => +String(t).split('-').pop();
 const planFields = ex => ({ ...goalFields(ex), ...(ex.dropset ? { dropset: true } : {}), ...(ex.ssNext ? { ssNext: true } : {}), ...(ex.bw ? { bw: true } : {}), ...(ex.guide ? { guide: ex.guide } : {}) });
 // Repeticiones distintas por serie: ex.goalRepsBy[j] (vacío = el rango general de Reps)
 const hasRepsBy = ex => Array.isArray(ex.goalRepsBy) && ex.goalRepsBy.slice(0, ex.goalSets || ex.goalRepsBy.length).some(Boolean);
-const repsFor = (ex, j) => (hasRepsBy(ex) && ex.goalRepsBy[j]) || ex.goalReps || '';
+const repsFor = (ex, j) => (hasRepsBy(ex) ? ex.goalRepsBy[j] || '' : ex.goalReps || '');
 const goalFields = ex => ({
   ...(ex.goalSets ? { goalSets: ex.goalSets } : {}),
   ...(ex.goalReps ? { goalReps: ex.goalReps } : {}),
@@ -1270,7 +1270,13 @@ const moreBtn = (key, total) => (total > 7
   ? `<button class="btn ghost block" data-action="toggle-sec" data-k="${key}">${openSections.has(key) ? 'Ver menos' : `Ver todos (${total})`}</button>` : '');
 
 let openEx = null;   // ejercicio abierto en el editor de rutina (los demás se ven como resumen)
-const repsByOpen = new Set();   // ejercicios con "Distinto por serie" desplegado
+const repsByOpen = new Set();   // ejercicios con "Distinto por serie" activado (aunque todavía no tengan rangos)
+const repsByOn = ex => repsByOpen.has(ex.id) || hasRepsBy(ex);
+// Una casilla por serie (se redibuja sola al cambiar el número de series)
+const repsByBlock = (ex, i) => (ex.goalSets
+  ? `<div class="reps-by" data-i="${i}">${Array.from({ length: ex.goalSets }, (_, j) => `<label><span>Serie ${j + 1}</span>
+      <input data-bind="ex-repby" data-i="${i}" data-j="${j}" inputmode="decimal" value="${esc((ex.goalRepsBy || [])[j] || '')}" placeholder="8-10" autocomplete="off" aria-label="Repeticiones de la serie ${j + 1}"></label>`).join('')}</div>`
+  : `<p class="muted small reps-by" data-i="${i}">Pon cuántas Series para escribir el rango de cada una.</p>`);
 // ⓘ: explicación corta de una palabra técnica (se abre y se cierra al tocarla)
 const INFO = {
   rm: '1RM = el peso máximo que podrías levantar 1 vez. Desdel lo estima con tu 1ª serie (peso y repeticiones), así ves si te estás haciendo más fuerte aunque cambies las repeticiones.',
@@ -1312,17 +1318,16 @@ function viewRoutine() {
       <button class="icon danger" data-action="del-ex" data-i="${i}" aria-label="Quitar">✕</button>
       <div class="ex-goals" aria-label="Objetivo (opcional)">
         <label>Series<input data-bind="ex-goal-sets" data-i="${i}" inputmode="numeric" value="${ex.goalSets || ''}" placeholder="–" autocomplete="off" aria-label="Series objetivo"></label>
-        <label>Reps<input data-bind="ex-goal-reps" data-i="${i}" inputmode="decimal" value="${esc(ex.goalReps || '')}" placeholder="8-10" autocomplete="off" aria-label="Rango de repeticiones objetivo"></label>
+        ${repsByOn(ex)
+          ? '<div class="goal-fixed-wrap"><span>Reps</span><span class="goal-fixed">Por serie</span></div>'
+          : `<label>Reps<input data-bind="ex-goal-reps" data-i="${i}" inputmode="decimal" value="${esc(ex.goalReps || '')}" placeholder="8-10" autocomplete="off" aria-label="Rango de repeticiones objetivo"></label>`}
         ${ex.rir   // con RIR activado se escribe el RIR objetivo; sin RIR, la serie va al fallo
           ? `<label>RIR obj.<input data-bind="ex-goal-rir" data-i="${i}" inputmode="decimal" value="${esc(ex.goalRir || '')}" placeholder="–" autocomplete="off" aria-label="RIR objetivo"></label>`
           : '<div class="goal-fixed-wrap"><span>Hasta</span><span class="goal-fixed" title="Activa RIR para poner un RIR objetivo">Fallo</span></div>'}
         <label>Rest<input data-bind="ex-rest" data-i="${i}" value="${ex.rest ? fmtRest(ex.rest) : ''}" placeholder="m:ss" autocomplete="off" aria-label="Descanso entre series"></label>
       </div>
-      ${(open => `<button class="link small reps-by-toggle" data-action="reps-by" data-i="${i}" aria-expanded="${open}">Distinto por serie ${open ? '▴' : '▾'}</button>
-      ${open ? (ex.goalSets ? `<div class="reps-by">${Array.from({ length: ex.goalSets }, (_, j) => `<label><span>Serie ${j + 1}</span>
-          <input data-bind="ex-repby" data-i="${i}" data-j="${j}" inputmode="decimal" value="${esc((ex.goalRepsBy || [])[j] || '')}" placeholder="${esc(ex.goalReps || '8-10')}" autocomplete="off" aria-label="Repeticiones de la serie ${j + 1}"></label>`).join('')}
-        <span class="muted small">Si dejas una vacía, usa el rango de Reps.</span></div>`
-        : '<p class="muted small reps-by">Primero pon cuántas Series.</p>') : ''}`)(repsByOpen.has(ex.id) || hasRepsBy(ex))}
+      ${repsByOn(ex) ? repsByBlock(ex, i) : ''}
+      <button class="link small reps-by-toggle" data-action="reps-by" data-i="${i}">${repsByOn(ex) ? 'Usar un solo rango' : 'Distinto por serie'}</button>
       <div class="ex-toggles">
         <button class="chip toggle ${ex.rir ? 'on' : ''}" data-action="toggle-rir" data-i="${i}" aria-pressed="${!!ex.rir}">RIR</button>
         <button class="chip toggle ${ex.dropset ? 'on' : ''}" data-action="toggle-drop" data-i="${i}" aria-pressed="${!!ex.dropset}">Dropset</button>
@@ -5422,13 +5427,18 @@ $app.addEventListener('click', async e => {
       startFree();
       break;
     case 'reps-by': {
-      const ex = curRoutine().exercises[i], open = repsByOpen.has(ex.id) || hasRepsBy(ex);
-      if (open && hasRepsBy(ex)) {   // cerrar con rangos puestos: se borran (vuelve a un solo rango)
-        if (!(await ask('¿Volver a un solo rango para todas las series? Se borran los rangos por serie.', 'Volver a uno'))) return;
-        delete ex.goalRepsBy; save();
+      const ex = curRoutine().exercises[i];
+      if (!repsByOn(ex)) {
+        // Activar: cada serie parte con el rango que tenías
+        ex.goalRepsBy = Array.from({ length: ex.goalSets || 0 }, () => ex.goalReps || '');
+        repsByOpen.add(ex.id);
+      } else {
+        if (hasRepsBy(ex) && !(await ask('¿Usar un solo rango para todas las series? Se borran los rangos de cada serie.', 'Usar un solo rango'))) return;
+        if (!ex.goalReps) { const first = (ex.goalRepsBy || []).find(Boolean); if (first) ex.goalReps = first; }
+        delete ex.goalRepsBy;
+        repsByOpen.delete(ex.id);
       }
-      if (open) repsByOpen.delete(ex.id); else repsByOpen.add(ex.id);
-      render();
+      save(); render();
       break;
     }
     case 'vid-toggle':   // video de técnica: tocar pausa o sigue
@@ -6403,7 +6413,8 @@ $app.addEventListener('input', e => {
     const by = Array.from({ length: Math.max(ex.goalSets || 0, j + 1) }, (_, k) => (ex.goalRepsBy || [])[k] || '');
     if (!text) by[j] = '';
     else { const v = parseRange(text, 100); if (v) by[j] = v; }
-    if (by.some(Boolean)) ex.goalRepsBy = by; else delete ex.goalRepsBy;
+    ex.goalRepsBy = by;
+    repsByOpen.add(ex.id);
   }
   else if (bind === 'ex-goal-sets' || bind === 'ex-goal-reps' || bind === 'ex-goal-rir') {
     // Vacío = sin objetivo; si lo escrito no es válido se mantiene lo anterior
@@ -6411,6 +6422,12 @@ $app.addEventListener('input', e => {
     const key = { 'ex-goal-sets': 'goalSets', 'ex-goal-reps': 'goalReps', 'ex-goal-rir': 'goalRir' }[bind];
     if (!text) delete ex[key];
     else if (key === 'goalSets') { const n = parseInt(text, 10); if (n >= 1 && n <= 20 && String(n) === text) ex.goalSets = n; }
+    if (key === 'goalSets' && repsByOn(ex)) {
+      const by = ex.goalRepsBy || [], last = by[by.length - 1] || ex.goalReps || '';
+      ex.goalRepsBy = Array.from({ length: ex.goalSets || 0 }, (_, k) => (k < by.length ? by[k] : last));
+      const box = $app.querySelector(`.reps-by[data-i="${i}"]`);
+      if (box) box.outerHTML = repsByBlock(ex, i);
+    }
     else { const v = parseRange(text, key === 'goalReps' ? 100 : 10); if (v) ex[key] = v; }
   }
   else if (bind === 'w' || bind === 'r' || bind === 'rir') {
