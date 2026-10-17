@@ -985,3 +985,5 @@ p.reps-by { display: block; }
 .reps-by input { text-align: center; }
 
 .reps-by-toggle[hidden] { display: none; }
+.reps-cell { display: contents; }
+.reps-by-wrap { display: contents; }

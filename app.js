@@ -1133,7 +1133,7 @@ const rangeTop = t => +String(t).split('-').pop();
 // Plan del ejercicio en la rutina: objetivo, dropset y superset con el siguiente
 const planFields = ex => ({ ...goalFields(ex), ...(ex.dropset ? { dropset: true } : {}), ...(ex.ssNext ? { ssNext: true } : {}), ...(ex.bw ? { bw: true } : {}), ...(ex.guide ? { guide: ex.guide } : {}) });
 // Repeticiones distintas por serie: ex.goalRepsBy[j] (vacío = el rango general de Reps)
-const hasRepsBy = ex => Array.isArray(ex.goalRepsBy) && ex.goalRepsBy.slice(0, ex.goalSets || ex.goalRepsBy.length).some(Boolean);
+const hasRepsBy = ex => (ex.goalSets || 0) >= 2 && Array.isArray(ex.goalRepsBy) && ex.goalRepsBy.slice(0, ex.goalSets).some(Boolean);
 const repsFor = (ex, j) => (hasRepsBy(ex) ? ex.goalRepsBy[j] || '' : ex.goalReps || '');
 const goalFields = ex => ({
   ...(ex.goalSets ? { goalSets: ex.goalSets } : {}),
@@ -1271,7 +1271,11 @@ const moreBtn = (key, total) => (total > 7
 
 let openEx = null;   // ejercicio abierto en el editor de rutina (los demás se ven como resumen)
 const repsByOpen = new Set();   // ejercicios con "Distinto por serie" activado (aunque todavía no tengan rangos)
-const repsByOn = ex => repsByOpen.has(ex.id) || hasRepsBy(ex);
+const repsByOn = ex => (ex.goalSets || 0) >= 2 && (repsByOpen.has(ex.id) || hasRepsBy(ex));
+// Casilla Reps: normal, o "Por serie" cuando cada serie tiene su rango
+const repsCell = (ex, i) => (repsByOn(ex)
+  ? '<div class="goal-fixed-wrap"><span>Reps</span><span class="goal-fixed">Por serie</span></div>'
+  : `<label>Reps<input data-bind="ex-goal-reps" data-i="${i}" inputmode="decimal" value="${esc(ex.goalReps || '')}" placeholder="8-10" autocomplete="off" aria-label="Rango de repeticiones objetivo"></label>`);
 // Una casilla por serie (se redibuja sola al cambiar el número de series)
 const repsByBlock = (ex, i) => (ex.goalSets
   ? `<div class="reps-by" data-i="${i}">${Array.from({ length: ex.goalSets }, (_, j) => `<label><span>Serie ${j + 1}</span>
@@ -1318,16 +1322,14 @@ function viewRoutine() {
       <button class="icon danger" data-action="del-ex" data-i="${i}" aria-label="Quitar">✕</button>
       <div class="ex-goals" aria-label="Objetivo (opcional)">
         <label>Series<input data-bind="ex-goal-sets" data-i="${i}" inputmode="numeric" value="${ex.goalSets || ''}" placeholder="–" autocomplete="off" aria-label="Series objetivo"></label>
-        ${repsByOn(ex)
-          ? '<div class="goal-fixed-wrap"><span>Reps</span><span class="goal-fixed">Por serie</span></div>'
-          : `<label>Reps<input data-bind="ex-goal-reps" data-i="${i}" inputmode="decimal" value="${esc(ex.goalReps || '')}" placeholder="8-10" autocomplete="off" aria-label="Rango de repeticiones objetivo"></label>`}
+        <div class="reps-cell" data-i="${i}">${repsCell(ex, i)}</div>
         ${ex.rir   // con RIR activado se escribe el RIR objetivo; sin RIR, la serie va al fallo
           ? `<label>RIR obj.<input data-bind="ex-goal-rir" data-i="${i}" inputmode="decimal" value="${esc(ex.goalRir || '')}" placeholder="–" autocomplete="off" aria-label="RIR objetivo"></label>`
           : '<div class="goal-fixed-wrap"><span>Hasta</span><span class="goal-fixed" title="Activa RIR para poner un RIR objetivo">Fallo</span></div>'}
         <label>Rest<input data-bind="ex-rest" data-i="${i}" value="${ex.rest ? fmtRest(ex.rest) : ''}" placeholder="m:ss" autocomplete="off" aria-label="Descanso entre series"></label>
       </div>
-      ${repsByOn(ex) ? repsByBlock(ex, i) : ''}
-      <button class="link small reps-by-toggle" data-action="reps-by" data-i="${i}" ${repsByOn(ex) || ex.goalSets >= 2 ? '' : 'hidden'}>${repsByOn(ex) ? 'Usar un solo rango' : 'Distinto por serie'}</button>
+      <div class="reps-by-wrap" data-i="${i}">${repsByOn(ex) ? repsByBlock(ex, i) : ''}</div>
+      <button class="link small reps-by-toggle" data-action="reps-by" data-i="${i}" ${ex.goalSets >= 2 ? '' : 'hidden'}>${repsByOn(ex) ? 'Usar un solo rango' : 'Distinto por serie'}</button>
       <div class="ex-toggles">
         <button class="chip toggle ${ex.rir ? 'on' : ''}" data-action="toggle-rir" data-i="${i}" aria-pressed="${!!ex.rir}">RIR</button>
         <button class="chip toggle ${ex.dropset ? 'on' : ''}" data-action="toggle-drop" data-i="${i}" aria-pressed="${!!ex.dropset}">Dropset</button>
@@ -6422,16 +6424,20 @@ $app.addEventListener('input', e => {
     const key = { 'ex-goal-sets': 'goalSets', 'ex-goal-reps': 'goalReps', 'ex-goal-rir': 'goalRir' }[bind];
     if (!text) delete ex[key];
     else if (key === 'goalSets') { const n = parseInt(text, 10); if (n >= 1 && n <= 20 && String(n) === text) ex.goalSets = n; }
-    // "Distinto por serie" solo tiene sentido con 2 series o más
-    const tgl = key === 'goalSets' && $app.querySelector(`.reps-by-toggle[data-i="${i}"]`);
-    if (tgl) tgl.hidden = !(repsByOn(ex) || ex.goalSets >= 2);
-    if (key === 'goalSets' && repsByOn(ex)) {
+    if (key === 'goalSets' && (repsByOpen.has(ex.id) || Array.isArray(ex.goalRepsBy))) {
       // Solo se agregan casillas (las nuevas copian la última); nunca se borran las que ya escribiste,
       // ni siquiera si la casilla de Series queda vacía un momento mientras escribes otro número
       const by = ex.goalRepsBy || [], last = by[by.length - 1] || ex.goalReps || '';
       ex.goalRepsBy = Array.from({ length: Math.max(by.length, ex.goalSets || 0) }, (_, k) => (k < by.length ? by[k] : last));
-      const box = $app.querySelector(`.reps-by[data-i="${i}"]`);
-      if (box) box.outerHTML = repsByBlock(ex, i);
+      // Con 1 serie vuelve la casilla Reps normal, con el rango que tenía esa serie
+      if ((ex.goalSets || 0) < 2 && ex.goalRepsBy[0]) ex.goalReps = ex.goalRepsBy[0];
+    }
+    if (key === 'goalSets') {   // se actualiza sin redibujar todo (para no cerrar el teclado)
+      const cell = $app.querySelector(`.reps-cell[data-i="${i}"]`), wrap = $app.querySelector(`.reps-by-wrap[data-i="${i}"]`);
+      const tgl = $app.querySelector(`.reps-by-toggle[data-i="${i}"]`);
+      if (cell) cell.innerHTML = repsCell(ex, i);
+      if (wrap) wrap.innerHTML = repsByOn(ex) ? repsByBlock(ex, i) : '';
+      if (tgl) { tgl.hidden = !(ex.goalSets >= 2); tgl.textContent = repsByOn(ex) ? 'Usar un solo rango' : 'Distinto por serie'; }
     }
     else { const v = parseRange(text, key === 'goalReps' ? 100 : 10); if (v) ex[key] = v; }
   }
