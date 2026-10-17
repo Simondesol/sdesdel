@@ -306,8 +306,95 @@ RAW['Cereales, panes y tubérculos'].push(
   ['Fideos integrales crudos', 348, 14.6, 75, 1.4],
 );
 
+// Alimentos de 1 ingrediente agregados después (y el yogurt de sabor)
+const MORE2 = {
+  'Carnes y pescados': [
+    ['Trutro de pollo con piel crudo', 221, 16.5, 0, 16.6],
+    ['Pechuga de pavo cruda', 114, 23.7, 0, 1.5],
+    ['Pavo molido crudo', 150, 18.7, 0, 8.3],
+    ['Lengua de vacuno cocida', 284, 19.3, 0, 22.3],
+    ['Guatitas (callos) crudas', 85, 12.1, 0, 3.7],
+    ['Salmón ahumado', 117, 18.3, 0, 4.3],
+    ['Caballa cruda', 205, 18.6, 0, 13.9],
+  ],
+  'Huevos y lácteos': [
+    ['Yogurt de sabor (batido)', 90, 3.2, 14.5, 2.2],
+    ['Yogurt de sabor light', 40, 3.5, 6, 0.1],
+    ['Queso cottage', 98, 11.1, 3.4, 4.3],
+    ['Ricotta', 174, 11.3, 3, 13],
+    ['Queso mozzarella', 300, 22.2, 2.2, 22.4],
+    ['Queso gauda', 356, 24.9, 2.2, 27.4],
+    ['Queso de cabra', 264, 18.5, 0.9, 21.1],
+    ['Kéfir natural', 41, 3.8, 4.5, 1],
+    ['Leche en polvo descremada', 362, 36.2, 52, 0.8],
+    ['Colágeno hidrolizado (polvo)', 360, 90, 0, 0],
+  ],
+  'Cereales, panes y tubérculos': [
+    ['Arroz basmati cocido', 121, 3.5, 25.2, 0.4],
+    ['Salvado de avena', 246, 17.3, 66.2, 7],
+    ['Germen de trigo', 360, 23.2, 51.8, 9.7],
+    ['Harina de avena', 404, 14.7, 65.7, 9.1],
+    ['Harina de trigo integral', 340, 13.2, 72, 2.5],
+    ['Maicena (almidón de maíz)', 381, 0.3, 91.3, 0.1],
+    ['Cuscús crudo', 376, 12.8, 77.4, 0.6],
+    ['Plátano verde (macho) cocido', 116, 0.8, 31.2, 0.2],
+  ],
+  'Legumbres': [
+    ['Lentejas rojas crudas', 358, 23.9, 63.1, 2.2],
+    ['Porotos pintos cocidos', 143, 9, 26.2, 0.7],
+    ['Arvejas partidas cocidas', 118, 8.3, 21.1, 0.4],
+    ['Lupino (chochos) cocido', 119, 15.6, 9.9, 2.9],
+    ['Tempeh', 192, 20.3, 7.6, 10.8],
+    ['Harina de garbanzo', 387, 22.4, 57.8, 6.7],
+  ],
+  'Verduras': [
+    ['Brócoli cocido', 35, 2.4, 7.2, 0.4],
+    ['Espinaca cocida', 23, 3, 3.8, 0.3],
+    ['Coliflor cocida', 23, 1.8, 4.1, 0.5],
+    ['Zanahoria cocida', 35, 0.8, 8.2, 0.2],
+    ['Champiñones cocidos', 28, 2.2, 5.3, 0.5],
+    ['Berros', 11, 2.3, 1.3, 0.1],
+    ['Palmitos (en conserva)', 28, 2.5, 4.6, 0.6],
+    ['Aceitunas verdes', 145, 1, 3.8, 15.3],
+    ['Aceitunas negras', 115, 0.8, 6.3, 10.7],
+  ],
+  'Frutas': [
+    ['Guayaba', 68, 2.6, 14.3, 1],
+    ['Carambola', 31, 1, 6.7, 0.3],
+    ['Arándano rojo (cranberry) fresco', 46, 0.5, 12, 0.1],
+    ['Higo seco', 249, 3.3, 63.9, 0.9],
+    ['Manzana deshidratada', 243, 0.9, 65.9, 0.3],
+    ['Plátano deshidratado', 346, 3.9, 88.3, 1.8],
+  ],
+  'Frutos secos y semillas': [
+    ['Mantequilla de almendras', 614, 21, 18.8, 55.5],
+    ['Pasta de sésamo (tahini)', 595, 17, 21.2, 53.8],
+  ],
+  'Aceites, salsas y dulces': [
+    ['Aceite de maravilla', 884, 0, 0, 100],
+    ['Aceite de canola', 884, 0, 0, 100],
+    ['Azúcar rubia', 380, 0.1, 98.1, 0],
+    ['Jarabe de arce (maple)', 260, 0, 67, 0.1],
+    ['Vinagre', 19, 0, 0.3, 0],
+  ],
+  'Bebidas': [
+    ['Agua de coco', 19, 0.7, 3.7, 0.2],
+    ['Leche de soya sin azúcar', 33, 2.9, 1.7, 1.6],
+    ['Café negro (sin azúcar)', 1, 0.1, 0, 0],
+    ['Té (sin azúcar)', 1, 0, 0.3, 0],
+  ],
+};
+for (const [cat, list] of Object.entries(MORE2)) (RAW[cat] ||= []).push(...list);
+
 // Otros nombres con que se busca un alimento (la palabra del nombre ya cuenta)
 const ALIASES = [
+  ['Yogurt de sabor', 'yoghurt yogur batido frutilla vainilla durazno'],
+  ['Queso gauda', 'gouda'],
+  ['Caballa', 'mackerel'],
+  ['Guatitas', 'tripa mondongo'],
+  ['Lupino', 'altramuz chochos'],
+  ['Maicena', 'fecula maizena'],
+  ['Jarabe de arce', 'maple'],
   ['Fideos', 'tallarines tallarin pasta spaghetti espagueti macarrones corbatas'],
   ['Palta', 'aguacate'],
   ['Frutilla', 'fresa fresas'],
@@ -400,6 +487,9 @@ export const UNITS = {
   'Miel': [21, 'cucharada'], 'Azúcar': [5, 'cucharadita'], 'Mantequilla': [5, 'cucharadita'], 'Mayonesa': [14, 'cucharada'],
   'Ketchup': [17, 'cucharada'], 'Semillas de chía': [10, 'cucharada'], 'Queso mantecoso': [20, 'lámina'],
   'Jamón de pavo': [20, 'lámina'], 'Jamón de cerdo': [20, 'lámina'], 'Vienesa': [40], 'Barra de proteína': [60],
+  'Yogurt de sabor (batido)': [120, 'pote'], 'Yogurt de sabor light': [120, 'pote'], 'Aceitunas verdes': [4], 'Aceitunas negras': [4],
+  'Colágeno hidrolizado (polvo)': [10, 'cucharada'], 'Higo seco': [20], 'Queso gauda': [20, 'lámina'], 'Pasta de sésamo (tahini)': [15, 'cucharada'],
+  'Mantequilla de almendras': [16, 'cucharada'],
 };
 
 export const BASE_FOODS = Object.entries(RAW).flatMap(([cat, list]) =>
