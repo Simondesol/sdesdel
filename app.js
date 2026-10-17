@@ -1132,9 +1132,13 @@ function parseRange(text, maxV) {
 const rangeTop = t => +String(t).split('-').pop();
 // Plan del ejercicio en la rutina: objetivo, dropset y superset con el siguiente
 const planFields = ex => ({ ...goalFields(ex), ...(ex.dropset ? { dropset: true } : {}), ...(ex.ssNext ? { ssNext: true } : {}), ...(ex.bw ? { bw: true } : {}), ...(ex.guide ? { guide: ex.guide } : {}) });
+// Repeticiones distintas por serie: ex.goalRepsBy[j] (vacío = el rango general de Reps)
+const hasRepsBy = ex => Array.isArray(ex.goalRepsBy) && ex.goalRepsBy.slice(0, ex.goalSets || ex.goalRepsBy.length).some(Boolean);
+const repsFor = (ex, j) => (hasRepsBy(ex) && ex.goalRepsBy[j]) || ex.goalReps || '';
 const goalFields = ex => ({
   ...(ex.goalSets ? { goalSets: ex.goalSets } : {}),
   ...(ex.goalReps ? { goalReps: ex.goalReps } : {}),
+  ...(hasRepsBy(ex) ? { goalRepsBy: ex.goalRepsBy.slice(0, ex.goalSets || ex.goalRepsBy.length) } : {}),
   ...(ex.goalRir ? { goalRir: ex.goalRir } : {}),
 });
 
@@ -1266,6 +1270,7 @@ const moreBtn = (key, total) => (total > 7
   ? `<button class="btn ghost block" data-action="toggle-sec" data-k="${key}">${openSections.has(key) ? 'Ver menos' : `Ver todos (${total})`}</button>` : '');
 
 let openEx = null;   // ejercicio abierto en el editor de rutina (los demás se ven como resumen)
+const repsByOpen = new Set();   // ejercicios con "Distinto por serie" desplegado
 // ⓘ: explicación corta de una palabra técnica (se abre y se cierra al tocarla)
 const INFO = {
   rm: '1RM = el peso máximo que podrías levantar 1 vez. Desdel lo estima con tu 1ª serie (peso y repeticiones), así ves si te estás haciendo más fuerte aunque cambies las repeticiones.',
@@ -1280,7 +1285,8 @@ let routineSort = false;   // Rutinas: modo para cambiar el orden (flechas en ve
 // "4 × 8-10 · RIR 2 · Dropset · Rest 1:30"
 function exSummary(ex) {
   const parts = [];
-  if (ex.goalSets && ex.goalReps) parts.push(`${ex.goalSets} × ${ex.goalReps}`);
+  if (ex.goalSets && hasRepsBy(ex)) parts.push(`${ex.goalSets} × ${Array.from({ length: ex.goalSets }, (_, j) => repsFor(ex, j) || '–').join(' / ')}`);
+  else if (ex.goalSets && ex.goalReps) parts.push(`${ex.goalSets} × ${ex.goalReps}`);
   else if (ex.goalSets) parts.push(plural(ex.goalSets, 'serie'));
   else if (ex.goalReps) parts.push(`${ex.goalReps} reps`);
   if (ex.rir) parts.push(ex.goalRir ? `RIR ${ex.goalRir}` : 'Con RIR');
@@ -1312,6 +1318,11 @@ function viewRoutine() {
           : '<div class="goal-fixed-wrap"><span>Hasta</span><span class="goal-fixed" title="Activa RIR para poner un RIR objetivo">Fallo</span></div>'}
         <label>Rest<input data-bind="ex-rest" data-i="${i}" value="${ex.rest ? fmtRest(ex.rest) : ''}" placeholder="m:ss" autocomplete="off" aria-label="Descanso entre series"></label>
       </div>
+      ${(open => `<button class="link small reps-by-toggle" data-action="reps-by" data-i="${i}" aria-expanded="${open}">Distinto por serie ${open ? '▴' : '▾'}</button>
+      ${open ? (ex.goalSets ? `<div class="reps-by">${Array.from({ length: ex.goalSets }, (_, j) => `<label><span>Serie ${j + 1}</span>
+          <input data-bind="ex-repby" data-i="${i}" data-j="${j}" inputmode="decimal" value="${esc((ex.goalRepsBy || [])[j] || '')}" placeholder="${esc(ex.goalReps || '8-10')}" autocomplete="off" aria-label="Repeticiones de la serie ${j + 1}"></label>`).join('')}
+        <span class="muted small">Si dejas una vacía, usa el rango de Reps.</span></div>`
+        : '<p class="muted small reps-by">Primero pon cuántas Series.</p>') : ''}`)(repsByOpen.has(ex.id) || hasRepsBy(ex))}
       <div class="ex-toggles">
         <button class="chip toggle ${ex.rir ? 'on' : ''}" data-action="toggle-rir" data-i="${i}" aria-pressed="${!!ex.rir}">RIR</button>
         <button class="chip toggle ${ex.dropset ? 'on' : ''}" data-action="toggle-drop" data-i="${i}" aria-pressed="${!!ex.dropset}">Dropset</button>
@@ -1510,22 +1521,25 @@ function viewWorkout() {
         <button class="set-del" data-action="del-set" data-i="${i}" data-j="${j}" aria-label="Borrar serie">✕</button>
       </div>
       ${drops}
-      <div class="set-ref"><span>${best[j] ? `Mejor: ${fmtNum(best[j].w)} ${best[j].unit} × ${fmtNum(best[j].r)}` : ''}</span>
+      <div class="set-ref"><span>${[hasRepsBy(ex) && repsFor(ex, j) ? `Objetivo: ${repsFor(ex, j)}` : '', best[j] ? `Mejor: ${fmtNum(best[j].w)} ${best[j].unit} × ${fmtNum(best[j].r)}` : ''].filter(Boolean).join(' · ')}</span>
         ${canDrop(ex) ? `<button class="drop-add" data-action="add-drop" data-i="${i}" data-j="${j}">↓ drop</button>` : ''}</div>`;
   };
 
   // Objetivo de la rutina (si tiene), aviso para subir el peso, nota y "Primera vez"
   const exInfo = (ex, i) => {
     // Sin RIR activado se va al fallo (se muestra junto al resto del objetivo)
-    const goals = [['Series', ex.goalSets], ['Reps', ex.goalReps]].filter(([, v]) => v);
+    const goals = [['Series', ex.goalSets], ['Reps', hasRepsBy(ex) ? 'Por serie' : ex.goalReps]].filter(([, v]) => v);
     if (ex.rir && ex.goalRir) goals.push(['RIR', ex.goalRir]);
     else if (!ex.rir && goals.length) goals.push(['Hasta', 'Fallo']);
     let hint = '';
-    if (!editing && ex.goalReps) {
-      const prev = lastFor(ex.exerciseId, before, ridOf(ex)), top = rangeTop(ex.goalReps);
+    if (!editing && (ex.goalReps || hasRepsBy(ex))) {
+      const prev = lastFor(ex.exerciseId, before, ridOf(ex));
       const done = prev ? prev.ex.sets.filter(x => x.w != null) : [];
-      if (done.length && done.length >= (ex.goalSets || 1) && done.every(x => (x.r || 0) >= top)) {
-        hint = `<p class="goal-hint">💡 La última vez llegaste a ${top} reps en todas las series: prueba subir el peso.</p>`;
+      const topOf = j => (repsFor(ex, j) ? rangeTop(repsFor(ex, j)) : Infinity);
+      if (done.length && done.length >= (ex.goalSets || 1) && done.every((x, j) => (x.r || 0) >= topOf(j))) {
+        hint = hasRepsBy(ex)
+          ? '<p class="goal-hint">💡 La última vez llegaste al tope del rango en todas las series: prueba subir el peso.</p>'
+          : `<p class="goal-hint">💡 La última vez llegaste a ${rangeTop(ex.goalReps)} reps en todas las series: prueba subir el peso.</p>`;
       }
     }
     return `${goals.length ? `<div class="goal-chips">${goals.map(([k, v]) => `<span class="goal-chip"><small>${k}</small>${esc(String(v))}</span>`).join('')}${ex.rir ? infoBtn('rir') : ''}</div>${ex.rir ? infoBox('rir') : ''}` : ''}
@@ -5407,6 +5421,16 @@ $app.addEventListener('click', async e => {
     case 'start-free':
       startFree();
       break;
+    case 'reps-by': {
+      const ex = curRoutine().exercises[i], open = repsByOpen.has(ex.id) || hasRepsBy(ex);
+      if (open && hasRepsBy(ex)) {   // cerrar con rangos puestos: se borran (vuelve a un solo rango)
+        if (!(await ask('¿Volver a un solo rango para todas las series? Se borran los rangos por serie.', 'Volver a uno'))) return;
+        delete ex.goalRepsBy; save();
+      }
+      if (open) repsByOpen.delete(ex.id); else repsByOpen.add(ex.id);
+      render();
+      break;
+    }
     case 'vid-toggle':   // video de técnica: tocar pausa o sigue
       if (el.paused) el.play().catch(() => {}); else el.pause();
       break;
@@ -6374,6 +6398,13 @@ $app.addEventListener('input', e => {
     const sec = parseRest(el.value);
     if (sec !== null) curRoutine().exercises[i].rest = sec;
   }
+  else if (bind === 'ex-repby') {
+    const ex = curRoutine().exercises[i], text = el.value.trim();
+    const by = Array.from({ length: Math.max(ex.goalSets || 0, j + 1) }, (_, k) => (ex.goalRepsBy || [])[k] || '');
+    if (!text) by[j] = '';
+    else { const v = parseRange(text, 100); if (v) by[j] = v; }
+    if (by.some(Boolean)) ex.goalRepsBy = by; else delete ex.goalRepsBy;
+  }
   else if (bind === 'ex-goal-sets' || bind === 'ex-goal-reps' || bind === 'ex-goal-rir') {
     // Vacío = sin objetivo; si lo escrito no es válido se mantiene lo anterior
     const ex = curRoutine().exercises[i], text = el.value.trim();
@@ -6423,6 +6454,9 @@ $app.addEventListener('focusout', e => {
     refresh();   // al salir del cuadro se recalculan las calorías
   } else if (bind === 'wq-ml') {
     refresh();   // al salir del cuadro se ven los botones rápidos actualizados
+  } else if (bind === 'ex-repby') {
+    const ex = curRoutine() && curRoutine().exercises[+e.target.dataset.i];
+    if (ex) e.target.value = (ex.goalRepsBy || [])[+e.target.dataset.j] || '';
   } else if (bind && bind.startsWith('ex-goal-')) {
     // Muestra el objetivo guardado ("8 10" queda "8-10"; si no era válido vuelve a lo anterior)
     const ex = curRoutine() && curRoutine().exercises[+e.target.dataset.i];

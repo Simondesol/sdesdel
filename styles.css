@@ -976,3 +976,10 @@ a.card.hub-msg strong { display: inline; }
 .date-field svg { width: 20px; height: 20px; fill: none; stroke: var(--muted); stroke-width: 2; stroke-linecap: round; }
 .date-field input[type="date"] { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; border: 0; padding: 0; }
 .date-field:focus-within { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+/* Repeticiones distintas por serie (editor de rutina) */
+.reps-by-toggle { justify-self: start; flex: 1 1 100%; text-align: left; }
+.reps-by { flex: 1 1 100%; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0; }
+.reps-by label { display: grid; gap: 4px; color: var(--muted); font-size: 13px; }
+.reps-by input { text-align: center; }
+.reps-by .muted { grid-column: 1 / -1; }
