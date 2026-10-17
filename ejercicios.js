@@ -214,6 +214,10 @@ export const GUIDES = [
     musc: 'Hombro delantero, parte alta del pecho y tríceps',
     cues: ['La punta de la barra a la altura del hombro, con el abdomen apretado', 'Empuja hacia arriba y adelante siguiendo el arco de la barra', 'Estira el brazo sin despegar la escápula', 'Baja controlado al hombro'],
     errs: ['Inclinar el torso hacia atrás', 'Encoger el hombro al empujar'] },
+  { id: 'laterales-tumbado-polea', zone: 'hombros', name: 'Elevaciones laterales tumbado en polea', alias: ['laterales tumbado', 'laterales tumbado en polea', 'laterales acostado en polea', 'laterales de lado en polea', 'elevacion lateral tumbado', 'lying lateral raise', 'side lying lateral raise'],
+    musc: 'Hombro lateral (sobre todo en la parte estirada del movimiento)',
+    cues: ['Acostado de lado en un banco plano, con la polea baja al lado de tus pies', 'El cable pasa por delante de tu cuerpo; brazo casi estirado', 'Sube el brazo en arco hasta que quede casi vertical', 'Baja lento hasta sentir el hombro estirado'],
+    errs: ['Girar el torso para ayudarte', 'Doblar el codo y tirar con el brazo'] },
   // ---------- Brazos ----------
   { id: 'curl-barra', zone: 'brazos', name: 'Curl con barra', alias: ['curl barra', 'curl de biceps con barra', 'biceps con barra', 'curl barra z', 'curl con barra z'],
     musc: 'Bíceps y braquial',
