@@ -1546,7 +1546,7 @@ function viewWorkout() {
       if (done.length && done.length >= (ex.goalSets || 1) && done.every((x, j) => (x.r || 0) >= topOf(j))) {
         hint = hasRepsBy(ex)
           ? '<p class="goal-hint">💡 La última vez llegaste al tope del rango en todas las series: prueba subir el peso.</p>'
-          : `<p class="goal-hint">💡 La última vez llegaste a ${rangeTop(ex.goalReps)} reps en todas las series: prueba subir el peso.</p>`;
+          : `<p class="goal-hint">💡 La última vez llegaste a ${rangeTop(ex.goalReps)} repeticiones en todas las series: prueba subir el peso.</p>`;
       }
     }
     return `${goals.length ? `<div class="goal-chips">${goals.map(([k, v]) => `<span class="goal-chip"><small>${k}</small>${esc(String(v))}</span>`).join('')}${ex.rir ? infoBtn('rir') : ''}</div>${ex.rir ? infoBox('rir') : ''}` : ''}
@@ -1601,7 +1601,7 @@ function viewWorkout() {
       <div class="sets">${rows}</div>
       <div class="ex-actions">
         <button class="btn ghost" data-action="add-round" data-i="${idx[0]}">+ vuelta</button>
-        ${idx.map((k, n) => restBtn(k, `${letterOf(n)} `)).join('')}
+        ${(k => (k == null ? '' : restBtn(k)))(idx.slice().reverse().find(k => d.exercises[k].rest))}
         <button class="btn ghost ${open ? 'on' : ''}" data-action="toggle-history" data-i="${idx[0]}" data-group="1">Historial ${open ? '▴' : '▾'}</button>
       </div>
       ${open ? idx.map((k, n) => `<div class="hist"><strong>${letterOf(n)} · ${esc(d.exercises[k].name)}</strong>${historyHtml(d.exercises[k])}</div>`).join('') : ''}
@@ -2190,7 +2190,9 @@ function viewSession(id) {
   return `${header(w.routineName, { back: true, sub: fmtLongDate(w.date) })}
     ${summary}
     ${asRoutine}
-    ${prsSent && prsSent.id === w.id ? `<p class="pr-note">🔥 ¡${prsSent.n === 1 ? 'Nuevo PR' : `${prsSent.n} PRs nuevos`}! Se lo avisamos a tus gymbros.</p>` : ''}
+    ${(prs => (prs.length ? `<section class="card pr-card"><strong>🔥 ${prs.length === 1 ? 'Nuevo récord' : `${prs.length} récords nuevos`}</strong>
+      ${prs.map(pr => `<span>${esc(pr.text)}</span>`).join('')}
+      <span class="muted small">Récord = tu mejor 1RM estimado de la 1ª serie en ese ejercicio, en cualquier rutina.${prsSent && prsSent.id === w.id ? ' Se lo avisamos a tus gymbros.' : ''}</span></section>` : ''))(newPRs(w))}
     <button class="btn primary block" data-action="share-workout" data-id="${w.id}" style="margin:0 0 10px">📤 Compartir entrenamiento</button>
     ${blocks}
     <a class="btn block center" href="#/editar/${w.id}">Editar entrenamiento</a>
@@ -2654,13 +2656,13 @@ function newPRs(w) {
     const s = ex.sets.find(x => x.w != null);
     return s ? toKg(e1rmEx(ex, s, date), ex.unit) : 0;
   };
-  const prs = [];
+  const prs = [], idx = db.workouts.indexOf(w);
   for (const ex of w.exercises) {
     const cur = firstE1rm(ex, w.date);
     if (!cur) continue;
     let prev = 0;
-    for (const o of db.workouts) {
-      if (o === w) continue;
+    // Solo contra los entrenos anteriores (al mirar uno antiguo, los de después no cuentan)
+    for (const o of db.workouts.slice(0, idx < 0 ? db.workouts.length : idx)) {
       const oe = o.exercises.find(e => e.exerciseId === ex.exerciseId);
       if (oe && unitKind(oe.unit) === unitKind(ex.unit)) prev = Math.max(prev, firstE1rm(oe, o.date));
     }
@@ -5010,8 +5012,11 @@ function pickQuiz() {
   const hard = pool.filter(x => x[6] === 2), basic = pool.filter(x => x[6] !== 2);
   if (hard.length && basic.length) pool = Math.random() < 0.35 ? hard : basic;
   if (!pool.length) {
-    const missed = QUIZ.filter(x => wrong.includes(x[0]));
-    pool = missed.length && Math.random() < 0.6 ? missed : QUIZ.slice().sort((a, b) => seen[a[0]] - seen[b[0]]).slice(0, 20);
+    // Las falladas vuelven para aprenderlas, pero no al tiro: después de 2 días y de otras 20 preguntas
+    const recent = new Set(Object.entries(seen).sort((a, b) => b[1] - a[1]).slice(0, 20).map(([id]) => id));
+    const missed = QUIZ.filter(x => wrong.includes(x[0]) && !recent.has(x[0]) && Date.now() - (seen[x[0]] || 0) > 2 * 864e5);
+    pool = missed.length && Math.random() < 0.6 ? missed : QUIZ.filter(x => !recent.has(x[0])).sort((a, b) => seen[a[0]] - seen[b[0]]).slice(0, 20);
+    if (!pool.length) pool = QUIZ;
   }
   const q = pool[Math.floor(Math.random() * pool.length)];
   const order = q[3].map((_, k) => k);
@@ -5039,7 +5044,7 @@ function answerQuiz(k) {
 }
 function quizHtml() {
   const [, cat, text, opts, right, why, level] = quizCur.q, picked = quizCur.picked, done = picked != null, st = quizState();
-  return `<div class="quiz-top"><strong>${quizName()}</strong><span class="muted small">${QUIZ_CATS[cat]}${level === 2 ? ' · <span class="quiz-hard">Difícil</span>' : ''}</span>
+  return `<div class="quiz-top"><strong>${quizName()}</strong><span class="muted small">${QUIZ_CATS[cat]}</span>
       <button class="icon small" data-action="quiz-hide" aria-label="Cerrar pregunta">✕</button></div>
     <p class="quiz-q">${esc(text)}</p>
     <div class="quiz-opts">${quizCur.order.map(k => `<button class="btn quiz-opt ${done && k === right ? 'ok' : done && k === picked ? 'bad' : ''}"

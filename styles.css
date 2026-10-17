@@ -987,3 +987,7 @@ p.reps-by { display: block; }
 .reps-by-toggle[hidden] { display: none; }
 .reps-cell { display: contents; }
 .reps-by-wrap { display: contents; }
+
+/* Récords nuevos en el resumen del entreno */
+.pr-card { display: grid; gap: 6px; border-color: #f0a43a; }
+.pr-card strong { color: #f0a43a; }
