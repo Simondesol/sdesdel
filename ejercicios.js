@@ -269,7 +269,7 @@ export const GUIDES = [
     musc: 'Cuádriceps y glúteos',
     cues: ['Espalda y cadera bien apoyadas en el respaldo', 'Pies al ancho de los hombros en la mitad de la plataforma', 'Baja hasta donde tu cadera no se despegue del asiento', 'Empuja con todo el pie sin bloquear de golpe las rodillas'],
     errs: ['Despegar la cadera abajo (redondea la espalda baja)', 'Bloquear las rodillas de golpe arriba', 'Recorrido muy corto con mucho peso'] },
-  { id: 'hack', zone: 'piernas', name: 'Sentadilla hack', alias: ['hack', 'hack squat', 'sentadilla en maquina', 'maquina hack', 'pendulo', 'sentadilla pendulo'],
+  { id: 'hack', zone: 'piernas', name: 'Sentadilla hack', alias: ['hack', 'hack squat', 'sentadilla en maquina', 'maquina hack', 'pendulo', 'sentadilla pendulo'], video: 'videos/hack.mp4',
     musc: 'Cuádriceps y glúteos',
     cues: ['Espalda apoyada y hombros bajo los cojines', 'Pies en la mitad de la plataforma, al ancho de hombros', 'Baja profundo con las rodillas hacia adelante', 'Sube empujando con todo el pie'],
     errs: ['Recorrido corto', 'Rodillas hacia adentro'] },

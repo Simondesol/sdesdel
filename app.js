@@ -4949,8 +4949,9 @@ function guideViewHtml() {
   const g = guideFor(ex.name, ex.guide);
   const body = g
     ? `<span class="muted small">${guideKey(g.name) === guideKey(ex.name) ? '' : `${esc(g.name)} · `}Trabaja: ${esc(g.musc)}</span>
-       ${ANIMS[g.id] && isLocal ? `<div class="guide-anim" data-anim="${g.id}" title="Toca para pausar"></div>` : ''}
-       ${g.video ? `<video class="guide-video" src="${esc(g.video)}" controls playsinline muted loop preload="metadata"></video>` : ''}
+       ${g.video
+         ? `<video class="guide-video" src="${esc(g.video)}" autoplay muted loop playsinline preload="auto" data-action="vid-toggle" title="Toca para pausar"></video>`
+         : ANIMS[g.id] && isLocal ? `<div class="guide-anim" data-anim="${g.id}" title="Toca para pausar"></div>` : ''}
        <h3>Puntos clave</h3>
        <ul class="guide-ul">${g.cues.map(c => `<li>${esc(c)}</li>`).join('')}</ul>
        <h3>Errores comunes</h3>
@@ -5405,6 +5406,9 @@ $app.addEventListener('click', async e => {
 
     case 'start-free':
       startFree();
+      break;
+    case 'vid-toggle':   // video de técnica: tocar pausa o sigue
+      if (el.paused) el.play().catch(() => {}); else el.pause();
       break;
     case 'info':
       if (infoOpen.has(el.dataset.k)) infoOpen.delete(el.dataset.k); else infoOpen.add(el.dataset.k);

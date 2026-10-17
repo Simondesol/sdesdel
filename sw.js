@@ -1,7 +1,7 @@
 // Guarda la app en el teléfono para que funcione sin internet.
 // Sirve la versión guardada al instante y la actualiza en segundo plano.
 // Al publicar cambios, subir el número de versión.
-const CACHE = 'sdesdel-v130';
+const CACHE = 'sdesdel-v131';
 const FIREBASE = 'https://www.gstatic.com/firebasejs/12.8.0/';
 const ASSETS = [
   './',
@@ -53,6 +53,8 @@ self.addEventListener('fetch', e => {
 
   // Archivos de la app. Todo lo demás (login, base de datos) va directo a internet.
   if (!url.startsWith(self.location.origin)) return;
+  // Videos de técnica: directo a internet (el teléfono los pide por partes y no se guardan)
+  if (url.includes('/videos/') || e.request.headers.has('range')) return;
   e.respondWith(caches.open(CACHE).then(async cache => {
     const cached = await cache.match(e.request, { ignoreSearch: true });
     const fresh = fetch(e.request, { cache: 'no-cache' })
