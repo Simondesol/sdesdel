@@ -6423,8 +6423,10 @@ $app.addEventListener('input', e => {
     if (!text) delete ex[key];
     else if (key === 'goalSets') { const n = parseInt(text, 10); if (n >= 1 && n <= 20 && String(n) === text) ex.goalSets = n; }
     if (key === 'goalSets' && repsByOn(ex)) {
+      // Solo se agregan casillas (las nuevas copian la última); nunca se borran las que ya escribiste,
+      // ni siquiera si la casilla de Series queda vacía un momento mientras escribes otro número
       const by = ex.goalRepsBy || [], last = by[by.length - 1] || ex.goalReps || '';
-      ex.goalRepsBy = Array.from({ length: ex.goalSets || 0 }, (_, k) => (k < by.length ? by[k] : last));
+      ex.goalRepsBy = Array.from({ length: Math.max(by.length, ex.goalSets || 0) }, (_, k) => (k < by.length ? by[k] : last));
       const box = $app.querySelector(`.reps-by[data-i="${i}"]`);
       if (box) box.outerHTML = repsByBlock(ex, i);
     }
