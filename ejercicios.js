@@ -293,7 +293,7 @@ export const GUIDES = [
     musc: 'Bíceps',
     cues: ['Sentado, el codo apoyado en la parte de adentro del muslo', 'Sube la mancuerna hacia el hombro sin mover el codo', 'Aprieta arriba un segundo', 'Baja lento hasta estirar el brazo'],
     errs: ['Mover el torso para ayudarte', 'Recorrido corto abajo'] },
-  { id: 'curl-bayesiano', zone: 'biceps', name: 'Curl bayesiano', alias: ['bayesiano', 'bayesian curl', 'curl en polea por detras', 'curl polea detras'],
+  { id: 'curl-bayesiano', zone: 'biceps', name: 'Curl bayesiano en polea', alias: ['curl bayesiano', 'bayesiano', 'bayesian curl', 'curl en polea por detras', 'curl polea detras'],
     musc: 'Bíceps (sobre todo en el estiramiento)',
     cues: ['De espaldas a la polea baja, con el brazo estirado hacia atrás', 'Codo fijo, un poco detrás del cuerpo', 'Sube sin adelantar el codo', 'Baja lento hasta sentir el bíceps estirado'],
     errs: ['Adelantar el codo al subir', 'Dar pasos o mover el torso'] },
