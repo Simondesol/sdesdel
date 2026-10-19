@@ -1,7 +1,7 @@
 // Guarda la app en el teléfono para que funcione sin internet.
 // Sirve la versión guardada al instante y la actualiza en segundo plano.
 // Al publicar cambios, subir el número de versión.
-const CACHE = 'sdesdel-v148';
+const CACHE = 'sdesdel-v149';
 // Videos de técnica: caja aparte que no se borra al publicar (la llena app.js). Si cambia un video, subir este número.
 const VIDEO_CACHE = 'desdel-videos-v3';
 const FIREBASE = 'https://www.gstatic.com/firebasejs/12.8.0/';

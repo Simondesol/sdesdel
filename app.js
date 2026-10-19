@@ -4908,6 +4908,8 @@ function addReadyProgram(p) {
 // Cada ejercicio de la rutina puede tener su guía (ex.guide = id, o 'none' si elegiste "sin guía").
 // Si no elegiste ninguna, se busca por el nombre (o sus alias: "Banca" → Press banca).
 const GUIDE_BY_ID = new Map(GUIDES.map(g => [g.id, g]));
+// Ejercicios de un músculo en orden alfabético (las variantes quedan junto a su ejercicio base)
+const guidesOf = z => GUIDES.filter(g => g.zone === z).sort((a, b) => a.name.localeCompare(b.name, 'es', { sensitivity: 'base' }));
 const guideKey = s => normText(String(s || '')).replace(/[^a-z0-9ñ]+/g, ' ').trim();
 let guideNames = null;
 function guideByName(name) {
@@ -4965,7 +4967,7 @@ function guideListHtml(q) {
     const res = searchGuides(q, 30);
     return res.length ? res.map(guideItem).join('') : '<p class="muted small">No hay guías con ese nombre todavía.</p>';
   }
-  return Object.entries(GUIDE_ZONES).map(([z, name]) => `<h3 class="guide-zone">${name}</h3>${GUIDES.filter(g => g.zone === z).map(guideItem).join('')}`).join('');
+  return Object.entries(GUIDE_ZONES).map(([z, name]) => `<h3 class="guide-zone">${name}</h3>${guidesOf(z).map(guideItem).join('')}`).join('');
 }
 function guidePickerHtml() {
   if (!guidePick) return '';
@@ -5001,7 +5003,7 @@ function exploreListHtml() {
     return res.length ? res.map(exploreItem).join('') : '<p class="muted small">No hay ejercicios con ese nombre todavía.</p>';
   }
   return Object.entries(GUIDE_ZONES).filter(([z]) => !exploreZone || z === exploreZone)
-    .map(([z, name]) => `<h3 class="guide-zone">${name}</h3>${GUIDES.filter(g => g.zone === z).map(exploreItem).join('')}`).join('');
+    .map(([z, name]) => `<h3 class="guide-zone">${name}</h3>${guidesOf(z).map(exploreItem).join('')}`).join('');
 }
 function exploreSheetHtml() {
   if (!exploreOpen) return '';
