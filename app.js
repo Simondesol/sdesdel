@@ -4929,10 +4929,12 @@ function searchGuides(q, limit = 6) {
     if (!words.every(w => all.some(t => t.startsWith(w)))) continue;
     // Primero los que coinciden por el nombre principal; después los que coinciden solo por un alias
     const phrase = words.join(' '), nameWords = texts[0].split(' ');
-    const score = texts[0].startsWith(phrase) ? 0 : words.every(w => nameWords.some(t => t.startsWith(w))) ? 1 : texts.some(t => t.startsWith(phrase)) ? 2 : 3;
+    // Si escribiste justo el nombre o un sinónimo, ese va primero ("curl barra z" → Curl con barra Z)
+    const score = texts.includes(phrase) ? -1 : texts[0].startsWith(phrase) ? 0 : words.every(w => nameWords.some(t => t.startsWith(w))) ? 1 : texts.some(t => t.startsWith(phrase)) ? 2 : 3;
     hits.push({ g, score });
   }
-  return hits.sort((a, b) => a.score - b.score).slice(0, limit).map(h => h.g);
+  // A igual puntaje, el nombre más corto (el ejercicio básico antes que sus variantes)
+  return hits.sort((a, b) => a.score - b.score || a.g.name.length - b.g.name.length).slice(0, limit).map(h => h.g);
 }
 
 let guideView = null;   // índice del ejercicio (en el entrenamiento) cuya guía está abierta
@@ -6746,7 +6748,7 @@ if ('serviceWorker' in navigator) {
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
 // Videos de técnica: con internet se guardan todos en el teléfono (de a uno y en segundo plano)
 // para verlos sin internet. Se bajan una sola vez; los que ya no se usan se borran.
-const VIDEO_CACHE = 'desdel-videos-v1';   // el mismo nombre que en sw.js
+const VIDEO_CACHE = 'desdel-videos-v2';   // el mismo nombre que en sw.js
 async function saveVideos() {
   if (!('caches' in window) || !navigator.onLine) return;
   try {
