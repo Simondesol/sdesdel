@@ -519,7 +519,8 @@ a.card.hub { display: grid; }
 .ex-goals { flex: 1 1 100%; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
 .ex-goals label { display: grid; gap: 4px; color: var(--muted); font-size: 13px; }
 .ex-goals input { width: 100%; min-width: 0; text-align: center; padding: 0 6px; }
-.goal-chips { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 8px; margin: 8px 0 4px; }
+.goal-chips { display: flex; gap: 8px; margin: 8px 0 4px; }
+.goal-chips .goal-chip { flex: 1 1 0; min-width: 0; }
 .goal-chip {
   display: grid; justify-items: center; gap: 2px; padding: 8px 4px;
   background: var(--surface2); border: 1px solid var(--border); border-radius: 12px; font-weight: 700;
@@ -951,7 +952,9 @@ section.active-prog strong { color: var(--accent); }
 .info-btn { background: none; border: 0; color: var(--muted); font: inherit; font-size: 17px; line-height: 1; padding: 4px 6px; cursor: pointer; vertical-align: middle; }
 .info-btn.on { color: var(--accent); }
 .info-box { margin: 6px 0 8px; padding: 10px 12px; border-radius: 10px; background: var(--surface2); border: 1px solid var(--border); color: var(--muted); font-size: 14px; line-height: 1.45; }
-.goal-chips .info-btn { align-self: center; }
+.goal-chips .info-btn { align-self: center; flex: none; }
+/* "Repeticiones" cabe aunque estén los 3 cuadros y el botón ⓘ */
+.goal-chips:has(.info-btn) .goal-chip small { letter-spacing: .02em; font-size: 10.5px; }
 
 /* Progreso: tendencia de cada ejercicio */
 .trend { font-weight: 700; }

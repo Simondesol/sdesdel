@@ -1524,20 +1524,20 @@ function viewWorkout() {
         <input inputmode="decimal" data-bind="w" data-i="${i}" data-j="${j}" value="${esc(s.w)}" placeholder="${esc(wPh)}" aria-label="${ex.unit === 'placas' ? 'Placas' : isBwEx(ex) ? 'Lastre' : 'Peso'} serie ${label}">
         <span class="u">${unitShort(ex.unit)}</span>
         <span class="x">×</span>
-        <input inputmode="numeric" data-bind="r" data-i="${i}" data-j="${j}" value="${esc(s.r)}" placeholder="${esc(s.pr || 'reps')}" aria-label="Repeticiones serie ${label}">
+        <input inputmode="numeric" data-bind="r" data-i="${i}" data-j="${j}" value="${esc(s.r)}" placeholder="${esc(repsFor(ex, j) || s.pr || 'reps')}" aria-label="Repeticiones serie ${label}">
         ${ex.rir ? `<input class="rir" inputmode="numeric" data-bind="rir" data-i="${i}" data-j="${j}" value="${esc(s.rir ?? '')}" placeholder="${esc(s.prir || 'RIR')}" aria-label="RIR serie ${label}">` : ''}
         <span class="mark-cell" data-mark="${i}-${j}">${markSpan(liveCmp(s, ex, best[j]))}</span>
         <button class="set-del" data-action="del-set" data-i="${i}" data-j="${j}" aria-label="Borrar serie">✕</button>
       </div>
       ${drops}
-      <div class="set-ref"><span>${[hasRepsBy(ex) && repsFor(ex, j) ? `Objetivo: ${repsFor(ex, j)}` : '', best[j] ? `Mejor: ${fmtNum(best[j].w)} ${best[j].unit} × ${fmtNum(best[j].r)}` : ''].filter(Boolean).join(' · ')}</span>
+      <div class="set-ref"><span>${best[j] ? `Mejor: ${fmtNum(best[j].w)} ${best[j].unit} × ${fmtNum(best[j].r)}` : ''}</span>
         ${canDrop(ex) ? `<button class="drop-add" data-action="add-drop" data-i="${i}" data-j="${j}">↓ drop</button>` : ''}</div>`;
   };
 
   // Objetivo de la rutina (si tiene), aviso para subir el peso, nota y "Primera vez"
   const exInfo = (ex, i) => {
     // Sin RIR activado se va al fallo (se muestra junto al resto del objetivo)
-    const goals = [['Series', ex.goalSets], ['Reps', hasRepsBy(ex) ? 'Por serie' : ex.goalReps]].filter(([, v]) => v);
+    const goals = [['Series', ex.goalSets], ['Repeticiones', hasRepsBy(ex) ? 'Por serie' : ex.goalReps]].filter(([, v]) => v);
     if (ex.rir && ex.goalRir) goals.push(['RIR', ex.goalRir]);
     else if (!ex.rir && goals.length) goals.push(['Hasta', 'Fallo']);
     let hint = '';
@@ -2194,7 +2194,7 @@ function viewSession(id) {
     ${asRoutine}
     ${(prs => (prs.length ? `<section class="card pr-card"><strong>🔥 ${prs.length === 1 ? 'Nuevo récord' : `${prs.length} récords nuevos`}</strong>
       ${prs.map(pr => `<span>${esc(pr.text)}</span>`).join('')}
-      <span class="muted small">Récord = tu mejor 1RM estimado de la 1ª serie en ese ejercicio, en cualquier rutina.${prsSent && prsSent.id === w.id ? ' Se lo avisamos a tus gymbros.' : ''}</span></section>` : ''))(newPRs(w))}
+      <span class="muted small">Récord = tu mejor 1RM estimado de la 1ª serie (en cualquier rutina), o superar tu mejor 2ª, 3ª… serie en esta rutina.${prsSent && prsSent.id === w.id ? ' Se lo avisamos a tus gymbros.' : ''}</span></section>` : ''))(newPRs(w))}
     <button class="btn primary block" data-action="share-workout" data-id="${w.id}" style="margin:0 0 10px">📤 Compartir entrenamiento</button>
     ${blocks}
     <a class="btn block center" href="#/editar/${w.id}">Editar entrenamiento</a>
@@ -2652,7 +2652,8 @@ function addFromMessage(id) {
   else if (m.type === 'routine') importRoutineData({ ...data, routine: m.routine });
 }
 
-// PRs del entrenamiento recién guardado: 1RM estimado de la 1ª serie mayor que el mejor anterior
+// PRs del entrenamiento: 1RM estimado de la 1ª serie mayor que el mejor anterior (en cualquier rutina),
+// y desde la 2ª serie, superar a tu mejor serie de esa misma posición en esa rutina (lo que marca ▲)
 function newPRs(w) {
   const firstE1rm = (ex, date) => {
     const s = ex.sets.find(x => x.w != null);
@@ -2673,6 +2674,15 @@ function newPRs(w) {
       const bw = isBwEx(ex);
       prs.push({ id: ex.exerciseId, name: ex.name, text: `${ex.name}: ${fmtNum(s.w)} ${ex.unit} × ${fmtNum(s.r || 1)}${s.rir != null ? ` · RIR ${fmtNum(s.rir)}` : ''}${bw ? ' + peso corporal' : ''} → ${bw ? 'lastre máx.' : '1RM'} ≈ ${bw ? '+' : ''}${fmtNum(round1(e1rmEx(ex, s, w.date)))} ${ex.unit}` });
     }
+    const best = bestSets(ex.exerciseId, idx < 0 ? db.workouts.length : idx, ex.unit, ex.extra ? null : w.routineId);
+    const first = ex.sets.findIndex(x => x.w != null);
+    ex.sets.forEach((x, j) => {
+      if (j <= first || x.w == null || !best[j]) return;
+      const c = { w: x.w, r: x.r, rir: x.rir, unit: ex.unit, bw: bwFor(ex, w.date) };
+      if (cmpSet(c, best[j]) > 0) {
+        prs.push({ id: ex.exerciseId, name: ex.name, text: `${ex.name} · serie ${j + 1}: ${setText(x, ex.unit)} (antes ${fmtNum(best[j].w)} ${best[j].unit} × ${fmtNum(best[j].r)})` });
+      }
+    });
   }
   return prs;
 }
@@ -4027,7 +4037,7 @@ function closeTour() { tourOpen = false; setTourSeen(); render(); }
 // Consejo la primera vez que entras a una sección (se cierra con ✕ y no vuelve a salir)
 const TIPS = {
   rutinas: 'Toca una rutina para editarla y Empezar para entrenarla. Si tienes un programa activo, la que te toca hoy aparece marcada.',
-  entrenar: 'En gris está lo que hiciste la vez anterior: si haces lo mismo, no escribas nada y se guarda así; si cambia, escribe lo nuevo. Si no hiciste una serie, bórrala con ✕. ▲ superaste tu mejor serie, = igualaste, ▼ quedaste bajo.',
+  entrenar: 'En gris está el peso de la vez anterior y tu objetivo de repeticiones. Si no escribes nada, se guarda lo que hiciste la vez anterior; si cambia, escribe lo nuevo. Si no hiciste una serie, bórrala con ✕. ▲ superaste tu mejor serie, = igualaste, ▼ quedaste bajo.',
   programas: 'Los programas listos traen la semana armada según tus días y nivel. El programa activo es el que te dice qué rutina te toca cada día.',
   historial: 'Toca un día del calendario para ver lo que entrenaste. Desde cada entreno lo puedes editar o compartir.',
   progreso: 'Toca un ejercicio para ver su gráfico y tus récords.',
