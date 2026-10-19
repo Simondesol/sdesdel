@@ -6644,3 +6644,23 @@ if ('serviceWorker' in navigator) {
 }
 // Pide al navegador que no borre los datos automáticamente
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
+// Videos de técnica: con internet se guardan todos en el teléfono (de a uno y en segundo plano)
+// para verlos sin internet. Se bajan una sola vez; los que ya no se usan se borran.
+const VIDEO_CACHE = 'desdel-videos-v1';   // el mismo nombre que en sw.js
+async function saveVideos() {
+  if (!('caches' in window) || !navigator.onLine) return;
+  try {
+    const cache = await caches.open(VIDEO_CACHE);
+    const want = [...new Set(GUIDES.filter(g => g.video).map(g => new URL(g.video, location.href).href))];
+    const have = await cache.keys();
+    for (const r of have) if (!want.includes(r.url)) await cache.delete(r);
+    const saved = new Set(have.map(r => r.url));
+    for (const url of want) {
+      if (saved.has(url)) continue;
+      if (!navigator.onLine) return;
+      const res = await fetch(url, { cache: 'no-cache' });
+      if (res.status === 200) await cache.put(url, res);
+    }
+  } catch (e) { /* sin internet o sin espacio: se intenta de nuevo la próxima vez */ }
+}
+setTimeout(saveVideos, 6000);

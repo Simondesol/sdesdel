@@ -1,7 +1,9 @@
 // Guarda la app en el teléfono para que funcione sin internet.
 // Sirve la versión guardada al instante y la actualiza en segundo plano.
 // Al publicar cambios, subir el número de versión.
-const CACHE = 'sdesdel-v140';
+const CACHE = 'sdesdel-v141';
+// Videos de técnica: caja aparte que no se borra al publicar (la llena app.js). Si cambia un video, subir este número.
+const VIDEO_CACHE = 'desdel-videos-v1';
 const FIREBASE = 'https://www.gstatic.com/firebasejs/12.8.0/';
 const ASSETS = [
   './',
@@ -35,7 +37,7 @@ self.addEventListener('install', e => {
 self.addEventListener('activate', e => {
   e.waitUntil(
     caches.keys()
-      .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
+      .then(keys => Promise.all(keys.filter(k => k !== CACHE && k !== VIDEO_CACHE).map(k => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
@@ -53,8 +55,13 @@ self.addEventListener('fetch', e => {
 
   // Archivos de la app. Todo lo demás (login, base de datos) va directo a internet.
   if (!url.startsWith(self.location.origin)) return;
-  // Videos de técnica: directo a internet (el teléfono los pide por partes y no se guardan)
-  if (url.includes('/videos/') || e.request.headers.has('range')) return;
+  // Videos de técnica: desde el teléfono si ya están guardados (así se ven sin internet).
+  // El teléfono pide los videos por partes (sobre todo el iPhone), así que se entrega solo el pedazo pedido.
+  if (url.includes('/videos/')) {
+    e.respondWith(caches.open(VIDEO_CACHE).then(c => c.match(e.request, { ignoreSearch: true })).then(hit => (hit ? videoPart(hit, e.request) : fetch(e.request))));
+    return;
+  }
+  if (e.request.headers.has('range')) return;
   e.respondWith(caches.open(CACHE).then(async cache => {
     const cached = await cache.match(e.request, { ignoreSearch: true });
     const fresh = fetch(e.request, { cache: 'no-cache' })
@@ -64,3 +71,18 @@ self.addEventListener('fetch', e => {
     return cached || fresh;
   }));
 });
+
+async function videoPart(hit, req) {
+  const range = req.headers.get('range');
+  if (!range) return hit;
+  const blob = await hit.blob(), size = blob.size;
+  const m = /bytes=(\d*)-(\d*)/.exec(range);
+  let start = m && m[1] ? +m[1] : 0, end = m && m[2] ? +m[2] : size - 1;
+  if (m && !m[1] && m[2]) { start = Math.max(0, size - +m[2]); end = size - 1; }   // "los últimos N bytes"
+  end = Math.min(end, size - 1);
+  if (!m || start > end) return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${size}` } });
+  return new Response(blob.slice(start, end + 1), {
+    status: 206,
+    headers: { 'Content-Type': hit.headers.get('Content-Type') || 'video/mp4', 'Content-Range': `bytes ${start}-${end}/${size}`, 'Content-Length': String(end - start + 1), 'Accept-Ranges': 'bytes' },
+  });
+}
