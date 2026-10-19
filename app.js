@@ -422,7 +422,7 @@ function setTodayLog(dietId, done) {
 }
 
 // Cuerpo: Peso · % Grasa · Medidas · Fotos (como las pestañas de Nutrición)
-const entrenoTabs = active => `<div class="range" role="tablist">${[['rutinas', 'Rutinas'], ['programas', 'Programas'], ['historial', 'Historial'], ['progreso', 'Progreso']]
+const entrenoTabs = active => `<div class="range" role="tablist">${[['rutinas', 'Rutinas'], ['programas', 'Programas'], ['ejercicios', 'Ejercicios'], ['historial', 'Historial'], ['progreso', 'Progreso']]
   .map(([k, label]) => `<a class="${k === active ? 'on' : ''}" href="#/${k}" role="tab">${label}</a>`).join('')}</div>`;
 const bodyTabs = active => `<div class="range" role="tablist">${[['peso', 'Peso'], ['grasa', '% Grasa'], ['medidas', 'Medidas'], ['fotos', 'Fotos']]
   .map(([k, label]) => `<a class="${k === active ? 'on' : ''}" href="#/${k}" role="tab">${label}</a>`).join('')}</div>`;
@@ -4275,10 +4275,11 @@ function render() {
   if (screen !== 'perfil' && photoEdit) { URL.revokeObjectURL(photoEdit.src); photoEdit = null; }
   if (screen !== 'perfil') photoView = false;
   if (screen !== 'fotos') { closeProgressNew(); progOpen = null; }
-  const hadModal = !!guidePick || guideView != null;
+  const hadModal = !!guidePick || guideView != null || !!exploreView;
   if (screen !== 'entrenar' && screen !== 'editar') guideView = null;
+  if (screen !== 'ejercicios') exploreView = null;
   if (screen !== 'rutina' && screen !== 'entrenar' && screen !== 'editar') guidePick = null;
-  if (hadModal && !guidePick && guideView == null) modalPushed = false;   // se cerró por salir de la pantalla
+  if (hadModal && !guidePick && guideView == null && !exploreView) modalPushed = false;   // se cerró por salir de la pantalla
   if (screen !== 'nutricion') extraMode = null;
   if (screen !== 'chat' && screen !== 'perfil') closeMessages();   // el perfil muestra lo compartido en el chat
 
@@ -4312,6 +4313,7 @@ function render() {
     case 'grasa': html = viewBodyFat(); break;
     case 'pliegues': html = viewSkinfolds(); break;
     case 'programas': html = viewPrograms(); tab = 'programas'; break;
+    case 'ejercicios': html = viewExplore(); break;
     case 'miprograma': html = viewMyProgram(arg); break;
     case 'listos': html = viewReadyPrograms(); break;
     case 'programa': html = viewProgram(arg); break;
@@ -4339,7 +4341,7 @@ function render() {
   }
   const NAV = {
     rutinas: 'entreno', rutina: 'entreno', programas: 'entreno', miprograma: 'entreno', listos: 'entreno', programa: 'entreno',
-    historial: 'entreno', sesion: 'entreno', progreso: 'entreno', ejercicio: 'entreno',
+    historial: 'entreno', sesion: 'entreno', progreso: 'entreno', ejercicio: 'entreno', ejercicios: 'entreno',
     nutricion: 'nutricion', alimento: 'nutricion', dieta: 'nutricion', objetivo: 'nutricion',
     peso: 'cuerpo', grasa: 'cuerpo', pliegues: 'cuerpo', medidas: 'cuerpo', fotos: 'cuerpo',
     social: 'social', gymbro: 'social', perfil: 'social', privacidad: 'social',
@@ -4924,14 +4926,14 @@ function searchGuides(q, limit = 6) {
 let guideView = null;   // índice del ejercicio (en el entrenamiento) cuya guía está abierta
 let modalPushed = false;   // hay un paso extra en el historial para que "atrás" cierre la ventana
 function syncModalHistory() {
-  const open = !!guidePick || guideView != null;
+  const open = !!guidePick || guideView != null || !!exploreView;
   if (open && !modalPushed) { history.pushState({ modal: 1 }, ''); modalPushed = true; }
   else if (!open && modalPushed) { modalPushed = false; history.back(); }
 }
 window.addEventListener('popstate', () => {
   if (!modalPushed) return;
   modalPushed = false;
-  if (guidePick || guideView != null) { guidePick = null; guideView = null; render(); }
+  if (guidePick || guideView != null || exploreView) { guidePick = null; guideView = null; exploreView = null; render(); }
 });
 let guidePick = null;   // { rid, exId, q } elegir la guía de un ejercicio a mano
 function setGuide(ctx, id) {
@@ -4966,20 +4968,60 @@ function guidePickerHtml() {
     </section>
   </div>`;
 }
+const guideBody = g => `${g.video
+    ? `<video class="guide-video" src="${esc(g.video)}" autoplay muted loop playsinline preload="auto" data-action="vid-toggle" title="Toca para pausar"></video>`
+    : ANIMS[g.id] && isLocal ? `<div class="guide-anim" data-anim="${g.id}" title="Toca para pausar"></div>` : ''}
+  <h3>Puntos clave</h3>
+  <ul class="guide-ul">${g.cues.map(c => `<li>${esc(c)}</li>`).join('')}</ul>
+  <h3>Errores comunes</h3>
+  <ul class="guide-ul bad">${g.errs.map(c => `<li>${esc(c)}</li>`).join('')}</ul>
+  <p class="muted small" style="margin:0">Guía general. Si tienes una lesión o sientes dolor, consulta a un profesional.</p>`;
+
+// ---------- Ejercicios: ver la técnica y el video de cualquier ejercicio antes de añadirlo a una rutina ----------
+let exploreQ = '', exploreZone = '', exploreView = null;   // búsqueda, grupo elegido y ejercicio abierto
+const exploreItem = g => `<button type="button" class="food-pick" data-action="explore-open" data-g="${g.id}">
+    <span class="grow"><strong>${esc(g.name)}</strong><span class="muted small">${esc(g.musc)}</span></span><span class="chev">›</span></button>`;
+function exploreListHtml() {
+  if (exploreQ.trim()) {
+    const res = searchGuides(exploreQ, 60);
+    return res.length ? res.map(exploreItem).join('') : '<p class="muted small">No hay ejercicios con ese nombre todavía.</p>';
+  }
+  return Object.entries(GUIDE_ZONES).filter(([z]) => !exploreZone || z === exploreZone)
+    .map(([z, name]) => `<h3 class="guide-zone">${name}</h3>${GUIDES.filter(g => g.zone === z).map(exploreItem).join('')}`).join('');
+}
+function viewExplore() {
+  return `${header('Entreno', {})}${entrenoTabs('ejercicios')}
+    <input class="search" type="search" data-bind="explore-q" placeholder="Buscar ejercicio" value="${esc(exploreQ)}" autocomplete="off" aria-label="Buscar ejercicio">
+    <div class="explore-zones" ${exploreQ.trim() ? 'hidden' : ''}>${[['', 'Todos'], ...Object.entries(GUIDE_ZONES)]
+      .map(([z, n]) => `<button type="button" class="chip toggle ${z === exploreZone ? 'on' : ''}" data-action="explore-zone" data-z="${z}">${n}</button>`).join('')}</div>
+    <div class="guide-list explore-list">${exploreListHtml()}</div>
+    ${exploreView ? exploreModalHtml() : ''}`;
+}
+function exploreModalHtml() {
+  const g = GUIDE_BY_ID.get(exploreView);
+  if (!g) return '';
+  const add = db.routines.length
+    ? `<h3>Añadir a una rutina</h3>
+       <div class="explore-add">${db.routines.map(r => `<button class="btn" data-action="explore-add" data-rid="${r.id}">${esc(r.name || 'Rutina sin nombre')}</button>`).join('')}</div>`
+    : '<p class="muted small" style="margin:0">Para añadirlo, primero crea una rutina en Rutinas.</p>';
+  return `<div class="modal-wrap">
+    <div class="modal-back" data-action="explore-close"></div>
+    <section class="modal card guide-modal" role="dialog" aria-modal="true" aria-label="Técnica de ${esc(g.name)}">
+      <div class="guide-head"><h2>${esc(g.name)}</h2><button class="icon small" data-action="explore-close" aria-label="Cerrar">✕</button></div>
+      <span class="muted small">Trabaja: ${esc(g.musc)}</span>
+      ${guideBody(g)}
+      ${add}
+    </section>
+  </div>`;
+}
+
 function guideViewHtml() {
   const d = cur(), ex = d && d.exercises[guideView];
   if (!ex) return '';
   const g = guideFor(ex.name, ex.guide);
   const body = g
     ? `<span class="muted small">${guideKey(g.name) === guideKey(ex.name) ? '' : `${esc(g.name)} · `}Trabaja: ${esc(g.musc)}</span>
-       ${g.video
-         ? `<video class="guide-video" src="${esc(g.video)}" autoplay muted loop playsinline preload="auto" data-action="vid-toggle" title="Toca para pausar"></video>`
-         : ANIMS[g.id] && isLocal ? `<div class="guide-anim" data-anim="${g.id}" title="Toca para pausar"></div>` : ''}
-       <h3>Puntos clave</h3>
-       <ul class="guide-ul">${g.cues.map(c => `<li>${esc(c)}</li>`).join('')}</ul>
-       <h3>Errores comunes</h3>
-       <ul class="guide-ul bad">${g.errs.map(c => `<li>${esc(c)}</li>`).join('')}</ul>
-       <p class="muted small" style="margin:0">Guía general. Si tienes una lesión o sientes dolor, consulta a un profesional.</p>
+       ${guideBody(g)}
        <button class="link small" data-action="guide-change" style="justify-self:start">¿No es este ejercicio? Cambiar guía</button>`
     : `<p class="muted" style="margin:0">Todavía no hay guía para este ejercicio.</p>
        <button class="btn block" data-action="guide-change">Elegir una guía</button>
@@ -5843,6 +5885,34 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       render();
       syncModalHistory();
       break;
+    case 'explore-zone':   // grupo muscular en Ejercicios (sin redibujar todo, para no perder dónde estabas)
+      exploreZone = el.dataset.z;
+      $app.querySelectorAll('.explore-zones .chip').forEach(b => b.classList.toggle('on', b.dataset.z === exploreZone));
+      $app.querySelector('.explore-list').innerHTML = exploreListHtml();
+      break;
+    case 'explore-open':
+      exploreView = el.dataset.g;
+      render();
+      syncModalHistory();
+      break;
+    case 'explore-close':
+      exploreView = null;
+      render();
+      syncModalHistory();
+      break;
+    case 'explore-add': {   // añadir el ejercicio abierto a una rutina (con su guía)
+      const g = GUIDE_BY_ID.get(exploreView), r = db.routines.find(x => x.id === el.dataset.rid);
+      if (!g || !r) return;
+      const name = r.name || 'tu rutina';
+      if (r.exercises.some(ex => sameName(ex.name, g.name)) && !(await ask(`"${g.name}" ya está en ${name}.\n\n¿Agregarlo igual?`, 'Agregar igual'))) return;
+      r.exercises.push({ id: uid(), name: g.name, unit: lastUnit, rest: 0, guide: g.id });
+      save();
+      exploreView = null;
+      render();
+      syncModalHistory();
+      showNote(`${g.name} se añadió a ${name}`);
+      break;
+    }
     case 'guide-pick-close':
       guidePick = null;
       render();
@@ -6360,6 +6430,13 @@ $app.addEventListener('input', e => {
     const box = $app.querySelector('.ex-sugg'), res = searchGuides(el.value, 5);
     if (box) box.innerHTML = res.length ? `<span class="muted small">Con guía de técnica:</span>${res.map(g => `<button type="button" class="food-pick" data-action="sugg-ex" data-g="${g.id}">
       <span class="grow"><strong>${esc(g.name)}</strong><span class="muted small">${esc(g.musc)}</span></span><span class="chev">+</span></button>`).join('')}` : '';
+    return;
+  }
+  if (bind === 'explore-q') {
+    exploreQ = el.value;
+    const list = $app.querySelector('.explore-list'), zones = $app.querySelector('.explore-zones');
+    if (list) list.innerHTML = exploreListHtml();
+    if (zones) zones.hidden = !!exploreQ.trim();
     return;
   }
   if (bind === 'guide-q') {

@@ -991,3 +991,13 @@ p.reps-by { display: block; }
 /* Récords nuevos en el resumen del entreno */
 .pr-card { display: grid; gap: 6px; border-color: #f0a43a; }
 .pr-card strong { color: #f0a43a; }
+
+/* Ejercicios (explorar técnica) */
+.explore-zones { display: flex; gap: 6px; overflow-x: auto; padding: 8px 0 4px; margin: 0 -16px; padding-left: 16px; padding-right: 16px; scrollbar-width: none; }
+.explore-zones::-webkit-scrollbar { display: none; }
+.explore-zones[hidden] { display: none; }
+.explore-zones .chip { flex: none; min-height: 34px; }
+.explore-list { margin-bottom: 12px; }
+.explore-add { display: grid; gap: 8px; }
+/* Con 5 pestañas (Entreno) la letra es un poco más chica para que quepan */
+.range a:first-child:nth-last-child(5), .range a:first-child:nth-last-child(5) ~ a { font-size: 12.5px; }
