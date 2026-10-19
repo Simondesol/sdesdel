@@ -4998,9 +4998,10 @@ let exploreOpen = false, exploreQ = '', exploreZone = '', exploreView = null, ex
 const exploreItem = g => `<button type="button" class="food-pick" data-action="explore-open" data-g="${g.id}">
     <span class="grow"><strong>${esc(g.name)}</strong><span class="muted small">${esc(g.musc)}</span></span><span class="chev">›</span></button>`;
 function exploreListHtml() {
-  if (exploreQ.trim()) {
-    const res = searchGuides(exploreQ, 60);
-    return res.length ? res.map(exploreItem).join('') : '<p class="muted small">No hay ejercicios con ese nombre todavía.</p>';
+  if (exploreQ.trim()) {   // busca dentro del músculo elegido (o en todos)
+    const res = searchGuides(exploreQ, 999).filter(g => !exploreZone || g.zone === exploreZone).slice(0, 60);
+    return res.length ? res.map(exploreItem).join('')
+      : `<p class="muted small">No hay ejercicios${exploreZone ? ` de ${GUIDE_ZONES[exploreZone]}` : ''} con ese nombre todavía.</p>`;
   }
   return Object.entries(GUIDE_ZONES).filter(([z]) => !exploreZone || z === exploreZone)
     .map(([z, name]) => `<h3 class="guide-zone">${name}</h3>${guidesOf(z).map(exploreItem).join('')}`).join('');
@@ -5017,7 +5018,7 @@ function exploreSheetHtml() {
     : `<div class="picker-top">
          <div class="guide-head"><h2>Ejercicios</h2><button class="icon small" data-action="explore-close" aria-label="Cerrar">✕</button></div>
          <input type="search" data-bind="explore-q" placeholder="Buscar ejercicio" value="${esc(exploreQ)}" autocomplete="off" aria-label="Buscar ejercicio">
-         <div class="explore-zones" ${exploreQ.trim() ? 'hidden' : ''}>${[['', 'Todos'], ...Object.entries(GUIDE_ZONES)]
+         <div class="explore-zones">${[['', 'Todos'], ...Object.entries(GUIDE_ZONES)]
            .map(([z, n]) => `<button type="button" class="chip toggle ${z === exploreZone ? 'on' : ''}" data-action="explore-zone" data-z="${z}">${n}</button>`).join('')}</div>
        </div>
        <p class="muted small" style="margin:0">Toca un ejercicio para ver su técnica y video.</p>
@@ -6461,9 +6462,8 @@ $app.addEventListener('input', e => {
   }
   if (bind === 'explore-q') {
     exploreQ = el.value;
-    const list = $app.querySelector('.explore-list'), zones = $app.querySelector('.explore-zones');
+    const list = $app.querySelector('.explore-list');
     if (list) list.innerHTML = exploreListHtml();
-    if (zones) zones.hidden = !!exploreQ.trim();
     return;
   }
   if (bind === 'guide-q') {
