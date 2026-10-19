@@ -422,7 +422,7 @@ function setTodayLog(dietId, done) {
 }
 
 // Cuerpo: Peso · % Grasa · Medidas · Fotos (como las pestañas de Nutrición)
-const entrenoTabs = active => `<div class="range" role="tablist">${[['rutinas', 'Rutinas'], ['programas', 'Programas'], ['ejercicios', 'Ejercicios'], ['historial', 'Historial'], ['progreso', 'Progreso']]
+const entrenoTabs = active => `<div class="range" role="tablist">${[['rutinas', 'Rutinas'], ['programas', 'Programas'], ['historial', 'Historial'], ['progreso', 'Progreso']]
   .map(([k, label]) => `<a class="${k === active ? 'on' : ''}" href="#/${k}" role="tab">${label}</a>`).join('')}</div>`;
 const bodyTabs = active => `<div class="range" role="tablist">${[['peso', 'Peso'], ['grasa', '% Grasa'], ['medidas', 'Medidas'], ['fotos', 'Fotos']]
   .map(([k, label]) => `<a class="${k === active ? 'on' : ''}" href="#/${k}" role="tab">${label}</a>`).join('')}</div>`;
@@ -1368,11 +1368,13 @@ function viewRoutine() {
       <button class="btn">Agregar</button>
     </form>
     <div class="ex-sugg"></div>
+    <button class="btn block explore-btn" data-action="explore-list">Ver ejercicios por músculo</button>
     ${shareBox(r.id, 'Tu amigo toca el link y la rutina se le agrega sola (o ingresa el código en Rutinas → "Importar rutina con código"). Solo se comparten los ejercicios, el Rest y los objetivos, no tus pesos ni tu historial.')
       || '<button class="btn block" data-action="share-routine" style="margin-top:32px">Compartir rutina</button>'}
     <button class="btn block" data-action="dup-routine">Duplicar rutina</button>
     <button class="btn ghost block danger-text" data-action="del-routine">Eliminar rutina</button>
-    ${guidePickerHtml()}`;
+    ${guidePickerHtml()}
+    ${exploreSheetHtml()}`;
 }
 
 // Agregar un ejercicio que ya está en la rutina: casi siempre se quería hacer otra serie
@@ -4275,11 +4277,11 @@ function render() {
   if (screen !== 'perfil' && photoEdit) { URL.revokeObjectURL(photoEdit.src); photoEdit = null; }
   if (screen !== 'perfil') photoView = false;
   if (screen !== 'fotos') { closeProgressNew(); progOpen = null; }
-  const hadModal = !!guidePick || guideView != null || !!exploreView;
+  const hadModal = !!guidePick || guideView != null || exploreOpen;
   if (screen !== 'entrenar' && screen !== 'editar') guideView = null;
-  if (screen !== 'ejercicios') exploreView = null;
+  if (screen !== 'rutina') { exploreOpen = false; exploreView = null; }
   if (screen !== 'rutina' && screen !== 'entrenar' && screen !== 'editar') guidePick = null;
-  if (hadModal && !guidePick && guideView == null && !exploreView) modalPushed = false;   // se cerró por salir de la pantalla
+  if (hadModal && !guidePick && guideView == null && !exploreOpen) modalPushed = false;   // se cerró por salir de la pantalla
   if (screen !== 'nutricion') extraMode = null;
   if (screen !== 'chat' && screen !== 'perfil') closeMessages();   // el perfil muestra lo compartido en el chat
 
@@ -4313,7 +4315,7 @@ function render() {
     case 'grasa': html = viewBodyFat(); break;
     case 'pliegues': html = viewSkinfolds(); break;
     case 'programas': html = viewPrograms(); tab = 'programas'; break;
-    case 'ejercicios': html = viewExplore(); break;
+    case 'ejercicios': location.replace('#/rutinas'); return;   // antes: pestaña Ejercicios (ahora está al editar una rutina)
     case 'miprograma': html = viewMyProgram(arg); break;
     case 'listos': html = viewReadyPrograms(); break;
     case 'programa': html = viewProgram(arg); break;
@@ -4341,7 +4343,7 @@ function render() {
   }
   const NAV = {
     rutinas: 'entreno', rutina: 'entreno', programas: 'entreno', miprograma: 'entreno', listos: 'entreno', programa: 'entreno',
-    historial: 'entreno', sesion: 'entreno', progreso: 'entreno', ejercicio: 'entreno', ejercicios: 'entreno',
+    historial: 'entreno', sesion: 'entreno', progreso: 'entreno', ejercicio: 'entreno',
     nutricion: 'nutricion', alimento: 'nutricion', dieta: 'nutricion', objetivo: 'nutricion',
     peso: 'cuerpo', grasa: 'cuerpo', pliegues: 'cuerpo', medidas: 'cuerpo', fotos: 'cuerpo',
     social: 'social', gymbro: 'social', perfil: 'social', privacidad: 'social',
@@ -4926,14 +4928,14 @@ function searchGuides(q, limit = 6) {
 let guideView = null;   // índice del ejercicio (en el entrenamiento) cuya guía está abierta
 let modalPushed = false;   // hay un paso extra en el historial para que "atrás" cierre la ventana
 function syncModalHistory() {
-  const open = !!guidePick || guideView != null || !!exploreView;
+  const open = !!guidePick || guideView != null || exploreOpen;
   if (open && !modalPushed) { history.pushState({ modal: 1 }, ''); modalPushed = true; }
   else if (!open && modalPushed) { modalPushed = false; history.back(); }
 }
 window.addEventListener('popstate', () => {
   if (!modalPushed) return;
   modalPushed = false;
-  if (guidePick || guideView != null || exploreView) { guidePick = null; guideView = null; exploreView = null; render(); }
+  if (guidePick || guideView != null || exploreOpen) { guidePick = null; guideView = null; exploreOpen = false; exploreView = null; render(); }
 });
 let guidePick = null;   // { rid, exId, q } elegir la guía de un ejercicio a mano
 function setGuide(ctx, id) {
@@ -4977,8 +4979,8 @@ const guideBody = g => `${g.video
   <ul class="guide-ul bad">${g.errs.map(c => `<li>${esc(c)}</li>`).join('')}</ul>
   <p class="muted small" style="margin:0">Guía general. Si tienes una lesión o sientes dolor, consulta a un profesional.</p>`;
 
-// ---------- Ejercicios: ver la técnica y el video de cualquier ejercicio antes de añadirlo a una rutina ----------
-let exploreQ = '', exploreZone = '', exploreView = null;   // búsqueda, grupo elegido y ejercicio abierto
+// ---------- Ver ejercicios por músculo (al editar una rutina): técnica y video antes de añadirlo ----------
+let exploreOpen = false, exploreQ = '', exploreZone = '', exploreView = null, exploreScroll = 0;   // lista abierta, búsqueda, grupo, ejercicio abierto
 const exploreItem = g => `<button type="button" class="food-pick" data-action="explore-open" data-g="${g.id}">
     <span class="grow"><strong>${esc(g.name)}</strong><span class="muted small">${esc(g.musc)}</span></span><span class="chev">›</span></button>`;
 function exploreListHtml() {
@@ -4989,29 +4991,26 @@ function exploreListHtml() {
   return Object.entries(GUIDE_ZONES).filter(([z]) => !exploreZone || z === exploreZone)
     .map(([z, name]) => `<h3 class="guide-zone">${name}</h3>${GUIDES.filter(g => g.zone === z).map(exploreItem).join('')}`).join('');
 }
-function viewExplore() {
-  return `${header('Entreno', {})}${entrenoTabs('ejercicios')}
-    <input class="search" type="search" data-bind="explore-q" placeholder="Buscar ejercicio" value="${esc(exploreQ)}" autocomplete="off" aria-label="Buscar ejercicio">
-    <div class="explore-zones" ${exploreQ.trim() ? 'hidden' : ''}>${[['', 'Todos'], ...Object.entries(GUIDE_ZONES)]
-      .map(([z, n]) => `<button type="button" class="chip toggle ${z === exploreZone ? 'on' : ''}" data-action="explore-zone" data-z="${z}">${n}</button>`).join('')}</div>
-    <div class="guide-list explore-list">${exploreListHtml()}</div>
-    ${exploreView ? exploreModalHtml() : ''}`;
-}
-function exploreModalHtml() {
-  const g = GUIDE_BY_ID.get(exploreView);
-  if (!g) return '';
-  const add = db.routines.length
-    ? `<h3>Añadir a una rutina</h3>
-       <div class="explore-add">${db.routines.map(r => `<button class="btn" data-action="explore-add" data-rid="${r.id}">${esc(r.name || 'Rutina sin nombre')}</button>`).join('')}</div>`
-    : '<p class="muted small" style="margin:0">Para añadirlo, primero crea una rutina en Rutinas.</p>';
+function exploreSheetHtml() {
+  if (!exploreOpen) return '';
+  const g = exploreView && GUIDE_BY_ID.get(exploreView);
+  const inner = g
+    ? `<div class="guide-head"><button class="icon small" data-action="explore-back" aria-label="Volver a la lista">‹</button><h2 class="grow">${esc(g.name)}</h2><button class="icon small" data-action="explore-close" aria-label="Cerrar">✕</button></div>
+       <span class="muted small">Trabaja: ${esc(g.musc)}</span>
+       ${guideBody(g)}
+       <button class="btn primary block" data-action="explore-add">Añadir a esta rutina</button>
+       <button class="btn block" data-action="explore-back">Volver a la lista</button>`
+    : `<div class="picker-top">
+         <div class="guide-head"><h2>Ejercicios</h2><button class="icon small" data-action="explore-close" aria-label="Cerrar">✕</button></div>
+         <input type="search" data-bind="explore-q" placeholder="Buscar ejercicio" value="${esc(exploreQ)}" autocomplete="off" aria-label="Buscar ejercicio">
+         <div class="explore-zones" ${exploreQ.trim() ? 'hidden' : ''}>${[['', 'Todos'], ...Object.entries(GUIDE_ZONES)]
+           .map(([z, n]) => `<button type="button" class="chip toggle ${z === exploreZone ? 'on' : ''}" data-action="explore-zone" data-z="${z}">${n}</button>`).join('')}</div>
+       </div>
+       <p class="muted small" style="margin:0">Toca un ejercicio para ver su técnica y video.</p>
+       <div class="guide-list explore-list">${exploreListHtml()}</div>`;
   return `<div class="modal-wrap">
     <div class="modal-back" data-action="explore-close"></div>
-    <section class="modal card guide-modal" role="dialog" aria-modal="true" aria-label="Técnica de ${esc(g.name)}">
-      <div class="guide-head"><h2>${esc(g.name)}</h2><button class="icon small" data-action="explore-close" aria-label="Cerrar">✕</button></div>
-      <span class="muted small">Trabaja: ${esc(g.musc)}</span>
-      ${guideBody(g)}
-      ${add}
-    </section>
+    <section class="modal card guide-modal explore-sheet" role="dialog" aria-modal="true" aria-label="${g ? `Técnica de ${esc(g.name)}` : 'Ejercicios por músculo'}">${inner}</section>
   </div>`;
 }
 
@@ -5890,27 +5889,41 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       $app.querySelectorAll('.explore-zones .chip').forEach(b => b.classList.toggle('on', b.dataset.z === exploreZone));
       $app.querySelector('.explore-list').innerHTML = exploreListHtml();
       break;
-    case 'explore-open':
+    case 'explore-list':   // abrir la lista desde el editor de rutina
+      exploreOpen = true; exploreView = null;
+      render();
+      syncModalHistory();
+      break;
+    case 'explore-open': {   // ver la técnica de uno (se recuerda dónde ibas en la lista)
+      exploreScroll = $app.querySelector('.explore-sheet')?.scrollTop || 0;
       exploreView = el.dataset.g;
       render();
-      syncModalHistory();
       break;
+    }
+    case 'explore-back': {
+      exploreView = null;
+      render();
+      const sh = $app.querySelector('.explore-sheet');
+      if (sh) sh.scrollTop = exploreScroll;
+      break;
+    }
     case 'explore-close':
-      exploreView = null;
+      exploreOpen = false; exploreView = null;
       render();
       syncModalHistory();
       break;
-    case 'explore-add': {   // añadir el ejercicio abierto a una rutina (con su guía)
-      const g = GUIDE_BY_ID.get(exploreView), r = db.routines.find(x => x.id === el.dataset.rid);
-      if (!g || !r) return;
-      const name = r.name || 'tu rutina';
-      if (r.exercises.some(ex => sameName(ex.name, g.name)) && !(await ask(`"${g.name}" ya está en ${name}.\n\n¿Agregarlo igual?`, 'Agregar igual'))) return;
-      r.exercises.push({ id: uid(), name: g.name, unit: lastUnit, rest: 0, guide: g.id });
-      save();
-      exploreView = null;
-      render();
+    case 'explore-add': {   // añadir el ejercicio abierto a esta rutina (con su guía)
+      const g = GUIDE_BY_ID.get(exploreView), f = $app.querySelector('[data-form="new-ex"]');
+      if (!g || !curRoutine()) return;
+      if (f) lastUnit = f.elements.unit.value;
+      exploreOpen = false; exploreView = null;
+      if (!(await okRepeatedEx(g.name))) { syncModalHistory(); return; }
+      curRoutine().exercises.push({ id: uid(), name: g.name, unit: lastUnit, rest: 0, guide: g.id });
+      openEx = curRoutine().exercises.length - 1;   // queda abierto para poner series y repeticiones
+      exploreQ = '';   // la próxima vez la lista parte sin búsqueda
+      save(); render();
       syncModalHistory();
-      showNote(`${g.name} se añadió a ${name}`);
+      showNote(`${g.name} se añadió a la rutina`);
       break;
     }
     case 'guide-pick-close':
