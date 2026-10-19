@@ -6748,7 +6748,7 @@ if ('serviceWorker' in navigator) {
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
 // Videos de técnica: con internet se guardan todos en el teléfono (de a uno y en segundo plano)
 // para verlos sin internet. Se bajan una sola vez; los que ya no se usan se borran.
-const VIDEO_CACHE = 'desdel-videos-v2';   // el mismo nombre que en sw.js
+const VIDEO_CACHE = 'desdel-videos-v3';   // el mismo nombre que en sw.js
 async function saveVideos() {
   if (!('caches' in window) || !navigator.onLine) return;
   try {
