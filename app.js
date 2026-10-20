@@ -2366,6 +2366,35 @@ async function pushCoachSummary() {
   try { await cloud.updateCoachLink(user.uid, data); localStorage.setItem(key, json); } catch (e) { /* se intenta en el próximo cambio */ }
 }
 
+// Qué cambió tu coach en una rutina, en palabras ("Sentadilla: series 3 → 4")
+function routineChanges(o, n) {
+  if (!o) return [`${plural(n.exercises.length, 'ejercicio')}: ${n.exercises.map(x => x.name).join(', ')}`];
+  const out = [], reps = ex => (hasRepsBy(ex) ? ex.goalRepsBy.slice(0, ex.goalSets).map(x => x || '–').join(' / ') : ex.goalReps || '');
+  const rest = ex => (ex.rest ? fmtRest(ex.rest) : '');
+  const ch = (label, a, b) => (String(a ?? '') !== String(b ?? '') ? `${label} ${a || '–'} → ${b || '–'}` : null);
+  const onOff = (label, a, b) => (!!a !== !!b ? `${label} ${b ? 'activado' : 'desactivado'}` : null);
+  if (o.name !== n.name) out.push(`Nombre: ${o.name} → ${n.name}`);
+  const old = new Map(o.exercises.map(x => [x.id, x]));
+  for (const ex of n.exercises) {
+    const a = old.get(ex.id);
+    if (!a) { out.push(`Agregó ${ex.name}${ex.goalSets ? ` (${plural(ex.goalSets, 'serie')}${reps(ex) ? ` × ${reps(ex)}` : ''})` : ''}`); continue; }
+    const parts = [ch('series', a.goalSets, ex.goalSets), ch('repeticiones', reps(a), reps(ex)),
+      !!a.rir !== !!ex.rir ? `RIR ${ex.rir ? `activado${ex.goalRir ? ` (${ex.goalRir})` : ''}` : 'desactivado'}` : ex.rir ? ch('RIR', a.goalRir, ex.goalRir) : null,
+      ch('descanso', rest(a), rest(ex)), onOff('dropset', a.dropset, ex.dropset), onOff('peso corporal', a.bw, ex.bw),
+      ch('unidad', a.unit, ex.unit), a.guide !== ex.guide ? 'cambió la técnica' : null].filter(Boolean);
+    if (a.name !== ex.name) out.push(`Cambió ${a.name} por ${ex.name}${parts.length ? ` (${parts.join(', ')})` : ''}`);
+    else if (parts.length) out.push(`${ex.name}: ${parts.join(', ')}`);
+  }
+  for (const a of o.exercises) if (!n.exercises.some(x => x.id === a.id)) out.push(`Quitó ${a.name}`);
+  const same = o.exercises.filter(x => n.exercises.some(y => y.id === x.id)).map(x => x.id).join(), now = n.exercises.filter(x => old.has(x.id)).map(x => x.id).join();
+  if (same !== now) out.push('Cambió el orden de los ejercicios');
+  // Superseries: qué ejercicio va unido al siguiente (solo entre los que estaban y siguen)
+  const pairs = r => { const ids = r.exercises.filter(x => old.has(x.id) && n.exercises.some(y => y.id === x.id)).map(x => x.id);
+    return r.exercises.filter((x, k) => x.ssNext && r.exercises[k + 1]).map((x, k, arr) => x.id).filter(id => ids.includes(id)).join(); };
+  if (same === now && pairs(o) !== pairs(n)) out.push('Cambió las superseries');
+  return out;
+}
+
 // Rutinas que te cambió tu coach: se aplican y se borran de la nube
 function applyEditTo(d, ed) {
   const k = d.routines.findIndex(r => r.id === ed.id);
@@ -2376,8 +2405,9 @@ function applyEditTo(d, ed) {
     return { name, deleted: true };
   }
   if (!ed.routine) return null;
+  const changes = routineChanges(k < 0 ? null : d.routines[k], ed.routine);
   if (k < 0) d.routines.push(ed.routine); else d.routines[k] = ed.routine;
-  return { name: ed.routine.name || 'una rutina', added: k < 0 };
+  return { name: ed.routine.name || 'una rutina', added: k < 0, changes };
 }
 function onCoachEdits(list) {
   if (!list.length || status !== 'ready' || !user) return;
@@ -2393,11 +2423,16 @@ function onCoachEdits(list) {
   refresh();
   // Queda anotado en el resumen (se ve en Mi coach, en todos tus teléfonos)
   const now = Date.now();
-  coachLog = [...done.map(r => ({ name: r.name, what: r.deleted ? 'del' : r.added ? 'new' : 'edit', at: now })), ...coachLog].slice(0, 15);
+  coachLog = [...done.map(r => ({ name: r.name, what: r.deleted ? 'del' : r.added ? 'new' : 'edit', at: now, ...(r.changes && r.changes.length ? { changes: r.changes.slice(0, 8) } : {}) })), ...coachLog].slice(0, 15);
   if (myCoach) cloud.updateCoachLink(user.uid, { summary: coachSummary() }).catch(() => {});
+  // Aviso con el detalle de lo que cambió
   const who = (myCoach && myCoach.coachName) || 'Tu coach';
-  showNote(done.length > 1 ? `${who} cambió ${done.length} de tus rutinas`
-    : `${who} ${done[0].deleted ? 'eliminó' : done[0].added ? 'te creó' : 'cambió'} la rutina ${done[0].name}`);
+  const lines = done.map(r => {
+    const head = `${r.deleted ? 'Eliminó' : r.added ? 'Te creó' : 'Cambió'} la rutina ${r.name}`;
+    const ch = (r.changes || []).slice(0, 6), more = (r.changes || []).length - ch.length;
+    return [head + (ch.length ? ':' : '.'), ...ch.map(x => `• ${x}`), ...(more > 0 ? [`• y ${plural(more, 'cambio')} más`] : [])].join('\n');
+  });
+  notice(`${who} cambió tus rutinas\n\n${lines.join('\n\n')}\n\nLo ves también en Social → Mi coach.`);
 }
 
 // Coach: mirar los datos de un alumno (los tuyos quedan guardados aparte)
@@ -2566,7 +2601,8 @@ function viewMyCoach() {
   if (myCoach) {
     const name = myCoach.coachName || 'tu coach', chatId = [user.uid, myCoach.coachUid].sort().join('_');
     const WHAT = { edit: 'Cambió', new: 'Te creó', del: 'Eliminó' };
-    const log = coachLog.map(x => `<div class="coach-log"><span class="grow">${WHAT[x.what] || 'Cambió'} <strong>${esc(x.name)}</strong></span><span class="muted small">${daysAgo(new Date(x.at).toISOString())}</span></div>`).join('');
+    const log = coachLog.map(x => `<div class="coach-log"><div class="coach-log-head"><span class="grow">${WHAT[x.what] || 'Cambió'} <strong>${esc(x.name)}</strong></span><span class="muted small">${daysAgo(new Date(x.at).toISOString())}</span></div>
+      ${(x.changes || []).length ? `<ul class="coach-log-list">${x.changes.map(c => `<li>${esc(c)}</li>`).join('')}</ul>` : ''}</div>`).join('');
     return `${header('Mi coach', { back: true })}
       <section class="card stack">
         <div><span class="muted small">Tu coach</span><br><strong class="coach-name">${esc(name)}</strong></div>
