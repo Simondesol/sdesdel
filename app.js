@@ -39,9 +39,12 @@ let justFinished = null;         // entrenamiento recién guardado (para mostrar
 let saveAsOpen = null, saveAsDone = null;   // "Guardar como rutina" de un entreno libre: abierto / descartado
 
 function persistLocal() {
-  if (user) localStorage.setItem(userKey(user.uid), JSON.stringify({ db, synced }));
+  if (user && !viewing) localStorage.setItem(userKey(user.uid), JSON.stringify({ db, synced }));
 }
-function save() { persistLocal(); scheduleSync(); scheduleProfile(); }
+function save() {
+  if (viewing) { scheduleCoachEdits(); return; }   // viendo a un alumno: sus rutinas cambiadas se le envían
+  persistLocal(); scheduleSync(); scheduleProfile(); scheduleCoachSummary();
+}
 
 // Datos guardados en el teléfono antes de tener cuenta (se suben al iniciar sesión)
 function readLegacy() {
@@ -255,7 +258,7 @@ function weekCard() {
 function viewHub() {
   const d = db.draft;
   const ml = waterToday(), goal = waterGoal().ml, streak = waterStreak();
-  const tourOffer = tourSeen() || tourOpen ? '' : `<section class="card tour-offer">
+  const tourOffer = tourSeen() || tourOpen || viewing ? '' : `<section class="card tour-offer">
       <div class="grow"><strong>¿Conoces todo lo que tiene Desdel?</strong><span class="muted small">Un recorrido corto por la app.</span></div>
       <button class="btn primary" data-action="tour-open">Ver tutorial</button>
       <button class="icon small" data-action="tour-offer-no" aria-label="No mostrar">✕</button>
@@ -263,7 +266,7 @@ function viewHub() {
   return `${header('Desdel', { sub: 'Entrena. Anota. Supera.', right: GEAR })}
     <div class="hub-wrap">
     ${tourOffer}
-    ${socialCard()}
+    ${viewing ? '' : socialCard()}
 
     ${entrenoCard()}
 
@@ -1237,7 +1240,7 @@ const importForm = label => `<section class="import-box">
 // Saca el código de lo copiado: el código solo ("K7P-9XQ"), el link (?r=K7P9XQ) o el mensaje completo
 function codeFromText(text) {
   const t = (text || '').toUpperCase();
-  const m = t.match(/[?&][RG]=([A-Z0-9]{6})\b/) || t.match(/\b([A-Z0-9]{3})-([A-Z0-9]{3})\b/) || t.trim().match(/^([A-Z0-9]{3})\s*-?\s*([A-Z0-9]{3})$/);
+  const m = t.match(/[?&][RGK]=([A-Z0-9]{6})\b/) || t.match(/\b([A-Z0-9]{3})-([A-Z0-9]{3})\b/) || t.trim().match(/^([A-Z0-9]{3})\s*-?\s*([A-Z0-9]{3})$/);
   return m ? m.slice(1).join('') : '';
 }
 
@@ -1823,6 +1826,13 @@ function viewAccount() {
       ${quizState().n ? `<span class="muted small">${quizName()}: llevas ${quizState().ok || 0} de ${quizState().n} correctas</span>` : ''}
     </section>
 
+    <h2>Modo coach</h2>
+    <section class="card stack">
+      <div class="quiz-set"><span class="muted">Sigue a tus alumnos: ve sus entrenos, peso, medidas, nutrición y fotos, y cambia sus rutinas.</span>
+        <button class="chip toggle ${coachOn() ? 'on' : ''}" data-action="${coachOn() ? 'coach-off' : 'coach-on'}" aria-pressed="${coachOn()}">${coachOn() ? 'Activado' : 'Desactivado'}</button></div>
+      ${coachOn() ? '<a class="btn block center" href="#/alumnos" style="margin-top:0">Mis alumnos</a>' : ''}
+    </section>
+
     <h2>Ideas</h2>
     <section class="card stack">
       <p class="muted" style="margin:0">¿Qué le falta a Desdel? Mándame tu idea o cuéntame si algo no funciona.</p>
@@ -2015,7 +2025,10 @@ async function importByCode(code, showError) {
     let inv = null;
     try { inv = await withTimeout(cloud.getInvite(code)); } catch (e) { /* sin internet: se avisa abajo */ }
     if (inv) return addGymbro(code, inv, showError);
-    return showError('No existe ninguna rutina, dieta ni gymbro con ese código.');
+    let cc = null;
+    try { cc = await withTimeout(cloud.getCoachCode(code)); } catch (e) { /* sin internet: se avisa abajo */ }
+    if (cc) return linkCoach(code, cc, showError);
+    return showError('No existe ninguna rutina, dieta, gymbro ni coach con ese código.');
   }
   if (data.diet) return importDiet(data);
   if (data.program) return useSharedProgram(data.program, data.ownerName);
@@ -2090,7 +2103,7 @@ async function importDiet(data) {
 const logoImg = '<img class="auth-logo" src="icons/logo-full.png" alt="Desdel">';
 
 // En iPhone los links siempre se abren en Safari (no en la app instalada), así que se copia el código para pegarlo en la app
-let handoffCode = null, handoffGymbro = false;
+let handoffCode = null, handoffGymbro = false, handoffCoach = false;
 // Navegador dentro de otra app (no deja instalar): { app, url } mientras se muestra el aviso
 let inApp = null;
 function viewInApp() {
@@ -2117,13 +2130,13 @@ function viewInApp() {
 }
 function viewHandoff() {
   return `<div class="auth handoff">${logoImg}
-    <p><strong>${handoffGymbro ? 'Te invitaron a ser gymbro en Desdel 💪' : 'Te compartieron una rutina o una dieta'}</strong></p>
+    <p><strong>${handoffCoach ? 'Tu coach te invitó a Desdel 💪' : handoffGymbro ? 'Te invitaron a ser gymbro en Desdel 💪' : 'Te compartieron una rutina o una dieta'}</strong></p>
     <div class="code">${fmtCode(handoffCode)}</div>
     <button class="btn primary block" data-action="handoff-copy">📋 Copiar código</button>
     <ol class="handoff-steps">
       <li>Toca <strong>Copiar código</strong>.</li>
       <li>Abre <strong>Desdel</strong> desde tu pantalla de inicio.</li>
-      <li>${handoffGymbro ? 'En <strong>Social → Agregar gymbro</strong>' : 'En <strong>Rutinas</strong> o en <strong>Nutrición → Mis dietas</strong>'} toca <strong>📋 Pegar código</strong>.</li>
+      <li>${handoffCoach ? 'En <strong>Social → Tengo coach</strong>' : handoffGymbro ? 'En <strong>Social → Agregar gymbro</strong>' : 'En <strong>Rutinas</strong> o en <strong>Nutrición → Mis dietas</strong>'} toca <strong>📋 Pegar código</strong>.</li>
     </ol>
     <p class="muted small">¿Todavía no tienes Desdel instalada? En Safari toca Compartir <span aria-hidden="true">⬆️</span> → <strong>Agregar a pantalla de inicio</strong>, ábrela desde ahí y pega el código.</p>
     <button class="btn ghost block" data-action="handoff-here">Seguir aquí en Safari</button>
@@ -2238,6 +2251,333 @@ async function shareWorkout(btn, id) {
   }
 }
 
+// ---------- Modo coach ----------
+// El alumno se vincula con el código de coach (coachLinks/{alumno}). El coach ve sus datos (solo mirar) y le cambia
+// las rutinas: los cambios quedan en coachLinks/{alumno}/edits y la app del alumno los aplica sola.
+let myCoach = null;                 // tu vínculo como alumno (null = sin coach)
+let stopMyCoach = () => {}, stopCoachEdits = () => {};
+let students = [], studentsLoaded = false, stopStudents = () => {};
+let viewing = null;                 // alumno que estás viendo: { uid, name, own (tus datos), base (sus rutinas), queued }
+let coachCodeBusy = false, coachCodeError = false;
+const me = () => (viewing ? viewing.own : db);   // tus propios datos, aunque estés viendo a un alumno
+const dataUid = () => (viewing ? viewing.uid : user.uid);
+const coachOn = () => !!me().body.coach;
+const coachLink = code => `${location.origin}${location.pathname}?k=${code}`;
+const coachInviteText = code => `Vincúlate conmigo como tu coach en Desdel 💪\n\nToca el link:\n${coachLink(code)}\n\n` +
+  `Si no se abre, abre Desdel y en Social → Tengo coach pega este código: ${fmtCode(code)}`;
+
+// Pantallas que se pueden mirar de un alumno; las de VIEW_EXIT te devuelven a tus datos
+const VIEW_OK = ['', 'rutinas', 'rutina', 'programas', 'miprograma', 'historial', 'sesion', 'progreso', 'ejercicio', 'peso', 'grasa', 'medidas', 'fotos', 'nutricion', 'sueno', 'agua'];
+const VIEW_EXIT = ['social', 'chat', 'gymbro', 'perfil', 'privacidad', 'cuenta', 'alumnos', 'coach'];
+// Lo que se puede tocar mirando a un alumno, y lo extra en el editor de rutinas
+const VIEW_SAFE = new Set(['back', 'view-exit', 'vid-toggle', 'info', 'toggle-sec', 'range', 'toggle-history', 'hist-month', 'hist-day', 'skin-view', 'measure-view',
+  'prog-open', 'prog-close', 'prog-filter', 'prog-retry', 'week-sum', 'guide-view', 'guide-close', 'explore-zone', 'explore-open', 'explore-back', 'explore-close', 'go-ex', 'prev-ex', 'next-ex']);
+const VIEW_ROUTINE = new Set(['reps-by', 'toggle-drop', 'toggle-bw', 'toggle-ss', 'toggle-rir', 'toggle-unit', 'move', 'ex-open', 'ex-close', 'del-ex', 'dup-routine', 'del-routine',
+  'guide-pick', 'guide-change', 'guide-set', 'guide-pick-close', 'explore-list', 'explore-add', 'sugg-ex']);
+const viewAllowed = action => VIEW_SAFE.has(action) || (routeParts()[0] === 'rutina' && VIEW_ROUTINE.has(action));
+const viewOnlyMsg = () => `Estás viendo los datos de ${viewing.name}. Puedes ver todo y cambiar sus rutinas, pero no anotar ni borrar sus datos.`;
+const viewBarHtml = () => `<div class="view-bar"><span class="grow">Viendo a <strong>${esc(viewing.name)}</strong><span class="muted small">Los cambios a sus rutinas le llegan solos</span></span>
+  <button class="btn small-btn" data-action="view-exit">Salir</button></div>`;
+
+function startCoach(uid) {
+  stopMyCoach = cloud.listenCoachLink(uid, link => {
+    const had = myCoach;
+    myCoach = link;
+    if (link && !had) { stopCoachEdits = cloud.listenCoachEdits(uid, onCoachEdits); scheduleCoachSummary(); }
+    if (!link && had) { stopCoachEdits(); stopCoachEdits = () => {}; }
+    if (['social', 'coach'].includes(routeParts()[0])) refresh();
+  });
+  if (coachOn()) startStudents(uid);
+}
+function startStudents(uid) {
+  stopStudents();
+  studentsLoaded = false;
+  stopStudents = cloud.listenStudents(uid, list => {
+    students = list; studentsLoaded = true;
+    if (['social', 'alumnos'].includes(routeParts()[0])) refresh();
+  }, () => { studentsLoaded = true; });
+}
+function stopCoach() {
+  stopMyCoach(); stopMyCoach = () => {};
+  stopCoachEdits(); stopCoachEdits = () => {};
+  stopStudents(); stopStudents = () => {};
+  myCoach = null; students = []; studentsLoaded = false;
+  if (viewing) { viewing = null; document.body.classList.remove('viewing'); }
+}
+function setCoachMode(on) {
+  db.body.coach = on || undefined;
+  if (!on) delete db.body.coach;
+  save();
+  if (on) startStudents(user.uid); else { stopStudents(); stopStudents = () => {}; students = []; }
+  if (on && routeParts()[0] !== 'alumnos') go('#/alumnos'); else render();
+}
+
+// Tu código de coach (se guarda en tu cuenta para que sea el mismo en todos tus teléfonos)
+async function ensureCoachCode() {
+  if (me().body.coachCode || coachCodeBusy || coachCodeError || viewing) return;
+  coachCodeBusy = true;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const code = newCode();
+    try {
+      await withTimeout(cloud.createCoachCode(code, { ownerUid: user.uid, ownerName: user.username || '' }));
+      db.body.coachCode = code;
+      save();
+      break;
+    } catch (e) {
+      if (e.code === 'permission-denied' && attempt < 2) continue;
+      coachCodeError = true;
+      break;
+    }
+  }
+  coachCodeBusy = false;
+  if (routeParts()[0] === 'alumnos') refresh();
+}
+
+// Resumen para el panel del coach (lo escribe tu teléfono, así el coach lee un solo documento por alumno)
+function coachSummary() {
+  const last = db.workouts[db.workouts.length - 1], bw = db.bodyweight[db.bodyweight.length - 1], wk = weekSummary(0);
+  const since = Date.now() - 30 * 864e5;
+  return {
+    last: last ? { date: last.date, name: last.routineName || '' } : null,
+    week: wk.done, planned: wk.planned ?? null,
+    month: db.workouts.filter(w => Date.parse(w.date) >= since).length,
+    kg: bw ? bw.kg : null, kgDate: bw ? bw.date : null,
+  };
+}
+let summaryTimer = null;
+function scheduleCoachSummary() {
+  if (!myCoach || viewing) return;
+  clearTimeout(summaryTimer);
+  summaryTimer = setTimeout(pushCoachSummary, 3000);
+}
+async function pushCoachSummary() {
+  if (!myCoach || viewing || !user || status !== 'ready') return;
+  const data = { summary: coachSummary(), studentName: user.username || '' }, json = stable(data), key = `desdel-coach-resumen-${user.uid}`;
+  if (localStorage.getItem(key) === json) return;
+  try { await cloud.updateCoachLink(user.uid, data); localStorage.setItem(key, json); } catch (e) { /* se intenta en el próximo cambio */ }
+}
+
+// Rutinas que te cambió tu coach: se aplican y se borran de la nube
+function applyEditTo(d, ed) {
+  const k = d.routines.findIndex(r => r.id === ed.id);
+  if (ed.deleted) {
+    if (k < 0) return null;
+    const name = d.routines[k].name;
+    d.routines.splice(k, 1);
+    return { name, deleted: true };
+  }
+  if (!ed.routine) return null;
+  if (k < 0) d.routines.push(ed.routine); else d.routines[k] = ed.routine;
+  return { name: ed.routine.name || 'una rutina', added: k < 0 };
+}
+function onCoachEdits(list) {
+  if (!list.length || status !== 'ready' || !user) return;
+  if (viewing) { viewing.queued.push(() => onCoachEdits(list)); return; }
+  const done = [];
+  for (const ed of list.sort((a, b) => (a.at || 0) - (b.at || 0))) {
+    const r = applyEditTo(db, ed);
+    if (r) done.push(r);
+    cloud.deleteCoachEdit(user.uid, ed.id).catch(() => {});
+  }
+  if (!done.length) return;
+  save();
+  refresh();
+  const who = (myCoach && myCoach.coachName) || 'Tu coach';
+  showNote(done.length > 1 ? `${who} cambió ${done.length} de tus rutinas`
+    : `${who} ${done[0].deleted ? 'eliminó' : done[0].added ? 'te creó' : 'cambió'} la rutina ${done[0].name}`);
+}
+
+// Coach: mirar los datos de un alumno (los tuyos quedan guardados aparte)
+async function viewStudent(link, btn) {
+  if (db.draft) return notice('Termina o descarta tu entrenamiento en curso antes de ver a un alumno.');
+  await busy(btn, 'Cargando…', async () => {
+    while (syncing) await new Promise(r => setTimeout(r, 100));   // que termine de subir lo tuyo
+    let data, edits;
+    try {
+      [data, edits] = await withTimeout(Promise.all([cloud.fetchAll(link.studentUid), cloud.listCoachEdits(link.studentUid)]));
+    } catch (e) {
+      return notice(`No se pudieron cargar los datos de ${link.studentName || 'tu alumno'}. Revisa tu internet e intenta de nuevo.`);
+    }
+    const sdb = dbFromCloud(data.main, data.workouts);
+    for (const ed of edits.sort((a, b) => (a.at || 0) - (b.at || 0))) applyEditTo(sdb, ed);   // cambios que aún no le llegan
+    viewing = { uid: link.studentUid, name: link.studentName || 'tu alumno', own: db, base: routineMap(sdb), queued: [] };
+    db = sdb;
+    progList = null; progFull.clear(); progUid = null;
+    go('#/');
+    render();
+  });
+}
+const routineMap = d => Object.fromEntries(d.routines.map(r => [r.id, stable(r)]));
+function exitViewing() {
+  if (!viewing) return;
+  pushCoachEdits();
+  const v = viewing;
+  viewing = null;
+  db = v.own;
+  progList = null; progFull.clear(); progUid = null;
+  openEx = null;
+  document.body.classList.remove('viewing');
+  for (const f of v.queued) f();
+  if (routeParts()[0] === '' || VIEW_OK.includes(routeParts()[0])) location.hash = '#/alumnos';
+  else render();
+}
+// Envía al alumno las rutinas que cambiaste (o borraste)
+let editTimer = null;
+function scheduleCoachEdits() { clearTimeout(editTimer); editTimer = setTimeout(pushCoachEdits, 700); }
+function pushCoachEdits() {
+  clearTimeout(editTimer);
+  if (!viewing) return;
+  const v = viewing, now = routineMap(db), at = Date.now(), jobs = [];
+  for (const [rid, j] of Object.entries(now)) {
+    if (v.base[rid] !== j) jobs.push(cloud.putCoachEdit(v.uid, rid, { routine: clone(db.routines.find(r => r.id === rid)), at, by: user.uid }));
+  }
+  for (const rid of Object.keys(v.base)) if (!(rid in now)) jobs.push(cloud.putCoachEdit(v.uid, rid, { deleted: true, at, by: user.uid }));
+  v.base = now;
+  if (jobs.length) Promise.all(jobs).catch(() => notice(`No se pudo enviar el cambio a ${v.name}. Revisa tu internet.`));
+}
+
+// Alumno: vincularse con un coach
+async function linkCoachForm(f) {
+  await busy(f.querySelector('button'), 'Buscando…', async () => {
+    const code = normCode(f.elements.code.value);
+    if (code.length !== 6) return formMsg(f, 'El código tiene 6 caracteres (ej. K7P-9XQ).');
+    let cc = null;
+    try { cc = await withTimeout(cloud.getCoachCode(code)); } catch (e) { return formMsg(f, 'Se necesita internet para vincularte.'); }
+    if (!cc) return formMsg(f, 'No existe ningún coach con ese código.');
+    await linkCoach(code, cc, text => formMsg(f, text));
+  });
+}
+async function linkCoach(code, cc, showError) {
+  const name = cc.ownerName || 'Tu coach';
+  if (cc.ownerUid === user.uid) return showError('Ese es tu propio código de coach. Mándaselo a tus alumnos.');
+  if (myCoach && myCoach.coachUid === cc.ownerUid) { go('#/coach'); return; }
+  if (myCoach && !await ask(`Ya tienes como coach a ${myCoach.coachName || 'otra persona'}. ¿Cambiar a ${name}?`, 'Cambiar')) return;
+  if (!await ask(`¿Vincular a ${name} como tu coach?\n\n${name} podrá ver todos tus datos: entrenamientos, peso, medidas, nutrición y fotos de progreso. También podrá cambiar tus rutinas y crearte nuevas.\n\nPuedes desvincularlo cuando quieras.`, 'Vincular')) return;
+  try {
+    if (myCoach) await withTimeout(clearCoachLink());
+    await withTimeout(cloud.createCoachLink(user.uid, {
+      studentUid: user.uid, studentName: user.username || '', coachUid: cc.ownerUid, coachName: name,
+      via: code, since: Date.now(), summary: coachSummary(),
+    }));
+  } catch (e) {
+    return showError('No se pudo vincular. Revisa tu internet e intenta de nuevo.');
+  }
+  // Quedan como gymbros para poder chatear
+  const members = [user.uid, cc.ownerUid].sort(), chatId = members.join('_');
+  if (!chats.some(c => c.id === chatId)) {
+    let existing = null;
+    try { existing = await withTimeout(cloud.getChat(chatId)); } catch (e) { /* se intenta crear */ }
+    if (!existing) {
+      cloud.createChat(chatId, { members, via: code, last: null, names: { [user.uid]: user.username || 'Gymbro', [cc.ownerUid]: name } }).catch(() => {});
+    }
+  }
+  importOpen = false;
+  go('#/coach');
+  showNote(`${name} ahora es tu coach`);
+}
+// Borra el vínculo y los cambios de rutina pendientes de ese coach
+async function clearCoachLink() {
+  try { for (const ed of await cloud.listCoachEdits(user.uid)) await cloud.deleteCoachEdit(user.uid, ed.id); } catch (e) { /* no hay */ }
+  await cloud.deleteCoachLink(user.uid);
+}
+async function unlinkCoach() {
+  if (!myCoach) return;
+  const name = myCoach.coachName || 'tu coach';
+  if (!await ask(`¿Desvincular a ${name}? Dejará de ver tus datos y de poder cambiar tus rutinas. Siguen siendo gymbros.`, 'Desvincular')) return;
+  try { await withTimeout(clearCoachLink()); } catch (e) { notice('No se pudo desvincular. Revisa tu internet e intenta de nuevo.'); }
+}
+
+const daysAgo = iso => {
+  const n = Math.round((Date.parse(todayKey()) - Date.parse(String(iso).slice(0, 10))) / 864e5);
+  return n <= 0 ? 'hoy' : n === 1 ? 'ayer' : `hace ${n} días`;
+};
+const daysSince = iso => Math.round((Date.parse(todayKey()) - Date.parse(String(iso).slice(0, 10))) / 864e5);
+
+// Social: tu coach, tus alumnos o la invitación a activar el modo coach
+function coachRows() {
+  const coach = myCoach
+    ? `<a class="card coach-row" href="#/coach"><span class="grow"><span class="muted small">Tu coach</span><strong>${esc(myCoach.coachName || 'Coach')}</strong></span><span class="chev">›</span></a>`
+    : `<a class="card coach-row" href="#/coach"><span class="grow"><strong>Tengo coach</strong><span class="muted small">Vincúlate con tu entrenador</span></span><span class="chev">›</span></a>`;
+  const mine = coachOn()
+    ? `<a class="card coach-row" href="#/alumnos"><span class="grow"><strong>Mis alumnos</strong><span class="muted small">${studentsLoaded ? plural(students.length, 'alumno') : 'Cargando…'}</span></span><span class="chev">›</span></a>`
+    : `<a class="card coach-row coach-offer" href="#/alumnos"><span class="grow"><strong>¿Eres coach?</strong><span class="muted small">Sigue a tus alumnos en Desdel</span></span><span class="btn small-btn">Activar</span></a>`;
+  return `<div class="coach-rows">${mine}${coach}</div>`;
+}
+
+function viewStudents() {
+  if (!coachOn()) {
+    return `${header('Modo coach', { back: true })}
+      <section class="card stack">
+        <strong>Sigue a tus alumnos en Desdel</strong>
+        <ul class="guide-ul">
+          <li>Ve sus entrenamientos serie por serie, su progreso, peso, medidas, nutrición y fotos.</li>
+          <li>Cambia sus rutinas o créales nuevas: les llegan solas a su app.</li>
+          <li>Ve de un vistazo quién entrenó esta semana y quién no.</li>
+          <li>Tus alumnos se vinculan con tu código de coach y pueden desvincularse cuando quieran.</li>
+        </ul>
+        <span class="muted small">Puedes seguir usando Desdel para tus propios entrenamientos.</span>
+        <button class="btn primary block" data-action="coach-on">Activar modo coach</button>
+      </section>`;
+  }
+  const code = me().body.coachCode;
+  const sorted = students.slice().sort((a, b) => ((b.summary || {}).last?.date || '').localeCompare((a.summary || {}).last?.date || ''));
+  const list = sorted.map(l => {
+    const sm = l.summary || {}, last = sm.last, idle = last ? daysSince(last.date) : null;
+    return `<section class="card student">
+      <button class="student-main" data-action="student-view" data-uid="${esc(l.studentUid)}">
+        <span class="grow"><strong>${esc(l.studentName || 'Alumno')}</strong>
+          <span class="muted small">${last ? `Último entreno: ${esc(last.name || 'Entreno')} · ${daysAgo(last.date)}` : 'Todavía no anota entrenamientos'}</span>
+          <span class="muted small">Esta semana: ${sm.planned ? `${sm.week || 0} de ${sm.planned}` : plural(sm.week || 0, 'entreno')}${sm.kg ? ` · Peso: ${fmtNum(sm.kg)} kg` : ''}</span>
+          ${idle != null && idle >= 4 ? `<span class="student-alert">Sin registrar hace ${idle} días</span>` : ''}</span>
+        <span class="chev">›</span>
+      </button>
+      <button class="icon small" data-action="student-del" data-uid="${esc(l.studentUid)}" aria-label="Quitar alumno">✕</button>
+    </section>`;
+  }).join('');
+  return `${header('Mis alumnos', { back: true, sub: 'Modo coach' })}
+    <section class="card share-box">
+      <div class="muted">Tu código de coach</div>
+      ${code ? `<div class="code">${fmtCode(code)}</div>
+        <div class="ex-actions">
+          <button class="btn primary" data-action="coach-send">Enviar</button>
+          <button class="btn" data-action="coach-copy">Copiar link</button>
+        </div>`
+      : coachCodeError ? '<p>No se pudo crear tu código. Revisa tu internet.</p><button class="btn primary" data-action="coach-retry">Reintentar</button>'
+      : '<p class="muted">Creando tu código…</p>'}
+      <p class="muted hint">Mándaselo solo a tus alumnos: quien lo use te da acceso a todos sus datos. Es distinto de tu código de gymbro.</p>
+    </section>
+    ${!studentsLoaded ? '<p class="empty">Cargando…</p>' : list || '<p class="empty">Todavía no tienes alumnos. Mándales tu código: en Desdel van a Social → Tengo coach.</p>'}
+    <button class="btn ghost block" data-action="coach-off" style="margin-top:24px">Desactivar modo coach</button>`;
+}
+
+function viewMyCoach() {
+  if (myCoach) {
+    const chatId = [user.uid, myCoach.coachUid].sort().join('_');
+    return `${header('Mi coach', { back: true })}
+      <section class="card stack">
+        <span class="muted small">Tu coach</span>
+        <strong class="coach-name">${esc(myCoach.coachName || 'Coach')}</strong>
+        <span class="muted small">Desde el ${fmtDMY(new Date(myCoach.since || Date.now()).toISOString().slice(0, 10))}</span>
+        <p class="muted" style="margin:0">Puede ver tus entrenamientos, peso, medidas, nutrición y fotos de progreso, y cambiar tus rutinas o crearte nuevas. Cuando lo haga, te llegan solas.</p>
+        ${chats.some(c => c.id === chatId) ? `<a class="btn primary block center" href="#/chat/${chatId}">Abrir chat</a>` : ''}
+      </section>
+      <button class="btn ghost block danger-text" data-action="coach-unlink" style="margin-top:24px">Desvincular coach</button>`;
+  }
+  return `${header('Tengo coach', { back: true })}
+    <section class="card stack">
+      <p style="margin:0">Pídele a tu coach su <strong>código de coach</strong> y escríbelo aquí.</p>
+      <p class="muted small" style="margin:0">Tu coach podrá ver todos tus datos (entrenamientos, peso, medidas, nutrición y fotos) y cambiar tus rutinas. Puedes desvincularlo cuando quieras.</p>
+      <form class="stack" data-form="coach-code" novalidate>
+        <div class="add-row">
+          <input name="code" placeholder="Código (ej. K7P-9XQ)" autocomplete="off" autocapitalize="characters" maxlength="9" aria-label="Código de coach">
+          <button class="btn primary">Vincular</button>
+        </div>
+        <p class="form-msg" hidden></p>
+      </form>
+      <button class="btn block" data-action="coach-paste">📋 Pegar código</button>
+    </section>`;
+}
+
 // ---------- Social: gymbros y chats 1 a 1 ----------
 // Cada uno tiene un código de gymbro (invites/{código}). Quien lo usa crea el chat entre los dos (chats/{uidA_uidB}).
 let chats = [];               // chats con tus gymbros, en vivo
@@ -2304,6 +2644,7 @@ function startSocial(uid) {
   });
 }
 function stopSocial() {
+  stopCoach();
   stopChats(); stopChats = () => {};
   closeMessages();
   chats = []; chatsLoaded = false;
@@ -2336,6 +2677,7 @@ function viewSocial() {
       <a class="btn primary center" href="#/gymbro">+ Agregar gymbro</a>
       <a class="btn center" href="#/perfil/yo">Mi perfil</a>
     </div>
+    ${coachRows()}
     ${!chatsLoaded ? '<p class="empty">Cargando…</p>'
       : chatsError && !chats.length ? '<p class="empty">No se pudieron cargar tus chats. Revisa tu internet y vuelve a abrir la app.</p>'
       : list || '<p class="empty">Todavía no tienes gymbros. Toca "Agregar gymbro" y mándale tu link a un amigo.</p>'}`;
@@ -2953,7 +3295,7 @@ function scheduleProfile() {
   profileTimer = setTimeout(publishProfile, 4000);
 }
 async function publishProfile() {
-  if (!user || status !== 'ready' || !chats.length) return;
+  if (!user || status !== 'ready' || !chats.length || viewing) return;
   // Sin compartir: tus gymbros solo ven tu nombre y tu foto
   const data = shareProfile() ? myProfile() : { name: user.username || '', stats: { hidden: true, ...(myPhoto ? { photo: myPhoto } : {}) }, prs: [], recent: [] };
   const json = stable(data);
@@ -3796,13 +4138,13 @@ const progCmpBy = {};         // lo elegido en cada pose (para no perderlo al ca
 let progUid = null;           // dueño de lo cargado (por si cambia la sesión)
 
 async function loadProgress(force = false) {
-  if (progUid !== user.uid) { progList = null; progFull.clear(); progUid = user.uid; }
+  if (progUid !== dataUid()) { progList = null; progFull.clear(); progUid = dataUid(); }
   if ((progList && !force) || progLoading) return;
   progLoading = true; progError = false;
-  const uid = user.uid;
+  const uid = dataUid();
   try {
     const list = await withTimeout(cloud.listProgress(uid));
-    if (!user || user.uid !== uid) { progLoading = false; return; }
+    if (!user || dataUid() !== uid) { progLoading = false; return; }
     progList = list.filter(x => safePhoto(x.url)).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.id < b.id ? -1 : 1));
   } catch (e) { progError = true; }
   progLoading = false;
@@ -3811,10 +4153,10 @@ async function loadProgress(force = false) {
 function needFull(id) {
   if (progFull.has(id)) return;
   progFull.set(id, 'loading');
-  const uid = user.uid;
+  const uid = dataUid();
   cloud.getProgressFull(uid, id).then(url => {
-    progFull.set(id, safePhoto(url) || 'error');
-  }, () => progFull.set(id, 'error')).then(() => { if (user && user.uid === uid && routeParts()[0] === 'fotos') refresh(); });
+    if (dataUid() === uid) progFull.set(id, safePhoto(url) || 'error');
+  }, () => progFull.set(id, 'error')).then(() => { if (user && dataUid() === uid && routeParts()[0] === 'fotos') refresh(); });
 }
 // La foto grande si ya llegó; mientras, la miniatura
 const progSrc = x => { needFull(x.id); const f = progFull.get(x.id); return f && f !== 'loading' && f !== 'error' ? f : x.url; };
@@ -4274,6 +4616,11 @@ function render() {
     return;
   }
   if (authScreen) { location.replace('#/'); return; }
+  // Viendo a un alumno: Social, Cuenta, etc. vuelven a tus datos; entrenar o editar sus entrenos no se puede
+  if (viewing && !VIEW_OK.includes(screen)) {
+    if (VIEW_EXIT.includes(screen)) exitViewing();
+    else { notice(viewOnlyMsg()); history.back(); return; }
+  }
 
   if (screen !== 'editar') editBuf = null;
   else if (!editBuf || editBuf.editOf !== arg) editBuf = makeEditBuf(arg);
@@ -4317,6 +4664,8 @@ function render() {
     case 'alimento': html = viewFoodForm(arg, routeParts()[2]); break;
     case 'dieta': html = viewDietEditor(arg); break;
     case 'social': html = viewSocial(); break;
+    case 'alumnos': html = viewStudents(); break;
+    case 'coach': html = viewMyCoach(); break;
     case 'gymbro': html = viewAddGymbro(); break;
     case 'chat': html = viewChat(arg); break;
     case 'perfil': html = viewProfile(arg); break;
@@ -4334,17 +4683,26 @@ function render() {
     default: html = viewHub();   // Inicio: sin pestañas
   }
   const stepsLeft = $app.querySelector('.steps')?.scrollLeft;   // fila de ejercicios del entrenamiento
-  const tip = tipHtml(screen, arg);
+  const tip = viewing ? '' : tipHtml(screen, arg);
   if (tip) {
     let at = html.indexOf('</header>') + '</header>'.length;
     const tabsAt = html.indexOf('<div class="range" role="tablist">', at);
     if (tabsAt >= 0 && !html.slice(at, tabsAt).trim()) at = html.indexOf('</div>', tabsAt) + '</div>'.length;
     html = html.slice(0, at) + tip + html.slice(at);
   }
-  if (!['entrenar', 'editar', 'chat'].includes(screen)) maybeAskSleep();
-  if (sleepAsk && !tourOpen && !['entrenar', 'editar', 'chat'].includes(screen)) html += sleepModal();
+  if (!viewing && !['entrenar', 'editar', 'chat'].includes(screen)) maybeAskSleep();
+  if (sleepAsk && !tourOpen && !viewing && !['entrenar', 'editar', 'chat'].includes(screen)) html += sleepModal();
   if (tourOpen) html += tourHtml();
+  if (viewing) html = viewBarHtml() + html;
+  document.body.classList.toggle('viewing', !!viewing);
   $app.innerHTML = html;
+  // Viendo a un alumno: fuera del editor de rutinas solo se mira (los buscadores sí funcionan)
+  if (viewing && screen !== 'rutina' && screen !== 'rutinas') {
+    $app.querySelectorAll('#app input, #app select, #app textarea').forEach(x => {
+      if (x.type === 'search' || /(-search|-q)$/.test(x.dataset.bind || '')) return;
+      x.disabled = true;
+    });
+  }
   const steps = $app.querySelector('.steps');
   if (steps) {
     const chip = steps.querySelector('.step.on');
@@ -4356,7 +4714,7 @@ function render() {
     historial: 'entreno', sesion: 'entreno', progreso: 'entreno', ejercicio: 'entreno',
     nutricion: 'nutricion', alimento: 'nutricion', dieta: 'nutricion', objetivo: 'nutricion',
     peso: 'cuerpo', grasa: 'cuerpo', pliegues: 'cuerpo', medidas: 'cuerpo', fotos: 'cuerpo',
-    social: 'social', gymbro: 'social', perfil: 'social', privacidad: 'social',
+    social: 'social', gymbro: 'social', perfil: 'social', privacidad: 'social', alumnos: 'social', coach: 'social',
   };
   tab = ['entrenar', 'editar', 'chat'].includes(screen) ? null : NAV[screen] || 'inicio';
   $tabs.hidden = !tab;
@@ -4365,6 +4723,7 @@ function render() {
   if (screen === 'progreso' && !arg && progressQuery) filterProgress();
   if (screen === 'nutricion' && arg === 'alimentos' && foodQuery) filterFoods();   // al volver, mantiene la búsqueda aplicada
   if (screen === 'gymbro') ensureInvite();
+  if (screen === 'alumnos' && coachOn()) ensureCoachCode();
   if (screen === 'chat') scrollChatBottom();
   paintTimer();
   paintQuiz();
@@ -5215,7 +5574,7 @@ function scheduleSync() {
 
 // Sube a la nube lo que cambió desde la última vez. Sin internet, Firebase espera y lo sube al volver.
 async function sync() {
-  if (!user || status !== 'ready') return;
+  if (!user || status !== 'ready' || viewing) return;
   if (syncing) { syncAgain = true; return; }
   syncing = true;
   const uid = user.uid;
@@ -5247,6 +5606,7 @@ async function sync() {
 
 // Cambios que llegan desde otro dispositivo. Si aquí hay cambios sin subir, ganan los de aquí.
 function applyRemoteMain(data) {
+  if (viewing) { viewing.queued.push(() => applyRemoteMain(data)); return; }   // se aplica al volver a tus datos
   const bw = data.bodyweight || [], sl = data.sleep || [], body = data.body || {}, plan = data.plan || null, sk = data.skinfolds || [], ms = data.measures || [], pgs = data.programs || [];
   const water = hasWater(data.water) ? { ...emptyWater(), ...data.water } : emptyWater();
   const remote = {
@@ -5269,6 +5629,7 @@ function applyRemoteMain(data) {
 }
 
 function applyRemoteWorkouts(changes, maxAt = 0) {
+  if (viewing) { viewing.queued.push(() => applyRemoteWorkouts(changes, maxAt)); return; }
   let changed = false;
   if (maxAt > (synced.wAt || 0)) synced.wAt = maxAt;
   for (const c of changes) {
@@ -5300,26 +5661,32 @@ function refresh() {
 // ---------- Sesión ----------
 let stopListening = () => {};
 
+// Arma los datos de la app con lo que llega de la nube (tuyos, o de un alumno si eres su coach)
+function dbFromCloud(main, workouts) {
+  const d = emptyDb();
+  if (main) {
+    d.routines = main.routines || [];
+    d.notes = main.notes || {};
+    d.bodyweight = main.bodyweight || [];
+    d.sleep = main.sleep || [];
+    d.skinfolds = main.skinfolds || [];
+    d.measures = main.measures || [];
+    d.programs = main.programs || [];
+    d.body = main.body || {};
+    d.plan = main.plan || null;
+    d.water = hasWater(main.water) ? { ...emptyWater(), ...main.water } : emptyWater();
+    d.nutrition = hasNutrition(main.nutrition) ? { ...emptyNutrition(), ...main.nutrition } : emptyNutrition();
+  }
+  d.workouts = workouts.sort(byDate);
+  return d;
+}
+
 // Primera vez en este teléfono: descarga todo desde la nube
 async function loadFromCloud() {
   const { main, workouts, wAt } = await cloud.fetchAll(user.uid);
-  db = emptyDb();
+  db = dbFromCloud(main, workouts);
   synced = emptySynced();
-  if (main) {
-    db.routines = main.routines || [];
-    db.notes = main.notes || {};
-    db.bodyweight = main.bodyweight || [];
-    db.sleep = main.sleep || [];
-    db.skinfolds = main.skinfolds || [];
-    db.measures = main.measures || [];
-    db.programs = main.programs || [];
-    db.body = main.body || {};
-    db.plan = main.plan || null;
-    db.water = hasWater(main.water) ? { ...emptyWater(), ...main.water } : emptyWater();
-    db.nutrition = hasNutrition(main.nutrition) ? { ...emptyNutrition(), ...main.nutrition } : emptyNutrition();
-    synced.main = stable(mainData());
-  }
-  db.workouts = workouts.sort(byDate);
+  if (main) synced.main = stable(mainData());
   for (const w of db.workouts) synced.w[w.id] = stable(w);
   synced.wAt = wAt || 0;
 }
@@ -5391,6 +5758,7 @@ async function handleUser(u) {
   persistLocal();
   stopListening = cloud.listen(u.uid, applyRemoteMain, applyRemoteWorkouts, synced.wAt || 0);
   startSocial(u.uid);
+  startCoach(u.uid);
   loadMyPhoto(u.uid);
   sync();
   render();
@@ -5480,11 +5848,61 @@ $app.addEventListener('click', async e => {
   if (!el || el.disabled) return;
   const { action, id } = el.dataset;
   const i = +el.dataset.i, j = +el.dataset.j;
+  if (viewing && !viewAllowed(action)) { notice(viewOnlyMsg()); return; }
 
   switch (action) {
     case 'back':
       goBack();
       break;
+
+    // Modo coach
+    case 'view-exit':
+      exitViewing();
+      break;
+    case 'coach-on':
+      setCoachMode(true);
+      break;
+    case 'coach-off':
+      if (await ask('¿Desactivar el modo coach? Tus alumnos siguen vinculados; los vuelves a ver al activarlo de nuevo.', 'Desactivar')) setCoachMode(false);
+      break;
+    case 'coach-send': {
+      const text = coachInviteText(me().body.coachCode);
+      if (navigator.share) navigator.share({ text }).catch(() => {});
+      else window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+      break;
+    }
+    case 'coach-copy':
+      navigator.clipboard.writeText(coachLink(me().body.coachCode))
+        .then(() => { el.textContent = 'Link copiado'; }, () => notice(`Link: ${coachLink(me().body.coachCode)}`));
+      break;
+    case 'coach-retry':
+      coachCodeError = false;
+      render();
+      break;
+    case 'student-view': {
+      const link = students.find(x => x.studentUid === el.dataset.uid);
+      if (link) viewStudent(link, el);
+      break;
+    }
+    case 'student-del': {
+      const link = students.find(x => x.studentUid === el.dataset.uid);
+      if (!link || !await ask(`¿Quitar a ${link.studentName || 'este alumno'} de tus alumnos? Dejarás de ver sus datos y de poder cambiar sus rutinas. Siguen siendo gymbros.`, 'Quitar')) return;
+      cloud.deleteCoachLink(link.studentUid).catch(() => notice('No se pudo quitar. Revisa tu internet e intenta de nuevo.'));
+      break;
+    }
+    case 'coach-unlink':
+      unlinkCoach();
+      break;
+    case 'coach-paste': {
+      let text = '';
+      try { text = await navigator.clipboard.readText(); } catch (e) { /* el teléfono no dejó leer lo copiado */ }
+      const f = $app.querySelector('[data-form="coach-code"]'), code = codeFromText(text);
+      if (!f) return;
+      if (!code) { f.elements.code.focus(); if (text.trim()) formMsg(f, 'Lo que copiaste no es un código de Desdel.'); return; }
+      f.elements.code.value = fmtCode(code);
+      linkCoachForm(f);
+      break;
+    }
 
     case 'start-free':
       startFree();
@@ -6615,7 +7033,9 @@ $app.addEventListener('keydown', e => {
 $app.addEventListener('submit', async e => {
   e.preventDefault();
   const f = e.target;
+  if (viewing && !['new-ex', 'new-routine'].includes(f.dataset.form)) { notice(viewOnlyMsg()); return; }
   switch (f.dataset.form) {
+    case 'coach-code': linkCoachForm(f); return;
     case 'login':
     case 'register': submitAuth(f); return;
     case 'profile': saveProfileData(f); return;
@@ -6710,15 +7130,17 @@ if (inAppName && !isInstalled && sessionStorage.getItem('desdel-inapp-ok') !== '
   u.searchParams.delete('ig'); u.hash = '';
   inApp = { app: inAppName, url: u.href, android: /Android/i.test(navigator.userAgent) || (isLocal && linkParams.has('android')) };
 }
-const linkCode = linkParams.get('r') || linkParams.get('g');   // r = rutina o dieta, g = gymbro
+const linkCode = linkParams.get('r') || linkParams.get('g') || linkParams.get('k');   // r = rutina o dieta, g = gymbro, k = coach
 if (linkCode) {
   // En Safari de iPhone (fuera de la app) se muestra el código para copiarlo; en local se prueba con ?ios
   if ((isIPhone && !isInstalled) || (isLocal && linkParams.has('ios'))) {
     handoffCode = normCode(linkCode);
     handoffGymbro = linkParams.has('g');
+    handoffCoach = linkParams.has('k');
   } else localStorage.setItem(PENDING_IMPORT, normCode(linkCode));
   linkParams.delete('r');
   linkParams.delete('g');
+  linkParams.delete('k');
   const qs = linkParams.toString();
   history.replaceState(null, '', `${location.pathname}${qs ? `?${qs}` : ''}${location.hash}`);
 }

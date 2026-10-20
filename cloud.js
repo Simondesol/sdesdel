@@ -8,6 +8,9 @@
 //   invites/{código}            → código de gymbro { ownerUid, ownerName, createdAt }
 //   chats/{uidA_uidB}           → chat entre dos gymbros { members, names, via, last, createdAt }
 //   chats/{id}/messages/{id}    → mensaje { from, at, type, text | diet | routine }
+//   coachCodes/{código}         → código de coach { ownerUid, ownerName, createdAt }
+//   coachLinks/{uidAlumno}      → alumno vinculado a su coach { studentUid, studentName, coachUid, coachName, via, since, summary }
+//   coachLinks/{uid}/edits/{id} → rutina cambiada por el coach { routine | deleted, at, by } (la app del alumno la aplica y la borra)
 import { firebaseConfig } from './firebase-config.js';
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.8.0/firebase-app.js';
 import {
@@ -202,4 +205,39 @@ export function deleteProgress(uid, id) {
   batch.delete(doc(progThumbs(uid), id));
   batch.delete(progFullRef(uid, id));
   return batch.commit();
+}
+
+// ---------- Modo coach ----------
+// El alumno crea el vínculo con el código del coach; desde ahí el coach puede leer sus datos (solo leer)
+// y dejarle rutinas cambiadas en coachLinks/{alumno}/edits, que la app del alumno aplica sola.
+const linkRef = uid => doc(fs, 'coachLinks', uid);
+const editsRef = uid => collection(fs, 'coachLinks', uid, 'edits');
+export const createCoachCode = (code, data) => setDoc(doc(fs, 'coachCodes', code), { ...data, createdAt: serverTimestamp() });
+export async function getCoachCode(code) {
+  const snap = await getDoc(doc(fs, 'coachCodes', code));
+  return snap.exists() ? snap.data() : null;
+}
+export const createCoachLink = (uid, data) => setDoc(linkRef(uid), data);
+export const updateCoachLink = (uid, data) => updateDoc(linkRef(uid), data);
+export const deleteCoachLink = uid => deleteDoc(linkRef(uid));
+// Tu propio vínculo (como alumno): null si no tienes coach
+export function listenCoachLink(uid, cb) {
+  return onSnapshot(linkRef(uid), snap => cb(snap.exists() ? snap.data() : null), () => cb(null));
+}
+// Tus alumnos (como coach)
+export function listenStudents(uid, cb, onError = () => {}) {
+  return onSnapshot(query(collection(fs, 'coachLinks'), where('coachUid', '==', uid)),
+    snap => cb(snap.docs.map(d => d.data())), onError);
+}
+export const putCoachEdit = (uid, id, data) => setDoc(doc(editsRef(uid), id), data);
+export const deleteCoachEdit = (uid, id) => deleteDoc(doc(editsRef(uid), id));
+export async function listCoachEdits(uid) {
+  const snap = await getDocs(editsRef(uid));
+  return snap.docs.map(d => ({ ...d.data(), id: d.id }));
+}
+export function listenCoachEdits(uid, cb) {
+  return onSnapshot(editsRef(uid), snap => {
+    if (snap.metadata.hasPendingWrites) return;
+    cb(snap.docs.map(d => ({ ...d.data(), id: d.id })));
+  }, () => {});
 }
