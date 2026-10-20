@@ -1051,3 +1051,5 @@ body.viewing :is([data-action="start"], [data-action="start-free"], [data-action
   form[data-form="bodyweight"], form[data-form="sleep"], section:has(> form[data-form="sleep"]), form[data-form="bf"], form[data-form="measures"], form[data-form="water-custom"]) { display: none !important; }
 body.viewing .hub-btns:empty { display: none; }
 body.viewing-chat [data-action="attach"] { display: none !important; }
+/* Viendo a un alumno: sin Social abajo (se sale con Salir) */
+body.viewing #tabs [data-tab="social"] { display: none; }

@@ -285,9 +285,8 @@ function viewHub() {
     ${entrenoCard()}
     ${checkinCard()}
 
-    ${nutritionCard()}
-
-    ${viewing ? bodyweightCard() : waterSleepCards(ml, goal, streak)}
+    ${viewing ? `<div class="hub-pair">${nutritionCard()}${bodyweightCard()}</div>` : `${nutritionCard()}
+    ${waterSleepCards(ml, goal, streak)}`}
 
     ${weekCard()}
     ${viewing ? `<button class="btn ghost block danger-text" data-action="student-del" data-uid="${esc(viewing.uid)}" style="margin-top:16px">Quitar a ${esc(viewing.name)} de mis alumnos</button>` : ''}
@@ -747,6 +746,8 @@ function paintDietTotals(diet) {
 
 
 function nutritionCard() {
+  // Mirando a un alumno: solo el acceso (si cumplió la dieta se ve en su semana)
+  if (viewing) return `<a class="card hub" href="#/nutricion"><div class="hub-top"><span class="hub-icon">🍽️</span><strong>Nutrición</strong><span class="chev">›</span></div></a>`;
   const t = todayNutrition();
   return `<a class="card hub" href="#/nutricion">
     <div class="hub-top"><span class="hub-icon">🍽️</span><strong>Nutrición</strong></div>
