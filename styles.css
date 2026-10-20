@@ -1023,7 +1023,7 @@ p.reps-by { display: block; }
 .student-alert { color: var(--danger); font-size: 13px; font-weight: 600; }
 .view-bar { position: sticky; top: 0; z-index: 7; display: flex; align-items: center; gap: 10px; margin: 0 -16px; padding: 8px 16px;
   background: var(--surface); color: var(--text); border-bottom: 2px solid var(--accent); }
-.view-bar strong { color: var(--accent); }
+.view-bar strong { font-size: 18px; }
 .view-bar .grow { display: grid; gap: 1px; }
 .view-bar .muted { color: var(--muted); }
 body.viewing header.bar { top: var(--viewbar, 52px); }

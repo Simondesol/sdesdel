@@ -278,7 +278,7 @@ function viewHub() {
       <button class="btn primary" data-action="tour-open">Ver tutorial</button>
       <button class="icon small" data-action="tour-offer-no" aria-label="No mostrar">✕</button>
     </section>`;
-  return `${viewing ? header(viewing.name, {}) : header('Desdel', { sub: 'Entrena. Anota. Supera.', right: GEAR })}
+  return `${viewing ? '' : header('Desdel', { sub: 'Entrena. Anota. Supera.', right: GEAR })}
     <div class="hub-wrap">
     ${tourOffer}
     ${viewing ? studentCheckinsCard() : socialCard()}
@@ -2298,7 +2298,7 @@ const viewAllowed = action => VIEW_SAFE.has(action) || action === 'student-del'
   || (['programas', 'miprograma', 'listos', 'programa'].includes(routeParts()[0]) && VIEW_PROGRAM.has(action))
   || (['nutricion', 'dieta', 'objetivo'].includes(routeParts()[0]) && VIEW_NUTRI.has(action));
 const viewOnlyMsg = () => `Estás viendo los datos de ${viewing.name}. Puedes ver todo y cambiar sus rutinas, programas y dieta, pero no anotar ni borrar sus registros.`;
-const viewBarHtml = () => `<div class="view-bar"><span class="grow"><span>Viendo a <strong>${esc(viewing.name)}</strong></span><span class="muted small">Tus cambios le llegan solos</span></span>
+const viewBarHtml = () => `<div class="view-bar"><span class="grow"><span class="muted small">Modo coach</span><strong>${esc(viewing.name)}</strong></span>
   ${chats.some(c => c.id === [user.uid, viewing.uid].sort().join('_')) ? `<a class="btn small-btn" href="#/chat/${[user.uid, viewing.uid].sort().join('_')}">Chat</a>` : ''}
   <button class="btn small-btn" data-action="view-exit">Salir</button></div>`;
 
