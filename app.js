@@ -181,7 +181,7 @@ function entrenoCard() {
       : '<button class="btn primary block" data-action="start-free">Entrenar sin rutina</button>';
   }
   else if (plan === null) body = `<span class="muted">Hoy: descanso</span>
-      <div class="hub-btns"><a class="btn center" href="#/rutinas">Entrenar igual</a></div>`;
+      ${viewing ? '' : '<div class="hub-btns"><a class="btn center" href="#/rutinas">Entrenar igual</a></div>'}`;
   else if (trainedOn(t, plan.id)) body = `<span class="muted">Hoy ya entrenaste <strong>${esc(plan.name)}</strong></span>`;
   else body = `<div class="hub-value">Hoy te toca: <strong>${esc(plan.name)}</strong></div>
       <button class="btn primary" data-action="start" data-id="${plan.id}" ${plan.exercises.length ? '' : 'disabled'}>Empezar</button>`;
@@ -246,13 +246,27 @@ function weekCard() {
         <div class="range wk-range" role="group" aria-label="Semana">${[[0, 'Esta'], [1, 'Pasada']].map(([w, label]) =>
           `<button class="${w === weekOffset ? 'on' : ''}" data-action="week-sum" data-w="${w}">${label}</button>`).join('')}</div></div>
       <div class="wk-train">
-        <span><strong>${s.planned != null ? `${s.done} de ${s.planned}` : s.done}</strong> ${s.planned != null ? 'entrenos del plan' : s.done === 1 ? 'entreno' : 'entrenos'}</span>
+        <span><strong>${s.planned ? `${s.done} de ${s.planned}` : s.done}</strong> ${s.planned ? 'entrenos del plan' : s.done === 1 ? 'entreno' : 'entrenos'}</span>
         <div class="wk-days" aria-hidden="true">${s.days.map((d, k) =>
           `<span class="wk-day ${d.trained ? 'done' : d.planned && !d.future ? 'missed' : d.planned ? 'planned' : ''}">${WEEK_LETTERS[k]}</span>`).join('')}</div>
       </div>
       ${stats.length ? `<div class="wk-stats">${stats.join('')}</div>` : ''}
       ${s.prs.length ? `<span class="muted small">${s.prs.length === 1 ? 'Récord' : `${s.prs.length} récords`}: <strong class="wk-prs">${s.prs.map(esc).join(', ')}</strong></span>` : ''}
     </section>`;
+}
+
+// Inicio: agua, peso y sueño (mirando a un alumno solo se muestra su peso; el resto está en el resumen semanal)
+function waterSleepCards(ml, goal, streak) {
+  return `<div class="card hub">
+      <a class="hub-top" href="#/agua"><span class="hub-icon">💧</span><strong>Agua</strong>${streak >= 2 ? `<span class="badge on" title="Días seguidos cumpliendo tu meta">🔥 ${streak}</span>` : ''}</a>
+      <a class="hub-value" href="#/agua"><strong>${fmtL(ml)} / ${fmtL(goal)}</strong> L${ml >= goal ? ' · ¡Meta cumplida! 🎉' : ''}</a>
+      ${bar(ml, goal)}
+      <div class="ex-actions">
+        ${waterQuick().map(q => `<button class="btn" data-action="water-add" data-ml="${q.ml}">+${q.ml} ml</button>`).join('')}
+      </div>
+    </div>
+
+    <div class="hub-pair">${bodyweightCard()}${sleepCard()}</div>`;
 }
 
 function viewHub() {
@@ -263,7 +277,7 @@ function viewHub() {
       <button class="btn primary" data-action="tour-open">Ver tutorial</button>
       <button class="icon small" data-action="tour-offer-no" aria-label="No mostrar">✕</button>
     </section>`;
-  return `${viewing ? header(viewing.name, { sub: 'Así ve su app' }) : header('Desdel', { sub: 'Entrena. Anota. Supera.', right: GEAR })}
+  return `${viewing ? header(viewing.name, {}) : header('Desdel', { sub: 'Entrena. Anota. Supera.', right: GEAR })}
     <div class="hub-wrap">
     ${tourOffer}
     ${viewing ? studentCheckinsCard() : socialCard()}
@@ -273,16 +287,7 @@ function viewHub() {
 
     ${nutritionCard()}
 
-    <div class="card hub">
-      <a class="hub-top" href="#/agua"><span class="hub-icon">💧</span><strong>Agua</strong>${streak >= 2 ? `<span class="badge on" title="Días seguidos cumpliendo tu meta">🔥 ${streak}</span>` : ''}</a>
-      <a class="hub-value" href="#/agua"><strong>${fmtL(ml)} / ${fmtL(goal)}</strong> L${ml >= goal ? ' · ¡Meta cumplida! 🎉' : ''}</a>
-      ${bar(ml, goal)}
-      <div class="ex-actions">
-        ${waterQuick().map(q => `<button class="btn" data-action="water-add" data-ml="${q.ml}">+${q.ml} ml</button>`).join('')}
-      </div>
-    </div>
-
-    <div class="hub-pair">${bodyweightCard()}${sleepCard()}</div>
+    ${viewing ? bodyweightCard() : waterSleepCards(ml, goal, streak)}
 
     ${weekCard()}
     ${viewing ? `<button class="btn ghost block danger-text" data-action="student-del" data-uid="${esc(viewing.uid)}" style="margin-top:16px">Quitar a ${esc(viewing.name)} de mis alumnos</button>` : ''}
