@@ -2544,7 +2544,6 @@ function viewStudents() {
       ${code ? `<div class="code">${fmtCode(code)}</div>
         <div class="ex-actions">
           <button class="btn primary" data-action="coach-send">Enviar</button>
-          <button class="btn" data-action="coach-copy">Copiar link</button>
         </div>`
       : coachCodeError ? '<p>No se pudo crear tu código. Revisa tu internet.</p><button class="btn primary" data-action="coach-retry">Reintentar</button>'
       : '<p class="muted">Creando tu código…</p>'}
@@ -2725,7 +2724,6 @@ function viewAddGymbro() {
       ${code ? `<div class="code">${fmtCode(code)}</div>
         <div class="ex-actions">
           <button class="btn primary" data-action="send-invite">Enviar</button>
-          <button class="btn" data-action="copy-invite">Copiar link</button>
         </div>`
       : inviteError ? '<p>No se pudo crear tu código. Revisa tu internet.</p><button class="btn primary" data-action="make-invite">Reintentar</button>'
       : '<p class="muted">Creando tu código…</p>'}
@@ -5875,10 +5873,6 @@ $app.addEventListener('click', async e => {
       else window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
       break;
     }
-    case 'coach-copy':
-      navigator.clipboard.writeText(coachLink(me().body.coachCode))
-        .then(() => { el.textContent = 'Link copiado'; }, () => notice(`Link: ${coachLink(me().body.coachCode)}`));
-      break;
     case 'coach-retry':
       coachCodeError = false;
       render();
@@ -6761,10 +6755,6 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       else window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
       break;
     }
-    case 'copy-invite':
-      navigator.clipboard.writeText(inviteLink(inviteCode()))
-        .then(() => { el.textContent = 'Link copiado'; }, () => notice(`Link: ${inviteLink(inviteCode())}`));
-      break;
     case 'attach':
       attach = attach ? null : 'menu';
       render();
