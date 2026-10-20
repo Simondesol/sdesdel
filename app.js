@@ -15,7 +15,7 @@ const $tabs = document.getElementById('tabs');
 const emptyWater = () => ({ goalMl: null, days: {} });   // days: { 'AAAA-MM-DD': [{ at, ml }] }
 // Nutrición: alimentos (valores por 100 g), dietas con comidas y el registro de comidas marcadas por día
 const emptyNutrition = () => ({ foods: [], diets: [], activeDietId: null, log: {} });
-const emptyDb = () => ({ routines: [], workouts: [], draft: null, notes: {}, bodyweight: [], body: {}, sleep: [], skinfolds: [], measures: [], programs: [], plan: null, water: emptyWater(), nutrition: emptyNutrition() });
+const emptyDb = () => ({ routines: [], workouts: [], draft: null, notes: {}, bodyweight: [], body: {}, sleep: [], skinfolds: [], measures: [], programs: [], plan: null, planLog: [], water: emptyWater(), nutrition: emptyNutrition() });
 const emptySynced = () => ({ main: null, w: {}, wAt: 0 });   // wAt: hasta cuándo tenemos los entrenamientos de la nube
 let db = emptyDb();
 let user = null;                 // { uid, email, username }
@@ -43,6 +43,7 @@ function persistLocal() {
 }
 function save() {
   if (viewing) { scheduleCoachEdits(); return; }   // viendo a un alumno: sus rutinas cambiadas se le envían
+  recordPlan();
   persistLocal(); scheduleSync(); scheduleProfile(); scheduleCoachSummary();
 }
 
@@ -210,7 +211,7 @@ function weekSummary(offset) {
     return { k, trained, planned: !!plan, future: k >= today };   // hoy todavía no cuenta como perdido
   });
   const done = db.workouts.filter(w => dayKeyOf(w.date) >= keys[0] && dayKeyOf(w.date) <= keys[6]);
-  const planned = db.plan ? days.filter(d => d.planned).length : null;
+  const planned = keys.some(k => planOn(k)) ? days.filter(d => d.planned).length : null;
 
   const avg = list => (list.length ? list.reduce((a, v) => a + v, 0) / list.length : null);
   const kg = avg(inWeek(db.bodyweight, keys).map(e => e.kg)), kgPrev = avg(inWeek(db.bodyweight, prevKeys).map(e => e.kg));
@@ -2842,7 +2843,7 @@ function checkinStats() {
   const avg = l => (l.length ? round1(l.reduce((a, v) => a + v, 0) / l.length) : null);
   return {
     workouts: db.workouts.filter(w => keys.includes(dayKeyOf(w.date))).length,
-    planned: db.plan ? keys.filter(k => plannedRoutine(k)).length : null,
+    planned: keys.some(k => planOn(k)) ? keys.filter(k => plannedRoutine(k)).length : null,
     kg: avg(db.bodyweight.filter(e => keys.includes(e.date)).map(e => e.kg)),
     kgPrev: avg(db.bodyweight.filter(e => prev.includes(e.date)).map(e => e.kg)),
     sleep: avg(db.sleep.filter(e => keys.includes(e.date)).map(e => e.h)),
@@ -3709,8 +3710,22 @@ function planWeekIndex(plan, date) {
   return ((diff % plan.weeks) + plan.weeks) % plan.weeks;
 }
 // Rutina que toca ese día: la rutina, null si es descanso, undefined si no tienes plan
+// Cuando cambias tu plan, el anterior queda guardado: los días pasados se comparan con el plan que tenías ese día
+let planSeen = null;   // tu plan la última vez que se guardó (JSON)
+function recordPlan() {
+  const j = stable(db.plan || null);
+  if (planSeen == null || j === planSeen) { planSeen = j; return; }
+  const t = todayKey(), log = db.planLog || (db.planLog = []), last = log[log.length - 1];
+  if (!last || last.until !== t) log.push({ until: t, plan: JSON.parse(planSeen) });   // varios cambios el mismo día: vale el de antes
+  if (log.length > 60) log.splice(0, log.length - 60);
+  planSeen = j;
+}
+function planOn(dateKey) {
+  if (dateKey < todayKey()) for (const e of db.planLog || []) if (dateKey < e.until) return e.plan;
+  return db.plan;
+}
 function plannedRoutine(dateKey) {
-  const p = db.plan;
+  const p = planOn(dateKey);
   if (!p) return undefined;
   const d = new Date(`${dateKey}T12:00:00`);
   const id = ((p.days[planWeekIndex(p, d)] || {}).r || [])[(d.getDay() + 6) % 7];
@@ -6074,6 +6089,7 @@ const mainData = () => ({
   ...(db.programs.length ? { programs: db.programs } : {}),
   ...(hasBody(db.body) ? { body: db.body } : {}),
   ...(db.plan ? { plan: db.plan } : {}),
+  ...(db.planLog && db.planLog.length ? { planLog: db.planLog } : {}),
   ...(hasWater(db.water) ? { water: db.water } : {}),
   ...(hasNutrition(db.nutrition) ? { nutrition: db.nutrition } : {}),
 });
@@ -6139,13 +6155,14 @@ function applyRemoteMain(data) {
     ...(pgs.length ? { programs: pgs } : {}),
     ...(hasBody(body) ? { body } : {}),
     ...(plan ? { plan } : {}),
+    ...(Array.isArray(data.planLog) && data.planLog.length ? { planLog: data.planLog } : {}),
     ...(hasWater(water) ? { water } : {}),
     ...(hasNutrition(data.nutrition) ? { nutrition: data.nutrition } : {}),
   };
   const r = stable(remote), local = stable(mainData());
   if (local !== synced.main) return;
   synced.main = r;
-  if (r !== local) { db.routines = remote.routines; db.notes = remote.notes; db.bodyweight = bw; db.sleep = sl; db.skinfolds = sk; db.measures = ms; db.programs = pgs; db.body = body; db.plan = plan; db.water = water; db.nutrition = hasNutrition(data.nutrition) ? { ...emptyNutrition(), ...data.nutrition } : emptyNutrition(); refresh(); }
+  if (r !== local) { db.routines = remote.routines; db.notes = remote.notes; db.bodyweight = bw; db.sleep = sl; db.skinfolds = sk; db.measures = ms; db.programs = pgs; db.body = body; db.plan = plan; db.planLog = data.planLog || []; planSeen = stable(plan || null); db.water = water; db.nutrition = hasNutrition(data.nutrition) ? { ...emptyNutrition(), ...data.nutrition } : emptyNutrition(); refresh(); }
   persistLocal();
 }
 
@@ -6195,6 +6212,7 @@ function dbFromCloud(main, workouts) {
     d.programs = main.programs || [];
     d.body = main.body || {};
     d.plan = main.plan || null;
+    d.planLog = main.planLog || [];
     d.water = hasWater(main.water) ? { ...emptyWater(), ...main.water } : emptyWater();
     d.nutrition = hasNutrition(main.nutrition) ? { ...emptyNutrition(), ...main.nutrition } : emptyNutrition();
   }
@@ -6272,6 +6290,7 @@ async function handleUser(u) {
   }
 
   status = 'ready';
+  planSeen = stable(db.plan || null);
   migrateLoosePlan();
   // Si el teléfono cerró la app en medio del entrenamiento, al abrirla vuelves a él (no al inicio)
   if (firstOpen && db.draft && routeParts()[0] === '') location.replace('#/entrenar');
