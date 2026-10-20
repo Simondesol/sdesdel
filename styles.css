@@ -1008,6 +1008,7 @@ p.reps-by { display: block; }
 .coach-row { display: flex; align-items: center; gap: 10px; margin: 0; color: inherit; text-decoration: none; }
 .coach-row .grow { display: grid; gap: 2px; }
 .coach-offer { border-style: dashed; }
+.coach-offer .btn { display: inline-flex; align-items: center; justify-content: center; flex: none; padding: 0 16px; }
 .coach-name { font-size: 20px; }
 .student { display: flex; align-items: center; gap: 6px; padding: 0 6px 0 0; }
 .student-main { flex: 1; display: flex; align-items: center; gap: 8px; padding: 12px 6px 12px 14px; background: none; border: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; }
