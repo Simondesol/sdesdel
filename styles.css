@@ -1044,3 +1044,10 @@ body.viewing header.bar { top: var(--viewbar, 52px); }
 .scale .chip { flex: 1; min-height: 40px; }
 .checkin-item { padding: 8px 0; border-bottom: 1px solid var(--border); display: grid; gap: 2px; }
 .checkin-item:last-child { border-bottom: 0; }
+/* Viendo a un alumno: fuera lo que es para anotar sus propios datos */
+body.viewing :is([data-action="start"], [data-action="start-free"], [data-action="water-add"], [data-action="water-del"], [data-action="water-edit"],
+  [data-action="del-sleep"], [data-action="del-measure"], [data-action="goal-edit"], [data-action="share-routine"], [data-action="share-diet"],
+  [data-action="sleep-set"], [data-k="agua-ajustes"], .routine-sort, .import-box, .skin-link, .extra-modes, .prog-add, a[href="#/alimento/nuevo"],
+  form[data-form="bodyweight"], form[data-form="sleep"], section:has(> form[data-form="sleep"]), form[data-form="bf"], form[data-form="measures"], form[data-form="water-custom"]) { display: none !important; }
+body.viewing .hub-btns:empty { display: none; }
+body.viewing-chat [data-action="attach"] { display: none !important; }

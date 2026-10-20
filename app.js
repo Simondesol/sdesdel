@@ -263,7 +263,7 @@ function viewHub() {
       <button class="btn primary" data-action="tour-open">Ver tutorial</button>
       <button class="icon small" data-action="tour-offer-no" aria-label="No mostrar">✕</button>
     </section>`;
-  return `${header('Desdel', { sub: 'Entrena. Anota. Supera.', right: GEAR })}
+  return `${viewing ? header(viewing.name, { sub: 'Así ve su app' }) : header('Desdel', { sub: 'Entrena. Anota. Supera.', right: GEAR })}
     <div class="hub-wrap">
     ${tourOffer}
     ${viewing ? studentCheckinsCard() : socialCard()}
@@ -2276,8 +2276,8 @@ const coachInviteText = code => `Vincúlate conmigo como tu coach en Desdel 💪
   `Si no se abre, abre Desdel y en Social → Tengo coach pega este código: ${fmtCode(code)}`;
 
 // Pantallas que se pueden mirar de un alumno; las de VIEW_EXIT te devuelven a tus datos
-const VIEW_OK = ['', 'rutinas', 'rutina', 'programas', 'miprograma', 'listos', 'programa', 'dieta', 'objetivo', 'historial', 'sesion', 'progreso', 'ejercicio', 'peso', 'grasa', 'medidas', 'fotos', 'nutricion', 'sueno', 'agua'];
-const VIEW_EXIT = ['social', 'chat', 'gymbro', 'perfil', 'privacidad', 'cuenta', 'alumnos', 'coach', 'asignar'];
+const VIEW_OK = ['', 'chat', 'rutinas', 'rutina', 'programas', 'miprograma', 'listos', 'programa', 'dieta', 'objetivo', 'historial', 'sesion', 'progreso', 'ejercicio', 'peso', 'grasa', 'medidas', 'fotos', 'nutricion', 'sueno', 'agua'];
+const VIEW_EXIT = ['social', 'gymbro', 'perfil', 'privacidad', 'cuenta', 'alumnos', 'coach', 'asignar'];
 // Lo que se puede tocar mirando a un alumno, y lo extra en el editor de rutinas
 const VIEW_SAFE = new Set(['back', 'view-exit', 'vid-toggle', 'info', 'toggle-sec', 'range', 'toggle-history', 'hist-month', 'hist-day', 'skin-view', 'measure-view',
   'prog-open', 'prog-close', 'prog-filter', 'prog-retry', 'week-sum', 'guide-view', 'guide-close', 'explore-zone', 'explore-open', 'explore-back', 'explore-close', 'go-ex', 'prev-ex', 'next-ex']);
@@ -2285,7 +2285,9 @@ const VIEW_ROUTINE = new Set(['reps-by', 'toggle-drop', 'toggle-bw', 'toggle-ss'
   'guide-pick', 'guide-change', 'guide-set', 'guide-pick-close', 'explore-list', 'explore-add', 'sugg-ex']);
 const VIEW_PROGRAM = new Set(['myprog-new', 'myprog-weeks', 'myprog-stop', 'myprog-use', 'myprog-del', 'prog-level', 'prog-days', 'prog-add', 'prog-add-one']);
 const VIEW_NUTRI = new Set(['diet-new', 'nutri-use', 'diet-link', 'diet-done', 'diet-del', 'meal-add', 'meal-dup', 'meal-del', 'item-del', 'item-mode', 'add-mode', 'pick-food', 'pace-dir', 'set-activity']);
-const viewAllowed = action => VIEW_SAFE.has(action) || action === 'student-del' || (routeParts()[0] === 'rutina' && VIEW_ROUTINE.has(action))
+const CHAT_BLOCK = new Set(['attach', 'attach-pick', 'attach-send', 'msg-add', 'gymbro-del']);   // usan tus datos: no mientras ves a un alumno
+const viewAllowed = action => VIEW_SAFE.has(action) || action === 'student-del'
+  || (routeParts()[0] === 'chat' && !CHAT_BLOCK.has(action)) || (routeParts()[0] === 'rutina' && VIEW_ROUTINE.has(action))
   || (['programas', 'miprograma', 'listos', 'programa'].includes(routeParts()[0]) && VIEW_PROGRAM.has(action))
   || (['nutricion', 'dieta', 'objetivo'].includes(routeParts()[0]) && VIEW_NUTRI.has(action));
 const viewOnlyMsg = () => `Estás viendo los datos de ${viewing.name}. Puedes ver todo y cambiar sus rutinas, programas y dieta, pero no anotar ni borrar sus registros.`;
@@ -2665,6 +2667,47 @@ function pushCoachEdits() {
   if (now.target !== v.base.target) put('target', { target: targetOf(db.body) });
   v.base = now;
   if (jobs.length) Promise.all(jobs).catch(() => notice(`No se pudo enviar el cambio a ${v.name}. Revisa tu internet.`));
+}
+
+// Mirando a un alumno, los textos de la app hablan de él ("Hoy a Juan le toca", "Programas de Juan")
+const POV = n => [
+  [/^Hoy te toca:/, `Hoy a ${n} le toca:`], [/^Hoy ya entrenaste /, `Hoy ya entrenó `], [/^Hoy: descanso$/, `Hoy ${n} descansa`],
+  [/^Entrenaste$/, 'Entrenó'], [/^Te toca$/, 'Le toca'], [/^Tu semana$/, `Semana de ${n}`], [/^Tu peso de hoy · último (.*)$/, 'Último peso: $1'], [/^Tu peso de hoy$/, 'Todavía no anota su peso'],
+  [/^Mis programas$/i, `Programas de ${n}`], [/^Mis dietas$/, 'Dietas'], [/^Mis alimentos$/, 'Alimentos'],
+  [/^Es el que estás usando: lo que cambies aquí se aplica a tu semana\.$/, `Es el que ${n} está usando: lo que cambies aquí se aplica a su semana.`],
+  [/^Para enviárselo a un alumno.*$/, ''],
+  [/^▲ superaste · = igualaste · ▼ bajo tu récord$/, '▲ superó · = igualó · ▼ bajo su récord'],
+  [/^Tu dieta tiene/, 'Su dieta tiene'], [/que tu objetivo/, 'que su objetivo'], [/^Tus kcal objetivo$/, `Kcal objetivo de ${n}`],
+  [/^Referencia para armar tu dieta$/, 'Referencia para armar su dieta'], [/^Para mantener tu peso$/, 'Para mantener su peso'],
+  [/^¿Qué quieres\?$/i, `¿Qué quiere ${n}?`], [/^Horas que dormiste cada noche$/, 'Horas que durmió cada noche'], [/^Te faltan/, 'Le faltan'],
+  [/^Fotos de progreso privadas: solo tú las ves\.$/, `Fotos de progreso de ${n}.`],
+  [/^Todavía no tienes fotos\..*$/, `${n} todavía no tiene fotos de progreso.`],
+  [/^Para ver tu FFMI falta tu % de grasa.*$/, 'Para ver su FFMI falta su % de grasa.'],
+  [/^Todavía no agregas alimentos propios\..*$/, `${n} no tiene alimentos propios.`],
+  [/^Cada día la app elige sola la dieta de la rutina que te toca en tu programa activo \(o la que entrenaste\), o la de descanso\.$/,
+    'Cada día la app elige sola la dieta de la rutina que le toca en su programa activo (o la que entrenó), o la de descanso.'],
+  [/^Aquí armas la rutina:.*$/, `Aquí armas la rutina de ${n}: ejercicios, series y repeticiones. Los pesos de cada serie los anota al entrenar.`],
+  [/^Elige tu nivel y cuántos días puedes entrenar\..*$/, `Elige el nivel y los días. Lo que añadas queda en los programas de ${n}.`],
+  [/^Añadir a mis programas$/, 'Añadir a sus programas'],
+  [/^Queda en Mis programas:.*$/, `Queda en los programas de ${n}. Cada ejercicio trae sus series, repeticiones, RIR, descanso y guía de técnica.`],
+  [/toca ✓ cuando comas/i, 'lo que marcó hoy'], [/^Lo que comas fuera de tu dieta se suma al día\.$/, 'Lo que comió fuera de su dieta.'],
+  [/^Todavía no tienes dietas\..*$/, `${n} todavía no tiene dietas. Toca "+ Crear dieta" para armarle una.`],
+  [/^Medidas de hoy con huincha.*$/, ''], [/^Hoy ya mediste con huincha.*$/, ''],
+  [/^Toca para anotar hoy · /, ''], [/^superaste ·$/, 'superó ·'], [/^igualaste ·$/, 'igualó ·'], [/^bajo tu récord$/, 'bajo su récord'],
+  [/la rutina que te toca en tu$/, 'la rutina que le toca en su'], [/^\(o la que entrenaste\), o la de descanso\./, '(o la que entrenó), o la de descanso.'],
+  [/^Desdel incluye \d+ alimentos comunes.*$/, ''],
+  [/según cómo cambie tu peso/, 'según cómo cambie su peso'],
+];
+function povTexts() {
+  const rules = POV(viewing.name), walk = document.createTreeWalker($app, NodeFilter.SHOW_TEXT);
+  for (let t = walk.nextNode(); t; t = walk.nextNode()) {
+    if (t.parentElement.closest('.view-bar, [data-form="coach-comment"]')) continue;
+    const raw = t.nodeValue, txt = raw.trim();
+    if (!txt) continue;
+    let v = txt;
+    for (const [re, to] of rules) v = v.replace(re, to);
+    if (v !== txt) t.nodeValue = raw.replace(txt, v);
+  }
 }
 
 // Comentario del coach sobre un entreno: el coach lo escribe mirando al alumno; el alumno lo ve en ese entreno
@@ -5115,12 +5158,14 @@ function render() {
   if (!viewing && !['entrenar', 'editar', 'chat'].includes(screen)) maybeAskSleep();
   if (sleepAsk && !tourOpen && !viewing && !['entrenar', 'editar', 'chat'].includes(screen)) html += sleepModal();
   if (tourOpen) html += tourHtml();
-  if (viewing) html = viewBarHtml() + html;
-  document.body.classList.toggle('viewing', !!viewing);
+  if (viewing && screen !== 'chat') html = viewBarHtml() + html;
+  document.body.classList.toggle('viewing', !!viewing && screen !== 'chat');
+  document.body.classList.toggle('viewing-chat', !!viewing && screen === 'chat');   // su chat: sin enviar tus rutinas o dietas
   $app.innerHTML = html;
-  if (viewing) document.body.style.setProperty('--viewbar', `${$app.querySelector('.view-bar').offsetHeight}px`);   // el título queda bajo la barra azul
+  if (viewing && screen !== 'chat') document.body.style.setProperty('--viewbar', `${$app.querySelector('.view-bar').offsetHeight}px`);   // el título queda bajo la barra azul
   // Viendo a un alumno: fuera del editor de rutinas solo se mira (los buscadores sí funcionan)
-  if (viewing && !['rutina', 'rutinas', 'miprograma', 'dieta', 'objetivo'].includes(screen)) {
+  if (viewing && screen !== 'chat') povTexts();
+  if (viewing && !['rutina', 'rutinas', 'miprograma', 'dieta', 'objetivo', 'chat'].includes(screen)) {
     $app.querySelectorAll('#app input, #app select, #app textarea').forEach(x => {
       if (x.type === 'search' || /(-search|-q)$/.test(x.dataset.bind || '') || x.closest('[data-form="coach-comment"]')) return;
       x.disabled = true;
@@ -7492,7 +7537,7 @@ $app.addEventListener('keydown', e => {
 $app.addEventListener('submit', async e => {
   e.preventDefault();
   const f = e.target;
-  if (viewing && !['new-ex', 'new-routine', 'coach-comment', 'add-item'].includes(f.dataset.form)) { notice(viewOnlyMsg()); return; }
+  if (viewing && !['new-ex', 'new-routine', 'coach-comment', 'add-item', 'chat-send'].includes(f.dataset.form)) { notice(viewOnlyMsg()); return; }
   switch (f.dataset.form) {
     case 'coach-code': linkCoachForm(f); return;
     case 'coach-comment': saveCoachComment(f); return;
