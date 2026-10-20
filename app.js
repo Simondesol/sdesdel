@@ -2832,7 +2832,17 @@ function viewAssign() {
 
 // =============== Check-in semanal (lo envía el alumno, lo lee el coach) ===============
 let checkinDraft = {};
-const CHECK_Q = [['energy', 'Energía', 'muy baja', 'muy alta'], ['hunger', 'Hambre', 'nada', 'mucha'], ['recovery', 'Recuperación', 'muy cansado o adolorido', 'muy recuperado']];
+const CHECK_Q = [
+  ['energy', 'Energía', 'muy baja', 'muy alta'],
+  ['sleepQ', 'Calidad del sueño', 'muy mala', 'muy buena'],
+  ['recovery', 'Recuperación', 'muy cansado o adolorido', 'muy recuperado'],
+  ['hunger', 'Hambre', 'nada', 'mucha'],
+  ['stress', 'Estrés', 'nada', 'mucho'],
+  ['motivation', 'Motivación', 'nada', 'mucha'],
+  ['diet', 'Cumplimiento de la dieta', 'nada', 'al 100%'],
+];
+// Fotos de progreso: la más reciente (para recordar las del mes en el check-in)
+const lastPhotoDate = () => (progList && progList.length ? progList[progList.length - 1].date : null);
 const lastCheckinAt = () => (myCoach && myCoach.summary && myCoach.summary.lastCheckin) || 0;
 const checkinSnoozeKey = () => `desdel-checkin-despues-${user.uid}`;
 const checkinDue = () => !!myCoach && !viewing && Date.now() - lastCheckinAt() > 6 * 864e5 && localStorage.getItem(checkinSnoozeKey()) !== todayKey();
@@ -2866,12 +2876,19 @@ function viewCheckin() {
     location.replace('#/'); return '';
   }
   const st = checkinStats();
+  if (!progError) loadProgress();   // para saber cuándo subiste tus últimas fotos
+  const ph = lastPhotoDate(), phDays = ph ? daysSince(ph) : null;
+  const photos = progList == null ? ''
+    : ph && phDays < 28 ? `<section class="card checkin-photos"><span class="grow">📸 Fotos del mes ✓<br><span class="muted small">Las últimas son del ${fmtDMY(ph)}</span></span></section>`
+    : `<section class="card checkin-photos"><span class="grow"><strong>📸 Toca tus fotos del mes</strong><br><span class="muted small">Frente, perfil y espalda, con la misma luz y ropa. Tu coach las ve en tus Fotos.</span></span>
+        <a class="btn primary small-btn" href="#/fotos">Ir a Fotos</a></section>`;
   const scale = ([k, label, lo, hi]) => `<div class="field"><span>${label}</span>
       <div class="scale">${[1, 2, 3, 4, 5].map(v => `<button type="button" class="chip toggle ${checkinDraft[k] === v ? 'on' : ''}" data-action="checkin-set" data-k="${k}" data-v="${v}">${v}</button>`).join('')}</div>
       <span class="muted small">1 = ${lo} · 5 = ${hi}</span></div>`;
   return `${header('Check-in semanal', { back: true, sub: `Para ${myCoach.coachName || 'tu coach'}` })}
     <section class="card stack"><strong>Tus últimos 7 días</strong><span class="muted">${statsText(st)}</span>
       <span class="muted small">Se calcula solo con lo que anotaste.</span></section>
+    ${photos}
     <form class="stack" data-form="checkin" novalidate>
       <section class="card stack">${CHECK_Q.map(scale).join('')}</section>
       <label class="field"><span>¿Algo que contarle a tu coach?</span>
@@ -2882,7 +2899,8 @@ function viewCheckin() {
 }
 async function sendCheckin(f) {
   if (CHECK_Q.some(([k]) => !checkinDraft[k])) return formMsg(f, 'Elige un número (1 a 5) en cada pregunta.');
-  const data = { at: Date.now(), date: todayKey(), ...checkinStats(), ...Object.fromEntries(CHECK_Q.map(([k]) => [k, checkinDraft[k]])), note: f.elements.note.value.trim() };
+  const data = { at: Date.now(), date: todayKey(), ...checkinStats(), ...Object.fromEntries(CHECK_Q.map(([k]) => [k, checkinDraft[k]])), note: f.elements.note.value.trim(),
+    ...(lastPhotoDate() ? { photoAt: lastPhotoDate() } : {}) };
   await busy(f.querySelector('button'), 'Enviando…', async () => {
     try {
       await withTimeout(cloud.putCheckin(user.uid, todayKey(), data));
@@ -2908,14 +2926,24 @@ function markCheckinSeen(link) {
 const checkinNew = link => { const at = (link.summary || {}).lastCheckin || 0; return at && seenMap()[link.studentUid] !== at; };
 function studentCheckinsCard() {
   const list = viewing.checkins || [];
-  const item = c => `<div class="checkin-item">
+  const arrow = (v, before) => (before == null || v == null || v === before ? '' : `<span class="ck-arrow ${v > before ? 'up' : 'down'}">${v > before ? '↑' : '↓'}${before}</span>`);
+  const item = (c, k) => {
+    const prev = list[k + 1] || {};
+    const answers = CHECK_Q.filter(([q]) => c[q] != null).map(([q, label]) =>
+      `<span class="ck-chip"><span class="muted">${label}</span><strong>${c[q]}</strong>${arrow(c[q], prev[q])}</span>`).join('');
+    const newPhotos = c.photoAt && c.photoAt !== prev.photoAt;
+    return `<div class="checkin-item">
       <div class="coach-log-head"><span class="grow"><strong>${fmtDMY(c.date || c.id)}</strong></span><span class="muted small">${daysAgo(new Date(c.at).toISOString())}</span></div>
-      <div class="small">Energía ${c.energy}/5 · Hambre ${c.hunger}/5 · Recuperación ${c.recovery}/5</div>
+      <div class="ck-grid">${answers}</div>
       <div class="muted small">${statsText(c)}</div>
+      ${newPhotos ? `<a class="ck-photos" href="#/fotos">📸 Fotos nuevas del ${fmtDMY(c.photoAt)} · Ver ›</a>` : ''}
       ${c.note ? `<p class="coach-comment-text">${esc(c.note)}</p>` : ''}
     </div>`;
+  };
   return `<section class="card stack"><strong>Check-ins de ${esc(viewing.name)}</strong>
-    ${list.length ? list.slice(0, 3).map(item).join('') : '<span class="muted small">Todavía no envía check-ins. Le aparece uno a la semana en su Inicio.</span>'}</section>`;
+    ${list.length ? item(list[0], 0) : '<span class="muted small">Todavía no envía check-ins. Le aparece uno a la semana en su Inicio.</span>'}
+    ${list.length > 1 ? `<details class="ck-older"><summary>Ver anteriores (${Math.min(list.length - 1, 4)})</summary>${list.slice(1, 5).map((c, k) => item(c, k + 1)).join('')}</details>` : ''}
+    ${list.length ? '<span class="muted small">↑↓ = cómo cambió desde su check-in anterior (el número es el de antes).</span>' : ''}</section>`;
 }
 
 // Alumno: vincularse con un coach
@@ -4664,7 +4692,7 @@ async function loadProgress(force = false) {
     progList = list.filter(x => safePhoto(x.url)).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.id < b.id ? -1 : 1));
   } catch (e) { progError = true; }
   progLoading = false;
-  if (routeParts()[0] === 'fotos') refresh();
+  if (['fotos', 'checkin'].includes(routeParts()[0])) refresh();
 }
 function needFull(id) {
   if (progFull.has(id)) return;

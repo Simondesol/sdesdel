@@ -92,7 +92,7 @@ service cloud.firestore {
       match /checkins/{cid} {
         allow read: if request.auth != null && (request.auth.uid == studentUid || isCoachOf(studentUid));
         allow create, update: if request.auth != null && request.auth.uid == studentUid
-          && request.resource.data.keys().hasOnly(['at', 'date', 'workouts', 'planned', 'kg', 'kgPrev', 'sleep', 'energy', 'hunger', 'recovery', 'note'])
+          && request.resource.data.keys().hasOnly(['at', 'date', 'workouts', 'planned', 'kg', 'kgPrev', 'sleep', 'energy', 'hunger', 'recovery', 'sleepQ', 'stress', 'motivation', 'diet', 'photoAt', 'note'])
           && (!('note' in request.resource.data) || request.resource.data.note.size() <= 1500);
         allow delete: if request.auth != null && request.auth.uid == studentUid;
       }

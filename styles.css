@@ -1061,3 +1061,13 @@ body.viewing #tabs [data-tab="social"] { display: none; }
 .invite-row strong { font-size: 20px; letter-spacing: .08em; }
 .invite-row .small-btn { flex: none; display: inline-flex; align-items: center; padding: 0 14px; }
 button.wk-day { font-family: inherit; border: 0; cursor: pointer; padding: 0; }
+/* Check-in semanal */
+.checkin-photos { display: flex; align-items: center; gap: 10px; }
+.checkin-photos .small-btn { flex: none; display: inline-flex; align-items: center; padding: 0 14px; }
+.ck-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin: 6px 0; }
+.ck-chip { display: flex; align-items: baseline; gap: 6px; background: var(--surface2); border-radius: 10px; padding: 6px 10px; font-size: 13px; }
+.ck-chip .muted { flex: 1; min-width: 0; }
+.ck-chip strong { font-size: 16px; }
+.ck-arrow { font-size: 12px; font-weight: 700; color: var(--muted); }
+.ck-photos { color: var(--accent); font-weight: 600; text-decoration: none; font-size: 14px; }
+.ck-older summary { cursor: pointer; color: var(--accent); font-weight: 600; font-size: 14px; padding: 4px 0; }
