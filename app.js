@@ -2287,6 +2287,8 @@ function startCoach(uid) {
   stopMyCoach = cloud.listenCoachLink(uid, link => {
     const had = myCoach;
     myCoach = link;
+    if (link && link.summary && Array.isArray(link.summary.log)) coachLog = link.summary.log;
+    if (!link) coachLog = [];
     if (link && !had) { stopCoachEdits = cloud.listenCoachEdits(uid, onCoachEdits); scheduleCoachSummary(); }
     if (!link && had) { stopCoachEdits(); stopCoachEdits = () => {}; }
     if (['social', 'coach'].includes(routeParts()[0])) refresh();
@@ -2346,8 +2348,11 @@ function coachSummary() {
     week: wk.done, planned: wk.planned ?? null,
     month: db.workouts.filter(w => Date.parse(w.date) >= since).length,
     kg: bw ? bw.kg : null, kgDate: bw ? bw.date : null,
+    log: coachLog,
   };
 }
+// Rutinas que te cambió tu coach (las últimas 15)
+let coachLog = [];
 let summaryTimer = null;
 function scheduleCoachSummary() {
   if (!myCoach || viewing) return;
@@ -2386,6 +2391,10 @@ function onCoachEdits(list) {
   if (!done.length) return;
   save();
   refresh();
+  // Queda anotado en el resumen (se ve en Mi coach, en todos tus teléfonos)
+  const now = Date.now();
+  coachLog = [...done.map(r => ({ name: r.name, what: r.deleted ? 'del' : r.added ? 'new' : 'edit', at: now })), ...coachLog].slice(0, 15);
+  if (myCoach) cloud.updateCoachLink(user.uid, { summary: coachSummary() }).catch(() => {});
   const who = (myCoach && myCoach.coachName) || 'Tu coach';
   showNote(done.length > 1 ? `${who} cambió ${done.length} de tus rutinas`
     : `${who} ${done[0].deleted ? 'eliminó' : done[0].added ? 'te creó' : 'cambió'} la rutina ${done[0].name}`);
@@ -2555,16 +2564,19 @@ function viewStudents() {
 
 function viewMyCoach() {
   if (myCoach) {
-    const chatId = [user.uid, myCoach.coachUid].sort().join('_');
+    const name = myCoach.coachName || 'tu coach', chatId = [user.uid, myCoach.coachUid].sort().join('_');
+    const WHAT = { edit: 'Cambió', new: 'Te creó', del: 'Eliminó' };
+    const log = coachLog.map(x => `<div class="coach-log"><span class="grow">${WHAT[x.what] || 'Cambió'} <strong>${esc(x.name)}</strong></span><span class="muted small">${daysAgo(new Date(x.at).toISOString())}</span></div>`).join('');
     return `${header('Mi coach', { back: true })}
       <section class="card stack">
-        <span class="muted small">Tu coach</span>
-        <strong class="coach-name">${esc(myCoach.coachName || 'Coach')}</strong>
+        <div><span class="muted small">Tu coach</span><br><strong class="coach-name">${esc(name)}</strong></div>
         <span class="muted small">Desde el ${fmtDMY(new Date(myCoach.since || Date.now()).toISOString().slice(0, 10))}</span>
-        <p class="muted" style="margin:0">Puede ver tus entrenamientos, peso, medidas, nutrición y fotos de progreso, y cambiar tus rutinas o crearte nuevas. Cuando lo haga, te llegan solas.</p>
-        ${chats.some(c => c.id === chatId) ? `<a class="btn primary block center" href="#/chat/${chatId}">Abrir chat</a>` : ''}
+        ${chats.some(c => c.id === chatId) ? `<a class="btn primary block center" href="#/chat/${chatId}">Escribirle a ${esc(name)}</a>` : ''}
       </section>
-      <button class="btn ghost block danger-text" data-action="coach-unlink" style="margin-top:24px">Desvincular coach</button>`;
+      <h2>Lo que hizo tu coach</h2>
+      <section class="card">${log || '<p class="muted" style="margin:0">Cuando tu coach te cambie o cree una rutina, aparecerá aquí. Los cambios te llegan solos a Rutinas.</p>'}</section>
+      <p class="muted small" style="margin:24px 0 8px">${esc(name)} puede ver tus entrenamientos, peso, medidas, nutrición y fotos de progreso, y cambiar tus rutinas.</p>
+      <button class="btn ghost block danger-text" data-action="coach-unlink">Desvincular coach</button>`;
   }
   return `${header('Tengo coach', { back: true })}
     <section class="card stack">
@@ -5253,16 +5265,31 @@ function addReadyProgram(p) {
   for (let n = 2; db.programs.some(x => sameName(x.name, name)); n++) name = `${p.name} ${p.days} días · ${LEVELS[progLevel]} ${n}`;
   const prog = { id: uid(), name, weeks: 1, days: [{ r: lv.week.map(k => (k ? ids[k] : null)) }] };
   db.programs.push(prog);
+  // Si no tienes un plan en uso, queda activo de una (así Inicio te dice qué toca hoy); si tienes uno, se pregunta
+  const before = db.plan ? clone(db.plan) : null;
+  const inUse = !!(db.plan && db.plan.days.some(w => w.r.some(Boolean)));
+  if (!inUse) activateProgram(prog);
   save();
   go('#/miprograma/' + prog.id);
   const added = Object.values(ids);
-  // Después de cambiar de pantalla (al cambiar de pantalla se esconden los avisos)
-  setTimeout(() => showUndo(`Añadido a Mis programas con ${plural(keys.length, 'rutina')}`, () => {
+  const undo = () => {
     db.routines = db.routines.filter(r => !added.includes(r.id));
     db.programs = db.programs.filter(x => x !== prog);
+    db.plan = before;
     save();
     location.replace('#/listos');
-  }), 100);
+  };
+  // Después de cambiar de pantalla (al cambiar de pantalla se esconden los avisos)
+  setTimeout(async () => {
+    if (!inUse) { showUndo(`"${name}" añadido y activado: en Inicio verás qué toca cada día`, undo); return; }
+    const act = activeProgram();
+    if (await ask(`¿Empezar a usar "${name}" ahora?
+
+Dejarás de usar "${(act && act.name) || 'tu programa actual'}" (no se borra, sigue en Mis programas).`, 'Usar este')) {
+      activateProgram(prog); save(); render();
+      showUndo(`"${name}" es tu programa activo`, undo);
+    } else showUndo(`Añadido a Mis programas con ${plural(keys.length, 'rutina')}`, undo);
+  }, 100);
 }
 
 // ---------- Guías de técnica ----------

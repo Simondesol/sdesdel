@@ -1019,3 +1019,5 @@ p.reps-by { display: block; }
 .view-bar .grow { display: grid; gap: 1px; }
 .view-bar .muted { color: #c9d6ee; }
 body.viewing header.bar { top: 52px; }
+.coach-log { display: flex; align-items: baseline; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.coach-log:last-child { border-bottom: 0; }
