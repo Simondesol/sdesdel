@@ -10,7 +10,9 @@
 //   chats/{id}/messages/{id}    → mensaje { from, at, type, text | diet | routine }
 //   coachCodes/{código}         → código de coach { ownerUid, ownerName, createdAt }
 //   coachLinks/{uidAlumno}      → alumno vinculado a su coach { studentUid, studentName, coachUid, coachName, via, since, summary }
-//   coachLinks/{uid}/edits/{id} → rutina cambiada por el coach { routine | deleted, at, by } (la app del alumno la aplica y la borra)
+//   coachLinks/{uid}/edits/{id} → cambio del coach (rutina, programa, plan, dieta, objetivo); la app del alumno lo aplica y lo borra
+//   coachLinks/{uid}/comments/{idEntreno} → comentario del coach sobre un entreno { text, at, by }
+//   coachLinks/{uid}/checkins/{fecha}     → check-in semanal del alumno
 import { firebaseConfig } from './firebase-config.js';
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.8.0/firebase-app.js';
 import {
@@ -240,4 +242,36 @@ export function listenCoachEdits(uid, cb) {
     if (snap.metadata.hasPendingWrites) return;
     cb(snap.docs.map(d => ({ ...d.data(), id: d.id })));
   }, () => {});
+}
+
+// El coach baja los datos de un alumno: main completo y solo los entrenos que cambiaron desde `since` (ms)
+export async function fetchMain(uid) {
+  const snap = await getDoc(mainRef(uid));
+  return snap.exists() ? snap.data() : null;
+}
+export async function fetchWorkoutsSince(uid, since = 0) {
+  const snap = await getDocs(since ? query(workoutsRef(uid), where('_at', '>=', Timestamp.fromMillis(since))) : workoutsRef(uid));
+  let wAt = since;
+  const changes = snap.docs.map(d => {
+    const x = d.data();
+    wAt = Math.max(wAt, atMs(x._at));
+    return { removed: !!x._del, id: d.id, data: cleanWorkout(x) };
+  });
+  return { changes, wAt };
+}
+const commentsRef = uid => collection(fs, 'coachLinks', uid, 'comments');
+export const putCoachComment = (uid, wid, data) => setDoc(doc(commentsRef(uid), wid), data);
+export const deleteCoachComment = (uid, wid) => deleteDoc(doc(commentsRef(uid), wid));
+export async function listCoachComments(uid) {
+  const snap = await getDocs(commentsRef(uid));
+  return snap.docs.map(d => ({ ...d.data(), id: d.id }));
+}
+export function listenCoachComments(uid, cb) {
+  return onSnapshot(commentsRef(uid), snap => cb(snap.docs.map(d => ({ ...d.data(), id: d.id }))), () => {});
+}
+const checkinsRef = uid => collection(fs, 'coachLinks', uid, 'checkins');
+export const putCheckin = (uid, id, data) => setDoc(doc(checkinsRef(uid), id), data);
+export async function listCheckins(uid) {
+  const snap = await getDocs(query(checkinsRef(uid), orderBy('at'), limitToLast(8)));
+  return snap.docs.map(d => ({ ...d.data(), id: d.id })).reverse();
 }

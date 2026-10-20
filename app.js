@@ -266,9 +266,10 @@ function viewHub() {
   return `${header('Desdel', { sub: 'Entrena. Anota. Supera.', right: GEAR })}
     <div class="hub-wrap">
     ${tourOffer}
-    ${viewing ? '' : socialCard()}
+    ${viewing ? studentCheckinsCard() : socialCard()}
 
     ${entrenoCard()}
+    ${checkinCard()}
 
     ${nutritionCard()}
 
@@ -284,6 +285,7 @@ function viewHub() {
     <div class="hub-pair">${bodyweightCard()}${sleepCard()}</div>
 
     ${weekCard()}
+    ${viewing ? `<button class="btn ghost block danger-text" data-action="student-del" data-uid="${esc(viewing.uid)}" style="margin-top:16px">Quitar a ${esc(viewing.name)} de mis alumnos</button>` : ''}
     </div>
 `;
 }
@@ -2208,14 +2210,15 @@ function viewSession(id) {
     : `<button class="btn block" data-action="saveas-open" data-id="${w.id}" style="margin:0 0 10px">Guardar como rutina</button>`;
   return `${header(w.routineName, { back: true, sub: fmtLongDate(w.date) })}
     ${summary}
+    ${coachCommentHtml(w)}
     ${asRoutine}
     ${(prs => (prs.length ? `<section class="card pr-card"><strong>🔥 ${prs.length === 1 ? 'Nuevo récord' : `${prs.length} récords nuevos`}</strong>
       ${prs.map(pr => `<span>${esc(pr.text)}</span>`).join('')}
       <span class="muted small">Récord = tu mejor 1RM estimado de la 1ª serie (en cualquier rutina), o superar tu mejor 2ª, 3ª… serie en esta rutina.${prsSent && prsSent.id === w.id ? ' Se lo avisamos a tus gymbros.' : ''}</span></section>` : ''))(newPRs(w))}
-    <button class="btn primary block" data-action="share-workout" data-id="${w.id}" style="margin:0 0 10px">📤 Compartir entrenamiento</button>
+    ${viewing ? '' : `<button class="btn primary block" data-action="share-workout" data-id="${w.id}" style="margin:0 0 10px">📤 Compartir entrenamiento</button>`}
     ${blocks}
-    <a class="btn block center" href="#/editar/${w.id}">Editar entrenamiento</a>
-    <button class="btn ghost block danger-text" data-action="del-session" data-id="${w.id}" style="margin-top:24px">Eliminar este entrenamiento</button>`;
+    ${viewing ? '' : `<a class="btn block center" href="#/editar/${w.id}">Editar entrenamiento</a>
+    <button class="btn ghost block danger-text" data-action="del-session" data-id="${w.id}" style="margin-top:24px">Eliminar este entrenamiento</button>`}`;
 }
 
 // Mensaje para WhatsApp con el resumen de un entrenamiento guardado
@@ -2261,6 +2264,8 @@ async function shareWorkout(btn, id) {
 let myCoach = null;                 // tu vínculo como alumno (null = sin coach)
 let stopMyCoach = () => {}, stopCoachEdits = () => {};
 let students = [], studentsLoaded = false, stopStudents = () => {};
+let myCoachLoaded = false;
+let coachComments = {}, stopComments = () => {};   // alumno: comentarios de tu coach por entreno
 let viewing = null;                 // alumno que estás viendo: { uid, name, own (tus datos), base (sus rutinas), queued }
 let coachCodeBusy = false, coachCodeError = false;
 const me = () => (viewing ? viewing.own : db);   // tus propios datos, aunque estés viendo a un alumno
@@ -2271,17 +2276,19 @@ const coachInviteText = code => `Vincúlate conmigo como tu coach en Desdel 💪
   `Si no se abre, abre Desdel y en Social → Tengo coach pega este código: ${fmtCode(code)}`;
 
 // Pantallas que se pueden mirar de un alumno; las de VIEW_EXIT te devuelven a tus datos
-const VIEW_OK = ['', 'rutinas', 'rutina', 'programas', 'miprograma', 'listos', 'programa', 'historial', 'sesion', 'progreso', 'ejercicio', 'peso', 'grasa', 'medidas', 'fotos', 'nutricion', 'sueno', 'agua'];
-const VIEW_EXIT = ['social', 'chat', 'gymbro', 'perfil', 'privacidad', 'cuenta', 'alumnos', 'coach'];
+const VIEW_OK = ['', 'rutinas', 'rutina', 'programas', 'miprograma', 'listos', 'programa', 'dieta', 'objetivo', 'historial', 'sesion', 'progreso', 'ejercicio', 'peso', 'grasa', 'medidas', 'fotos', 'nutricion', 'sueno', 'agua'];
+const VIEW_EXIT = ['social', 'chat', 'gymbro', 'perfil', 'privacidad', 'cuenta', 'alumnos', 'coach', 'asignar'];
 // Lo que se puede tocar mirando a un alumno, y lo extra en el editor de rutinas
 const VIEW_SAFE = new Set(['back', 'view-exit', 'vid-toggle', 'info', 'toggle-sec', 'range', 'toggle-history', 'hist-month', 'hist-day', 'skin-view', 'measure-view',
   'prog-open', 'prog-close', 'prog-filter', 'prog-retry', 'week-sum', 'guide-view', 'guide-close', 'explore-zone', 'explore-open', 'explore-back', 'explore-close', 'go-ex', 'prev-ex', 'next-ex']);
 const VIEW_ROUTINE = new Set(['reps-by', 'toggle-drop', 'toggle-bw', 'toggle-ss', 'toggle-rir', 'toggle-unit', 'move', 'ex-open', 'ex-close', 'del-ex', 'dup-routine', 'del-routine',
   'guide-pick', 'guide-change', 'guide-set', 'guide-pick-close', 'explore-list', 'explore-add', 'sugg-ex']);
 const VIEW_PROGRAM = new Set(['myprog-new', 'myprog-weeks', 'myprog-stop', 'myprog-use', 'myprog-del', 'prog-level', 'prog-days', 'prog-add', 'prog-add-one']);
-const viewAllowed = action => VIEW_SAFE.has(action) || (routeParts()[0] === 'rutina' && VIEW_ROUTINE.has(action))
-  || (['programas', 'miprograma', 'listos', 'programa'].includes(routeParts()[0]) && VIEW_PROGRAM.has(action));
-const viewOnlyMsg = () => `Estás viendo los datos de ${viewing.name}. Puedes ver todo y cambiar sus rutinas y programas, pero no anotar ni borrar sus datos.`;
+const VIEW_NUTRI = new Set(['diet-new', 'nutri-use', 'diet-link', 'diet-done', 'diet-del', 'meal-add', 'meal-dup', 'meal-del', 'item-del', 'item-mode', 'add-mode', 'pick-food', 'pace-dir', 'set-activity']);
+const viewAllowed = action => VIEW_SAFE.has(action) || action === 'student-del' || (routeParts()[0] === 'rutina' && VIEW_ROUTINE.has(action))
+  || (['programas', 'miprograma', 'listos', 'programa'].includes(routeParts()[0]) && VIEW_PROGRAM.has(action))
+  || (['nutricion', 'dieta', 'objetivo'].includes(routeParts()[0]) && VIEW_NUTRI.has(action));
+const viewOnlyMsg = () => `Estás viendo los datos de ${viewing.name}. Puedes ver todo y cambiar sus rutinas, programas y dieta, pero no anotar ni borrar sus registros.`;
 const viewBarHtml = () => `<div class="view-bar"><span class="grow"><span>Viendo a <strong>${esc(viewing.name)}</strong></span><span class="muted small">Tus cambios le llegan solos</span></span>
   ${chats.some(c => c.id === [user.uid, viewing.uid].sort().join('_')) ? `<a class="btn small-btn" href="#/chat/${[user.uid, viewing.uid].sort().join('_')}">Chat</a>` : ''}
   <button class="btn small-btn" data-action="view-exit">Salir</button></div>`;
@@ -2290,11 +2297,19 @@ function startCoach(uid) {
   stopMyCoach = cloud.listenCoachLink(uid, link => {
     const had = myCoach;
     myCoach = link;
+    myCoachLoaded = true;
     if (link && link.summary && Array.isArray(link.summary.log)) coachLog = link.summary.log;
     if (!link) coachLog = [];
-    if (link && !had) { stopCoachEdits = cloud.listenCoachEdits(uid, onCoachEdits); scheduleCoachSummary(); }
-    if (!link && had) { stopCoachEdits(); stopCoachEdits = () => {}; }
-    if (['social', 'coach'].includes(routeParts()[0])) refresh();
+    if (link && !had) {
+      stopCoachEdits = cloud.listenCoachEdits(uid, onCoachEdits);
+      stopComments = cloud.listenCoachComments(uid, list => {
+        coachComments = Object.fromEntries(list.map(c => [c.id, c]));
+        if (['sesion', 'historial'].includes(routeParts()[0])) refresh();
+      });
+      scheduleCoachSummary();
+    }
+    if (!link && had) { stopCoachEdits(); stopCoachEdits = () => {}; stopComments(); stopComments = () => {}; coachComments = {}; }
+    if (['social', 'coach', '', 'checkin'].includes(routeParts()[0])) refresh();
   });
   if (coachOn()) startStudents(uid);
 }
@@ -2309,8 +2324,9 @@ function startStudents(uid) {
 function stopCoach() {
   stopMyCoach(); stopMyCoach = () => {};
   stopCoachEdits(); stopCoachEdits = () => {};
+  stopComments(); stopComments = () => {}; coachComments = {};
   stopStudents(); stopStudents = () => {};
-  myCoach = null; students = []; studentsLoaded = false;
+  myCoach = null; myCoachLoaded = false; students = []; studentsLoaded = false;
   if (viewing) { viewing = null; document.body.classList.remove('viewing'); }
 }
 function setCoachMode(on) {
@@ -2352,6 +2368,7 @@ function coachSummary() {
     month: db.workouts.filter(w => Date.parse(w.date) >= since).length,
     kg: bw ? bw.kg : null, kgDate: bw ? bw.date : null,
     log: coachLog,
+    lastCheckin: lastCheckin || lastCheckinAt() || null,
   };
 }
 // Rutinas que te cambió tu coach (las últimas 15)
@@ -2401,8 +2418,46 @@ function routineChanges(o, n) {
 // Rutinas que te cambió tu coach: se aplican y se borran de la nube
 // Un cambio del coach: { routine } | { program } | { plan } | { deleted, kind }.
 // Se guarda con el id de la rutina, 'prog_' + id del programa, o 'plan' (el programa activo)
-const editKind = ed => ed.kind || ('program' in ed ? 'program' : 'plan' in ed ? 'plan' : 'routine');
-const KIND_ORDER = { routine: 0, program: 1, plan: 2 };   // primero las rutinas, que el programa usa
+const editKind = ed => ed.kind || ['program', 'plan', 'diet', 'nutri', 'target'].find(k => k in ed) || 'routine';
+const KIND_ORDER = { routine: 0, program: 1, plan: 2, diet: 3, nutri: 4, target: 5 };   // primero las rutinas, que el programa usa
+// Objetivo de calorías (Nutrición → Objetivo): ritmo y actividad
+const targetOf = b => ({ paceMonth: b.paceMonth ?? null, pace: b.pace ?? null, paceAmt: b.paceAmt ?? null, activity: b.activity ?? null });
+const dietFood = (d, id) => (d.nutrition.foods.find(f => f.id === id) || BASE_BY_ID.get(id) || {}).name || 'un alimento';
+const itemQty = (d, it) => { const f = d.nutrition.foods.find(x => x.id === it.foodId) || BASE_BY_ID.get(it.foodId);
+  return it.n != null ? `${fmtNum(it.n)} u` : `${fmtNum(it.g)}${isUnit(f) ? ' u' : ' g'}`; };
+function dietChanges(d, o, n) {
+  if (!o) return [];
+  const out = [], om = new Map(o.meals.map(m => [m.id, m]));
+  if (o.name !== n.name) out.push(`Nombre: ${o.name} → ${n.name}`);
+  for (const m of n.meals) {
+    const a = om.get(m.id);
+    if (!a) { out.push(`Agregó ${m.name}${m.items.length ? `: ${m.items.map(it => dietFood(d, it.foodId)).join(', ')}` : ''}`); continue; }
+    const before = new Map(a.items.map(it => [it.foodId, it]));
+    for (const it of m.items) {
+      const b = before.get(it.foodId);
+      if (!b) out.push(`${m.name}: agregó ${dietFood(d, it.foodId)} (${itemQty(d, it)})`);
+      else if (itemQty(d, b) !== itemQty(d, it)) out.push(`${m.name}: ${dietFood(d, it.foodId)} ${itemQty(d, b)} → ${itemQty(d, it)}`);
+    }
+    for (const it of a.items) if (!m.items.some(x => x.foodId === it.foodId)) out.push(`${m.name}: quitó ${dietFood(d, it.foodId)}`);
+    if (a.name !== m.name) out.push(`${a.name} ahora se llama ${m.name}`);
+  }
+  for (const a of o.meals) if (!n.meals.some(m => m.id === a.id)) out.push(`Quitó ${a.name}`);
+  return out;
+}
+// Ejercicios de una rutina del coach: si ya tienes uno con el mismo nombre, se usa el tuyo (así sigue tu historial)
+function remapExercises(d, old, r) {
+  const keyOf = n => String(n || '').trim().toLowerCase(), mine = new Map(), oldIds = new Set((old ? old.exercises : []).map(e => e.id));
+  for (const x of d.routines) for (const e of x.exercises) if (!mine.has(keyOf(e.name))) mine.set(keyOf(e.name), e.id);
+  for (const w of d.workouts) for (const e of w.exercises) if (!mine.has(keyOf(e.name))) mine.set(keyOf(e.name), e.exerciseId);
+  const used = new Set();
+  return { ...r, exercises: r.exercises.map(e => {
+    let id = e.id;
+    if (!oldIds.has(id) && mine.has(keyOf(e.name))) id = mine.get(keyOf(e.name));
+    if (used.has(id)) id = uid();
+    used.add(id);
+    return id === e.id ? e : { ...e, id };
+  }) };
+}
 const byKind = (a, b) => KIND_ORDER[editKind(a)] - KIND_ORDER[editKind(b)] || (a.at || 0) - (b.at || 0);
 const progName = (d, id) => ((d.programs.find(x => x.id === id) || {}).name || 'un programa');
 function programChanges(d, o, n) {
@@ -2418,7 +2473,42 @@ function programChanges(d, o, n) {
   return out;
 }
 function applyEditTo(d, ed) {
-  const kind = editKind(ed);
+  const kind = editKind(ed), n = d.nutrition;
+  if (kind === 'diet') {
+    const did = ed.id.replace(/^diet_/, ''), k = n.diets.findIndex(x => x.id === did);
+    if (ed.deleted) {
+      if (k < 0) return null;
+      const name = n.diets[k].name;
+      n.diets.splice(k, 1);
+      if (n.activeDietId === did) n.activeDietId = n.diets[0] ? n.diets[0].id : null;
+      return { text: `Eliminó la dieta ${name}` };
+    }
+    if (!ed.diet || (k >= 0 && stable(n.diets[k]) === stable(ed.diet))) return null;
+    const changes = dietChanges(d, k < 0 ? null : n.diets[k], ed.diet);
+    if (k < 0) n.diets.push(ed.diet); else n.diets[k] = ed.diet;
+    return { text: k < 0 ? `Te creó la dieta ${ed.diet.name || ''} (${plural(ed.diet.meals.length, 'comida')})` : `Cambió la dieta ${ed.diet.name || ''}`, changes };
+  }
+  if (kind === 'nutri') {
+    const x = ed.nutri || {}, out = [];
+    if ((x.activeDietId || null) !== (n.activeDietId || null)) {
+      n.activeDietId = x.activeDietId || null;
+      if (n.activeDietId) out.push(`Tu dieta ahora es ${(n.diets.find(y => y.id === n.activeDietId) || {}).name || 'otra'}`);
+    }
+    if (stable(x.dietLinks || null) !== stable(n.dietLinks || null)) {
+      if (x.dietLinks) n.dietLinks = x.dietLinks; else delete n.dietLinks;
+      out.push('Cambió qué dieta va cada día');
+    }
+    return out.length ? { text: 'Cambió tu dieta', changes: out } : null;
+  }
+  if (kind === 'target') {
+    const b = d.body, before = targetOf(b), t = ed.target || {};
+    if (stable(before) === stable(targetOf({ ...b, ...t }))) return null;
+    for (const [k2, v] of Object.entries(t)) { if (v == null) delete b[k2]; else b[k2] = v; }
+    const out = [], act = v => (ACTIVITY.find(a => a[0] === v) || [])[1] || '–';
+    if (paceMonth(before) !== paceMonth(b)) out.push(`Ritmo: ${paceLabel(paceMonth(before))} → ${paceLabel(paceMonth(b))} al mes`);
+    if ((before.activity || null) !== (b.activity || null)) out.push(`Actividad: ${act(before.activity)} → ${act(b.activity)}`);
+    return { text: 'Cambió tu objetivo de calorías', changes: out };
+  }
   if (kind === 'plan') {
     const before = d.plan && d.plan.prog;
     if (stable(d.plan || null) === stable(ed.plan || null)) return null;
@@ -2448,10 +2538,11 @@ function applyEditTo(d, ed) {
     return { text: `Eliminó la rutina ${name}` };
   }
   if (!ed.routine) return null;
-  if (k >= 0 && stable(d.routines[k]) === stable(ed.routine)) return null;   // ya estaba así
-  const changes = routineChanges(k < 0 ? null : d.routines[k], ed.routine);
-  if (k < 0) d.routines.push(ed.routine); else d.routines[k] = ed.routine;
-  return { text: k < 0 ? `Te creó la rutina ${ed.routine.name || ''} (${plural(ed.routine.exercises.length, 'ejercicio')})` : `Cambió la rutina ${ed.routine.name || ''}`, changes };
+  const r = remapExercises(d, k < 0 ? null : d.routines[k], ed.routine);
+  if (k >= 0 && stable(d.routines[k]) === stable(r)) return null;   // ya estaba así
+  const changes = routineChanges(k < 0 ? null : d.routines[k], r);
+  if (k < 0) d.routines.push(r); else d.routines[k] = r;
+  return { text: k < 0 ? `Te creó la rutina ${r.name || ''} (${plural(r.exercises.length, 'ejercicio')})` : `Cambió la rutina ${r.name || ''}`, changes };
 }
 const appliedEdits = new Set();   // cambios del coach ya aplicados en esta sesión
 function onCoachEdits(list) {
@@ -2482,22 +2573,53 @@ function onCoachEdits(list) {
   notice(`${who} cambió tu entrenamiento\n\n${lines.join('\n\n')}\n\nLo ves también en Social → Mi coach.`);
 }
 
+// Copia de los entrenos de cada alumno en este teléfono (IndexedDB), para bajar solo lo que cambió
+const idb = (() => {
+  let conn = null;
+  const open = () => conn || (conn = new Promise((res, rej) => {
+    const r = indexedDB.open('desdel-coach', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('alumnos');
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  }));
+  const run = async (mode, fn) => {
+    const c = await open();
+    return new Promise((res, rej) => {
+      const t = c.transaction('alumnos', mode), q = fn(t.objectStore('alumnos'));
+      t.oncomplete = () => res(q && q.result);
+      t.onerror = () => rej(t.error);
+    });
+  };
+  return { get: k => run('readonly', st => st.get(k)).catch(() => null), set: (k, v) => run('readwrite', st => st.put(v, k)).catch(() => {}) };
+})();
+async function loadStudentData(sUid) {
+  const key = `${user.uid}:${sUid}`, cached = (await idb.get(key)) || { workouts: [], wAt: 0 };
+  const [main, ws, edits, comments, checkins] = await withTimeout(Promise.all([cloud.fetchMain(sUid), cloud.fetchWorkoutsSince(sUid, cached.wAt),
+    cloud.listCoachEdits(sUid), cloud.listCoachComments(sUid), cloud.listCheckins(sUid)]));
+  const byId = new Map(cached.workouts.map(w => [w.id, w]));
+  for (const c of ws.changes) { if (c.removed) byId.delete(c.id); else byId.set(c.id, c.data); }
+  const workouts = [...byId.values()];
+  idb.set(key, { workouts, wAt: ws.wAt });
+  return { main, workouts, edits, comments, checkins };
+}
 // Coach: mirar los datos de un alumno (los tuyos quedan guardados aparte)
 async function viewStudent(link, btn) {
   if (db.draft) return notice('Termina o descarta tu entrenamiento en curso antes de ver a un alumno.');
   await busy(btn, 'Cargando…', async () => {
     while (syncing) await new Promise(r => setTimeout(r, 100));   // que termine de subir lo tuyo
-    let data, edits;
-    try {
-      [data, edits] = await withTimeout(Promise.all([cloud.fetchAll(link.studentUid), cloud.listCoachEdits(link.studentUid)]));
-    } catch (e) {
+    let data;
+    try { data = await loadStudentData(link.studentUid); } catch (e) {
       return notice(`No se pudieron cargar los datos de ${link.studentName || 'tu alumno'}. Revisa tu internet e intenta de nuevo.`);
     }
     const sdb = dbFromCloud(data.main, data.workouts);
-    for (const ed of edits.sort(byKind)) applyEditTo(sdb, ed);   // cambios que aún no le llegan
-    viewing = { uid: link.studentUid, name: link.studentName || 'tu alumno', own: db, base: coachMap(sdb), queued: [] };
+    for (const ed of data.edits.sort(byKind)) applyEditTo(sdb, ed);   // cambios que aún no le llegan
+    viewing = { uid: link.studentUid, name: link.studentName || 'tu alumno', own: db, base: null, queued: [],
+      comments: Object.fromEntries(data.comments.map(c => [c.id, c])), checkins: data.checkins };
     db = sdb;
+    dietLinks();   // se arma igual que en su app, para que no cuente como un cambio tuyo
+    viewing.base = coachMap(sdb);
     progList = null; progFull.clear(); progUid = null;
+    markCheckinSeen(link);
     go('#/');
     render();
   });
@@ -2507,6 +2629,9 @@ const coachMap = d => ({
   r: Object.fromEntries(d.routines.map(x => [x.id, stable(x)])),
   p: Object.fromEntries(d.programs.map(x => [x.id, stable(x)])),
   plan: stable(d.plan || null),
+  d: Object.fromEntries(d.nutrition.diets.map(x => [x.id, stable(x)])),
+  nutri: stable({ a: d.nutrition.activeDietId || null, l: d.nutrition.dietLinks || null }),
+  target: stable(targetOf(d.body)),
 });
 function exitViewing() {
   if (!viewing) return;
@@ -2534,8 +2659,194 @@ function pushCoachEdits() {
   for (const [id, j] of Object.entries(now.p)) if (v.base.p[id] !== j) put(`prog_${id}`, { program: clone(db.programs.find(x => x.id === id)) });
   for (const id of Object.keys(v.base.p)) if (!(id in now.p)) put(`prog_${id}`, { deleted: true, kind: 'program' });
   if (now.plan !== v.base.plan) put('plan', { plan: db.plan ? clone(db.plan) : null });
+  for (const [id, j] of Object.entries(now.d)) if (v.base.d[id] !== j) put(`diet_${id}`, { diet: clone(db.nutrition.diets.find(x => x.id === id)) });
+  for (const id of Object.keys(v.base.d)) if (!(id in now.d)) put(`diet_${id}`, { deleted: true, kind: 'diet' });
+  if (now.nutri !== v.base.nutri) put('nutri', { nutri: { activeDietId: db.nutrition.activeDietId || null, dietLinks: db.nutrition.dietLinks ? clone(db.nutrition.dietLinks) : null } });
+  if (now.target !== v.base.target) put('target', { target: targetOf(db.body) });
   v.base = now;
   if (jobs.length) Promise.all(jobs).catch(() => notice(`No se pudo enviar el cambio a ${v.name}. Revisa tu internet.`));
+}
+
+// Comentario del coach sobre un entreno: el coach lo escribe mirando al alumno; el alumno lo ve en ese entreno
+function coachCommentHtml(w) {
+  if (viewing) {
+    const c = viewing.comments[w.id];
+    return `<form class="card stack coach-comment" data-form="coach-comment" data-id="${esc(w.id)}">
+      <strong>Comentario para ${esc(viewing.name)}</strong>
+      <textarea name="text" rows="3" maxlength="1000" placeholder="Ej. Buena técnica en la sentadilla. La próxima sube 2,5 kg.">${esc(c ? c.text : '')}</textarea>
+      <span class="muted small">Le aparece en este entreno y en su chat.</span>
+      <button class="btn primary block">${c ? 'Guardar comentario' : 'Enviar comentario'}</button>
+    </form>`;
+  }
+  const c = coachComments[w.id];
+  return c ? `<section class="card coach-comment"><span class="muted small">Comentario de ${esc((myCoach && myCoach.coachName) || 'tu coach')}</span>
+    <p class="coach-comment-text">${esc(c.text)}</p></section>` : '';
+}
+async function saveCoachComment(f) {
+  const v = viewing, wid = f.dataset.id, text = f.elements.text.value.trim();
+  if (!v) return;
+  const w = db.workouts.find(x => x.id === wid);
+  await busy(f.querySelector('button'), 'Enviando…', async () => {
+    try {
+      if (text) await withTimeout(cloud.putCoachComment(v.uid, wid, { text, at: Date.now(), by: user.uid }));
+      else if (v.comments[wid]) await withTimeout(cloud.deleteCoachComment(v.uid, wid));
+      else return;
+    } catch (e) { return notice('No se pudo guardar el comentario. Revisa tu internet e intenta de nuevo.'); }
+    const had = v.comments[wid];
+    if (text) v.comments[wid] = { text }; else delete v.comments[wid];
+    const chatId = [user.uid, v.uid].sort().join('_');
+    if (text && (!had || had.text !== text) && chats.some(c => c.id === chatId)) {
+      const what = w ? `tu entreno ${w.routineName} del ${fmtDMY(dayKeyOf(w.date))}` : 'tu entreno';
+      sendMsg(chatId, { type: 'text', text: `Sobre ${what}:\n${text}` }, `Sobre ${what}: ${text}`);
+    }
+    render();
+    showNote(text ? `Comentario enviado a ${v.name}` : 'Comentario borrado');
+  });
+}
+
+// =============== Asignar una rutina o programa tuyo a uno o varios alumnos ===============
+let assignSel = null, assignTo = new Set(), assignActivate = true;
+const assignId = id => `c${id}`;   // la copia del alumno: si lo vuelves a asignar, se actualiza la misma
+function assignEdits(sel, activate) {
+  const copyR = r => ({ ...clone(r), id: assignId(r.id) });
+  if (sel.kind === 'r') {
+    const r = db.routines.find(x => x.id === sel.id);
+    return r ? { name: r.name, edits: [[assignId(r.id), { routine: copyR(r) }]] } : null;
+  }
+  const pr = db.programs.find(x => x.id === sel.id);
+  if (!pr) return null;
+  const used = new Set(pr.days.slice(0, pr.weeks).flatMap(w => w.r).filter(id => id && db.routines.some(r => r.id === id)));
+  const prog = { id: assignId(pr.id), name: pr.name, weeks: pr.weeks, days: pr.days.map(w => ({ r: w.r.map(x => (x && used.has(x) ? assignId(x) : null)) })) };
+  const edits = db.routines.filter(r => used.has(r.id)).map(r => [assignId(r.id), { routine: copyR(r) }]);
+  edits.push([`prog_${prog.id}`, { program: prog }]);
+  if (activate) edits.push(['plan', { plan: { weeks: prog.weeks, start: dayKeyOf(mondayOf(new Date())), days: clone(prog.days), prog: prog.id } }]);
+  return { name: pr.name, edits };
+}
+const joinNames = l => (l.length > 1 ? `${l.slice(0, -1).join(', ')} y ${l[l.length - 1]}` : l[0] || '');
+async function assignToStudents(btn) {
+  const list = students.filter(x => assignTo.has(x.studentUid)), job = assignSel && assignEdits(assignSel, assignActivate);
+  if (!job || !list.length) return;
+  const names = list.map(x => x.studentName || 'Alumno');
+  const prog = assignSel.kind === 'p';
+  if (!await ask(`¿Asignar ${prog ? 'el programa' : 'la rutina'} "${job.name}" a ${joinNames(names)}?${prog && assignActivate ? '\n\nQueda como su programa activo.' : ''}\n\nSi ya se lo habías asignado, se actualiza.`, 'Asignar')) return;
+  await busy(btn, 'Enviando…', async () => {
+    const at = Date.now();
+    try {
+      await withTimeout(Promise.all(list.flatMap(x => job.edits.map(([id, data]) => cloud.putCoachEdit(x.studentUid, id, { ...data, at, by: user.uid })))));
+    } catch (e) { return notice('No se pudo asignar. Revisa tu internet e intenta de nuevo.'); }
+    assignTo.clear();
+    render();
+    showNote(`Asignado a ${joinNames(names)}: les llega al abrir la app`);
+  });
+}
+function viewAssign() {
+  if (!coachOn()) { location.replace('#/alumnos'); return ''; }
+  const progs = db.programs.filter(x => myProgDays(x.days)), routines = db.routines.filter(r => r.exercises.length);
+  const opt = (kind, id, name, sub) => `<label class="toggle-row small-toggle">
+      <input type="radio" name="asg" data-action="assign-pick" data-kind="${kind}" data-id="${esc(id)}" ${assignSel && assignSel.kind === kind && assignSel.id === id ? 'checked' : ''}>
+      <span class="grow">${esc(name || '(sin nombre)')}<br><span class="muted small">${sub}</span></span></label>`;
+  const ready = assignSel && assignTo.size;
+  return `${header('Asignar', { back: true, sub: 'Una rutina o un programa tuyo' })}
+    <h2>Qué asignar</h2>
+    ${progs.length ? `<section class="card profile-fields"><span class="muted small">Programas</span>${progs.map(x => opt('p', x.id, x.name, plural(myProgDays(x.days), 'día') + ' por semana')).join('')}</section>` : ''}
+    ${routines.length ? `<section class="card profile-fields"><span class="muted small">Rutinas</span>${routines.map(r => opt('r', r.id, r.name, plural(r.exercises.length, 'ejercicio'))).join('')}</section>`
+      : '<p class="muted card">Primero crea tus rutinas o programas en Entreno: después los asignas aquí.</p>'}
+    ${assignSel && assignSel.kind === 'p' ? `<label class="card toggle-row"><input type="checkbox" data-action="assign-act" ${assignActivate ? 'checked' : ''}>
+      <span class="grow">Dejarlo como su programa activo<br><span class="muted small">En su Inicio verá qué le toca cada día.</span></span></label>` : ''}
+    <h2>A quién</h2>
+    ${students.length ? `<section class="card profile-fields">${students.map(x => `<label class="toggle-row small-toggle">
+      <input type="checkbox" data-action="assign-to" data-uid="${esc(x.studentUid)}" ${assignTo.has(x.studentUid) ? 'checked' : ''}>
+      <span class="grow">${esc(x.studentName || 'Alumno')}</span></label>`).join('')}</section>` : '<p class="muted card">Todavía no tienes alumnos.</p>'}
+    <button class="btn primary block" data-action="assign-go" ${ready ? '' : 'disabled'} style="margin-top:14px">Asignar${assignTo.size ? ` a ${plural(assignTo.size, 'alumno')}` : ''}</button>
+    <p class="muted small">Les llega a su app con un aviso. Si ya tenían un ejercicio con el mismo nombre, se mantiene su historial.</p>`;
+}
+
+// =============== Check-in semanal (lo envía el alumno, lo lee el coach) ===============
+let checkinDraft = {};
+const CHECK_Q = [['energy', 'Energía', 'muy baja', 'muy alta'], ['hunger', 'Hambre', 'nada', 'mucha'], ['recovery', 'Recuperación', 'muy cansado o adolorido', 'muy recuperado']];
+const lastCheckinAt = () => (myCoach && myCoach.summary && myCoach.summary.lastCheckin) || 0;
+const checkinSnoozeKey = () => `desdel-checkin-despues-${user.uid}`;
+const checkinDue = () => !!myCoach && !viewing && Date.now() - lastCheckinAt() > 6 * 864e5 && localStorage.getItem(checkinSnoozeKey()) !== todayKey();
+// Tu última semana (7 días): entrenos, peso promedio (y el de la semana anterior) y sueño promedio
+function checkinStats() {
+  const keys = Array.from({ length: 7 }, (_, k) => { const d = new Date(); d.setDate(d.getDate() - k); return dayKeyOf(d); });
+  const prev = keys.map(k => { const d = new Date(`${k}T12:00:00`); d.setDate(d.getDate() - 7); return dayKeyOf(d); });
+  const avg = l => (l.length ? round1(l.reduce((a, v) => a + v, 0) / l.length) : null);
+  return {
+    workouts: db.workouts.filter(w => keys.includes(dayKeyOf(w.date))).length,
+    planned: db.plan ? keys.filter(k => plannedRoutine(k)).length : null,
+    kg: avg(db.bodyweight.filter(e => keys.includes(e.date)).map(e => e.kg)),
+    kgPrev: avg(db.bodyweight.filter(e => prev.includes(e.date)).map(e => e.kg)),
+    sleep: avg(db.sleep.filter(e => keys.includes(e.date)).map(e => e.h)),
+  };
+}
+const statsText = c => [`Entrenos: ${c.workouts}${c.planned ? ` de ${c.planned}` : ''}`,
+  c.kg ? `Peso promedio: ${fmtNum(c.kg)} kg${c.kgPrev ? ` (${c.kg - c.kgPrev >= 0 ? '+' : ''}${fmtNum(round1(c.kg - c.kgPrev))} kg)` : ''}` : '',
+  c.sleep ? `Sueño: ${fmtNum(c.sleep)} h` : ''].filter(Boolean).join(' · ');
+function checkinCard() {
+  if (!checkinDue()) return '';
+  return `<section class="card hub coach-checkin">
+      <a class="hub-top" href="#/checkin"><span class="hub-icon">📋</span><strong>Check-in semanal</strong></a>
+      <span>Cuéntale a ${esc(myCoach.coachName || 'tu coach')} cómo te fue esta semana.</span>
+      <div class="hub-btns"><a class="btn primary center" href="#/checkin">Hacer check-in</a><button class="btn" data-action="checkin-later">Después</button></div>
+    </section>`;
+}
+function viewCheckin() {
+  if (!myCoach) {
+    if (!myCoachLoaded) return `${header('Check-in semanal', { back: true })}<p class="empty">Cargando…</p>`;
+    location.replace('#/'); return '';
+  }
+  const st = checkinStats();
+  const scale = ([k, label, lo, hi]) => `<div class="field"><span>${label}</span>
+      <div class="scale">${[1, 2, 3, 4, 5].map(v => `<button type="button" class="chip toggle ${checkinDraft[k] === v ? 'on' : ''}" data-action="checkin-set" data-k="${k}" data-v="${v}">${v}</button>`).join('')}</div>
+      <span class="muted small">1 = ${lo} · 5 = ${hi}</span></div>`;
+  return `${header('Check-in semanal', { back: true, sub: `Para ${myCoach.coachName || 'tu coach'}` })}
+    <section class="card stack"><strong>Tus últimos 7 días</strong><span class="muted">${statsText(st)}</span>
+      <span class="muted small">Se calcula solo con lo que anotaste.</span></section>
+    <form class="stack" data-form="checkin" novalidate>
+      <section class="card stack">${CHECK_Q.map(scale).join('')}</section>
+      <label class="field"><span>¿Algo que contarle a tu coach?</span>
+        <textarea name="note" rows="4" maxlength="1500" placeholder="Molestias, cómo te sentiste, qué te costó, qué te gustaría cambiar…"></textarea></label>
+      <p class="form-msg" hidden></p>
+      <button class="btn primary block">Enviar check-in</button>
+    </form>`;
+}
+async function sendCheckin(f) {
+  if (CHECK_Q.some(([k]) => !checkinDraft[k])) return formMsg(f, 'Elige un número (1 a 5) en cada pregunta.');
+  const data = { at: Date.now(), date: todayKey(), ...checkinStats(), ...Object.fromEntries(CHECK_Q.map(([k]) => [k, checkinDraft[k]])), note: f.elements.note.value.trim() };
+  await busy(f.querySelector('button'), 'Enviando…', async () => {
+    try {
+      await withTimeout(cloud.putCheckin(user.uid, todayKey(), data));
+      lastCheckin = data.at;
+      await withTimeout(cloud.updateCoachLink(user.uid, { summary: coachSummary() }));
+    } catch (e) { return formMsg(f, 'No se pudo enviar. Revisa tu internet e intenta de nuevo.'); }
+    checkinDraft = {};
+    const chatId = [user.uid, myCoach.coachUid].sort().join('_');
+    if (chats.some(c => c.id === chatId)) sendMsg(chatId, { type: 'text', text: 'Te envié mi check-in semanal.' }, 'Te envié mi check-in semanal.');
+    const who = myCoach.coachName || 'tu coach';
+    location.replace('#/');
+    setTimeout(() => showNote(`Check-in enviado a ${who}`), 100);   // después de cambiar de pantalla
+  });
+}
+let lastCheckin = 0;   // cuándo enviaste tu último check-in (va en el resumen para tu coach)
+// Coach: los check-ins del alumno que estás viendo (arriba en su Inicio) y el aviso de "nuevo" en Mis alumnos
+const seenKey = () => `desdel-checkin-visto-${user.uid}`;
+const seenMap = () => { try { return JSON.parse(localStorage.getItem(seenKey())) || {}; } catch (e) { return {}; } };
+function markCheckinSeen(link) {
+  const m = seenMap(), at = (link.summary || {}).lastCheckin || 0;
+  if (at && m[link.studentUid] !== at) { m[link.studentUid] = at; localStorage.setItem(seenKey(), JSON.stringify(m)); }
+}
+const checkinNew = link => { const at = (link.summary || {}).lastCheckin || 0; return at && seenMap()[link.studentUid] !== at; };
+function studentCheckinsCard() {
+  const list = viewing.checkins || [];
+  const item = c => `<div class="checkin-item">
+      <div class="coach-log-head"><span class="grow"><strong>${fmtDMY(c.date || c.id)}</strong></span><span class="muted small">${daysAgo(new Date(c.at).toISOString())}</span></div>
+      <div class="small">Energía ${c.energy}/5 · Hambre ${c.hunger}/5 · Recuperación ${c.recovery}/5</div>
+      <div class="muted small">${statsText(c)}</div>
+      ${c.note ? `<p class="coach-comment-text">${esc(c.note)}</p>` : ''}
+    </div>`;
+  return `<section class="card stack"><strong>Check-ins de ${esc(viewing.name)}</strong>
+    ${list.length ? list.slice(0, 3).map(item).join('') : '<span class="muted small">Todavía no envía check-ins. Le aparece uno a la semana en su Inicio.</span>'}</section>`;
 }
 
 // Alumno: vincularse con un coach
@@ -2554,7 +2865,7 @@ async function linkCoach(code, cc, showError) {
   if (cc.ownerUid === user.uid) return showError('Ese es tu propio código de coach. Mándaselo a tus alumnos.');
   if (myCoach && myCoach.coachUid === cc.ownerUid) { go('#/coach'); return; }
   if (myCoach && !await ask(`Ya tienes como coach a ${myCoach.coachName || 'otra persona'}. ¿Cambiar a ${name}?`, 'Cambiar')) return;
-  if (!await ask(`¿Vincular a ${name} como tu coach?\n\n${name} podrá ver todos tus datos: entrenamientos, peso, medidas, nutrición y fotos de progreso. También podrá cambiar tus rutinas y programas, y crearte nuevos.\n\nPuedes desvincularlo cuando quieras.`, 'Vincular')) return;
+  if (!await ask(`¿Vincular a ${name} como tu coach?\n\n${name} podrá ver todos tus datos: entrenamientos, peso, medidas, nutrición y fotos de progreso. También podrá cambiar tus rutinas, programas y dieta, y crearte nuevos.\n\nPuedes desvincularlo cuando quieras.`, 'Vincular')) return;
   try {
     if (myCoach) await withTimeout(clearCoachLink());
     await withTimeout(cloud.createCoachLink(user.uid, {
@@ -2602,7 +2913,9 @@ function coachRows() {
     : `<a class="card coach-row" href="#/coach"><span class="grow"><strong>Tengo coach</strong><span class="muted small">Vincúlate con tu entrenador</span></span><span class="chev">›</span></a>`;
   const mine = coachOn()
     ? `<a class="card coach-row" href="#/alumnos"><span class="grow"><strong>Mis alumnos</strong><span class="muted small">${studentsLoaded ? plural(students.length, 'alumno') : 'Cargando…'}</span></span><span class="chev">›</span></a>`
-    : `<a class="card coach-row coach-offer" href="#/alumnos"><span class="grow"><strong>¿Eres coach?</strong><span class="muted small">Sigue a tus alumnos en Desdel</span></span><span class="btn small-btn">Activar</span></a>`;
+    : localStorage.getItem(`desdel-no-coach-${user.uid}`) === '1' ? ''
+    : `<div class="card coach-row coach-offer"><a class="grow coach-offer-link" href="#/alumnos"><strong>¿Eres coach?</strong><span class="muted small">Sigue a tus alumnos en Desdel</span></a>
+        <a class="btn small-btn" href="#/alumnos">Activar</a><button class="link small" data-action="coach-hide">No soy coach</button></div>`;
   return `<div class="coach-rows">${mine}${coach}</div>`;
 }
 
@@ -2613,7 +2926,8 @@ function viewStudents() {
         <strong>Sigue a tus alumnos en Desdel</strong>
         <ul class="guide-ul">
           <li>Ve sus entrenamientos serie por serie, su progreso, peso, medidas, nutrición y fotos.</li>
-          <li>Cambia sus rutinas y programas o créales nuevos (y actívalos): les llegan solos a su app.</li>
+          <li>Cambia sus rutinas, programas y dieta, o créales nuevos: les llegan solos a su app.</li>
+          <li>Comenta sus entrenos y recibe su check-in semanal.</li>
           <li>Ve de un vistazo quién entrenó esta semana y quién no.</li>
           <li>Tus alumnos se vinculan con tu código de coach y pueden desvincularse cuando quieran.</li>
         </ul>
@@ -2630,11 +2944,11 @@ function viewStudents() {
         <span class="grow"><strong>${esc(l.studentName || 'Alumno')}</strong>
           <span class="muted small">${last ? `Último entreno: ${esc(last.name || 'Entreno')} · ${daysAgo(last.date)}` : 'Todavía no anota entrenamientos'}</span>
           <span class="muted small">Esta semana: ${sm.planned ? `${sm.week || 0} de ${sm.planned}` : plural(sm.week || 0, 'entreno')}${sm.kg ? ` · Peso: ${fmtNum(sm.kg)} kg` : ''}</span>
-          ${idle != null && idle >= 4 ? `<span class="student-alert">Sin registrar hace ${idle} días</span>` : ''}</span>
+          ${idle != null && idle >= 4 ? `<span class="student-alert">Sin registrar hace ${idle} días</span>` : ''}
+          ${checkinNew(l) ? '<span class="student-new">Check-in nuevo</span>' : ''}</span>
         <span class="chev">›</span>
       </button>
       ${chats.some(c => c.id === [user.uid, l.studentUid].sort().join('_')) ? `<a class="btn small-btn" href="#/chat/${[user.uid, l.studentUid].sort().join('_')}">Chat</a>` : ''}
-      <button class="icon small" data-action="student-del" data-uid="${esc(l.studentUid)}" aria-label="Quitar alumno">✕</button>
     </section>`;
   }).join('');
   return `${header('Mis alumnos', { back: true, sub: 'Modo coach' })}
@@ -2648,8 +2962,9 @@ function viewStudents() {
       : '<p class="muted">Creando tu código…</p>'}
       <p class="muted hint">Mándaselo solo a tus alumnos: quien lo use te da acceso a todos sus datos. Es distinto de tu código de gymbro.</p>
     </section>
+    ${students.length ? '<a class="btn block center" href="#/asignar" style="margin:0 0 12px">Asignar rutina o programa</a>' : ''}
     ${!studentsLoaded ? '<p class="empty">Cargando…</p>' : list || '<p class="empty">Todavía no tienes alumnos. Mándales tu código: en Desdel van a Social → Tengo coach.</p>'}
-    <button class="btn ghost block" data-action="coach-off" style="margin-top:24px">Desactivar modo coach</button>`;
+    <p class="muted small" style="margin-top:20px">Para dejar de usar el modo coach, ve a Cuenta.</p>`;
 }
 
 function viewMyCoach() {
@@ -2666,13 +2981,13 @@ function viewMyCoach() {
       </section>
       <h2>Lo que hizo tu coach</h2>
       <section class="card">${log || '<p class="muted" style="margin:0">Cuando tu coach te cambie o cree una rutina o un programa, aparecerá aquí. Los cambios te llegan solos.</p>'}</section>
-      <p class="muted small" style="margin:24px 0 8px">${esc(name)} puede ver tus entrenamientos, peso, medidas, nutrición y fotos de progreso, y cambiar tus rutinas y programas.</p>
+      <p class="muted small" style="margin:24px 0 8px">${esc(name)} puede ver tus entrenamientos, peso, medidas, nutrición y fotos de progreso, y cambiar tus rutinas, programas y dieta.</p>
       <button class="btn ghost block danger-text" data-action="coach-unlink">Desvincular coach</button>`;
   }
   return `${header('Tengo coach', { back: true })}
     <section class="card stack">
       <p style="margin:0">Pídele a tu coach su <strong>código de coach</strong> y escríbelo aquí.</p>
-      <p class="muted small" style="margin:0">Tu coach podrá ver todos tus datos (entrenamientos, peso, medidas, nutrición y fotos) y cambiar tus rutinas. Puedes desvincularlo cuando quieras.</p>
+      <p class="muted small" style="margin:0">Tu coach podrá ver todos tus datos (entrenamientos, peso, medidas, nutrición y fotos) y cambiar tus rutinas, programas y dieta. Puedes desvincularlo cuando quieras.</p>
       <form class="stack" data-form="coach-code" novalidate>
         <div class="add-row">
           <input name="code" placeholder="Código (ej. K7P-9XQ)" autocomplete="off" autocapitalize="characters" maxlength="9" aria-label="Código de coach">
@@ -4771,6 +5086,8 @@ function render() {
     case 'social': html = viewSocial(); break;
     case 'alumnos': html = viewStudents(); break;
     case 'coach': html = viewMyCoach(); break;
+    case 'asignar': html = viewAssign(); break;
+    case 'checkin': html = viewCheckin(); break;
     case 'gymbro': html = viewAddGymbro(); break;
     case 'chat': html = viewChat(arg); break;
     case 'perfil': html = viewProfile(arg); break;
@@ -4803,9 +5120,9 @@ function render() {
   $app.innerHTML = html;
   if (viewing) document.body.style.setProperty('--viewbar', `${$app.querySelector('.view-bar').offsetHeight}px`);   // el título queda bajo la barra azul
   // Viendo a un alumno: fuera del editor de rutinas solo se mira (los buscadores sí funcionan)
-  if (viewing && !['rutina', 'rutinas', 'miprograma'].includes(screen)) {
+  if (viewing && !['rutina', 'rutinas', 'miprograma', 'dieta', 'objetivo'].includes(screen)) {
     $app.querySelectorAll('#app input, #app select, #app textarea').forEach(x => {
-      if (x.type === 'search' || /(-search|-q)$/.test(x.dataset.bind || '')) return;
+      if (x.type === 'search' || /(-search|-q)$/.test(x.dataset.bind || '') || x.closest('[data-form="coach-comment"]')) return;
       x.disabled = true;
     });
   }
@@ -4820,7 +5137,7 @@ function render() {
     historial: 'entreno', sesion: 'entreno', progreso: 'entreno', ejercicio: 'entreno',
     nutricion: 'nutricion', alimento: 'nutricion', dieta: 'nutricion', objetivo: 'nutricion',
     peso: 'cuerpo', grasa: 'cuerpo', pliegues: 'cuerpo', medidas: 'cuerpo', fotos: 'cuerpo',
-    social: 'social', gymbro: 'social', perfil: 'social', privacidad: 'social', alumnos: 'social', coach: 'social',
+    social: 'social', gymbro: 'social', perfil: 'social', privacidad: 'social', alumnos: 'social', coach: 'social', asignar: 'social',
   };
   tab = ['entrenar', 'editar', 'chat'].includes(screen) ? null : NAV[screen] || 'inicio';
   $tabs.hidden = !tab;
@@ -6004,9 +6321,38 @@ $app.addEventListener('click', async e => {
     case 'student-del': {
       const link = students.find(x => x.studentUid === el.dataset.uid);
       if (!link || !await ask(`¿Quitar a ${link.studentName || 'este alumno'} de tus alumnos? Dejarás de ver sus datos y de poder cambiar sus rutinas. Siguen siendo gymbros.`, 'Quitar')) return;
-      cloud.deleteCoachLink(link.studentUid).catch(() => notice('No se pudo quitar. Revisa tu internet e intenta de nuevo.'));
+      try { await withTimeout(cloud.deleteCoachLink(link.studentUid)); } catch (e) { notice('No se pudo quitar. Revisa tu internet e intenta de nuevo.'); return; }
+      if (viewing) exitViewing();
       break;
     }
+    case 'coach-hide':
+      localStorage.setItem(`desdel-no-coach-${user.uid}`, '1');
+      render();
+      showNote('Listo. Si algún día eres coach, actívalo en Cuenta.');
+      break;
+    case 'assign-pick':
+      assignSel = { kind: el.dataset.kind, id: el.dataset.id };
+      render();
+      break;
+    case 'assign-to':
+      if (assignTo.has(el.dataset.uid)) assignTo.delete(el.dataset.uid); else assignTo.add(el.dataset.uid);
+      render();
+      break;
+    case 'assign-act':
+      assignActivate = !assignActivate;
+      render();
+      break;
+    case 'assign-go':
+      assignToStudents(el);
+      break;
+    case 'checkin-set':
+      checkinDraft[el.dataset.k] = +el.dataset.v;
+      $app.querySelectorAll(`[data-action="checkin-set"][data-k="${el.dataset.k}"]`).forEach(x => x.classList.toggle('on', x === el));
+      break;
+    case 'checkin-later':
+      localStorage.setItem(checkinSnoozeKey(), todayKey());
+      render();
+      break;
     case 'coach-unlink':
       unlinkCoach();
       break;
@@ -7146,9 +7492,11 @@ $app.addEventListener('keydown', e => {
 $app.addEventListener('submit', async e => {
   e.preventDefault();
   const f = e.target;
-  if (viewing && !['new-ex', 'new-routine'].includes(f.dataset.form)) { notice(viewOnlyMsg()); return; }
+  if (viewing && !['new-ex', 'new-routine', 'coach-comment', 'add-item'].includes(f.dataset.form)) { notice(viewOnlyMsg()); return; }
   switch (f.dataset.form) {
     case 'coach-code': linkCoachForm(f); return;
+    case 'coach-comment': saveCoachComment(f); return;
+    case 'checkin': sendCheckin(f); return;
     case 'login':
     case 'register': submitAuth(f); return;
     case 'profile': saveProfileData(f); return;

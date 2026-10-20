@@ -74,8 +74,27 @@ service cloud.firestore {
         allow read: if request.auth != null && (request.auth.uid == studentUid || isCoachOf(studentUid));
         allow create, update: if isCoachOf(studentUid)
           && request.resource.data.by == request.auth.uid
-          && request.resource.data.keys().hasOnly(['routine', 'program', 'plan', 'deleted', 'kind', 'at', 'by']);
+          && request.resource.data.keys().hasOnly(['routine', 'program', 'plan', 'diet', 'nutri', 'target', 'deleted', 'kind', 'at', 'by']);
         allow delete: if request.auth != null && (request.auth.uid == studentUid || isCoachOf(studentUid));
+      }
+
+      // Comentarios del coach sobre un entreno: los escribe el coach, los leen los dos
+      match /comments/{wid} {
+        allow read: if request.auth != null && (request.auth.uid == studentUid || isCoachOf(studentUid));
+        allow create, update: if isCoachOf(studentUid)
+          && request.resource.data.by == request.auth.uid
+          && request.resource.data.keys().hasOnly(['text', 'at', 'by'])
+          && request.resource.data.text is string && request.resource.data.text.size() <= 1000;
+        allow delete: if isCoachOf(studentUid);
+      }
+
+      // Check-in semanal: lo escribe el alumno, lo leen los dos
+      match /checkins/{cid} {
+        allow read: if request.auth != null && (request.auth.uid == studentUid || isCoachOf(studentUid));
+        allow create, update: if request.auth != null && request.auth.uid == studentUid
+          && request.resource.data.keys().hasOnly(['at', 'date', 'workouts', 'planned', 'kg', 'kgPrev', 'sleep', 'energy', 'hunger', 'recovery', 'note'])
+          && (!('note' in request.resource.data) || request.resource.data.note.size() <= 1500);
+        allow delete: if request.auth != null && request.auth.uid == studentUid;
       }
     }
 

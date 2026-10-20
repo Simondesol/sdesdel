@@ -94,6 +94,13 @@ input, select {
   min-width: 0;
 }
 input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+textarea {
+  font: inherit; color: var(--text); background: var(--bg);
+  border: 1px solid var(--border); border-radius: 10px;
+  padding: 10px 12px; width: 100%; min-width: 0; resize: vertical; line-height: 1.4;
+}
+textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+textarea:disabled { opacity: .7; }
 select { width: auto; }
 
 .field { display: block; }
@@ -1025,3 +1032,15 @@ body.viewing header.bar { top: var(--viewbar, 52px); }
 .coach-log:last-child { border-bottom: 0; }
 .student .small-btn { flex: none; min-height: 36px; padding: 0 12px; display: inline-flex; align-items: center; }
 .view-bar .small-btn { flex: none; display: inline-flex; align-items: center; }
+.coach-offer-link { display: grid; gap: 2px; color: inherit; text-decoration: none; }
+.coach-offer { flex-wrap: wrap; }
+.coach-offer .link { flex-basis: 100%; text-align: right; margin-top: -4px; }
+.student-new { color: var(--accent); font-size: 13px; font-weight: 700; }
+.coach-comment { gap: 8px; }
+.coach-comment textarea { width: 100%; }
+.coach-comment-text { margin: 6px 0 0; white-space: pre-line; }
+.coach-checkin .hub-btns { margin-top: 8px; }
+.scale { display: flex; gap: 8px; }
+.scale .chip { flex: 1; min-height: 40px; }
+.checkin-item { padding: 8px 0; border-bottom: 1px solid var(--border); display: grid; gap: 2px; }
+.checkin-item:last-child { border-bottom: 0; }
