@@ -639,8 +639,8 @@ function viewDiets() {
     ${targetBanner()}
     ${averageCard()}
     <button class="btn primary block" data-action="diet-new" style="margin:0 0 12px">+ Crear dieta</button>
-    ${list || `<p class="empty">${N().foods.length ? 'Crea tu primera dieta.' : 'Primero agrega tus alimentos en <a href="#/nutricion/alimentos">Mis alimentos</a>.'}</p>`}
-    ${importForm('Importar dieta con código')}`;
+    ${list || `<p class="empty">${N().foods.length ? 'Crea tu primera dieta.' : 'Todavía no tienes dietas. Toca "+ Crear dieta" para armar la primera.'}</p>`}
+    ${importForm('Importar dieta con código', 'dieta')}`;
 }
 
 function viewDietEditor(id) {
@@ -1219,19 +1219,20 @@ function viewHome() {
       <input name="title" placeholder="Nueva rutina (ej. Brazo)" autocomplete="off" required>
       <button class="btn">Crear</button>
     </form>
-    ${importForm('Importar rutina con código')}`;
+    ${importForm('Importar rutina con código', 'rutina')}`;
 }
 
 // Formulario para pegar un código (sirve tanto para rutinas como para dietas)
-const importForm = label => `<section class="import-box">
+// kind: qué se espera importar en esa pantalla ('rutina', 'dieta' o 'gymbro'), para el botón y el mensaje de error
+const importForm = (label, kind = '') => `<section class="import-box">
     <div class="muted small">${label}</div>
     ${importOpen ? `
-    <form class="stack" data-form="import-code" novalidate>
+    <form class="stack" data-form="import-code" data-kind="${kind}" novalidate>
       <div class="add-row">
         <input name="code" placeholder="Código (ej. K7P-9XQ)" autocomplete="off" autocapitalize="characters" maxlength="9" aria-label="Código">
-        <button class="btn">Importar</button>
+        <button class="btn">${kind === 'gymbro' ? 'Agregar' : 'Importar'}</button>
       </div>
-      <p class="muted small" style="margin:0">Escribe el código que te pasaron y toca Importar.</p>
+      <p class="muted small" style="margin:0">Escribe el código que te pasaron y toca ${kind === 'gymbro' ? 'Agregar' : 'Importar'}.</p>
       <p class="form-msg" hidden></p>
     </form>`
     : '<button class="btn block" data-action="paste-import">📋 Pegar código</button>'}
@@ -2001,7 +2002,7 @@ function shareBox(id, hint) {
 // Formulario "Importar rutina con código"
 async function importRoutine(f) {
   await busy(f.querySelector('button'), 'Buscando…',
-    () => importByCode(normCode(f.elements.code.value), text => formMsg(f, text)));
+    () => importByCode(normCode(f.elements.code.value), text => formMsg(f, text), f.dataset.kind));
 }
 
 // Se abrió un link de rutina compartida: se importa apenas haya sesión
@@ -2012,7 +2013,7 @@ async function importFromLink() {
   await importByCode(code, text => notice(text));
 }
 
-async function importByCode(code, showError) {
+async function importByCode(code, showError, kind = '') {
   if (code.length !== 6) return showError('El código tiene 6 caracteres (ej. K7P-9XQ).');
   let data;
   try {
@@ -2028,7 +2029,10 @@ async function importByCode(code, showError) {
     let cc = null;
     try { cc = await withTimeout(cloud.getCoachCode(code)); } catch (e) { /* sin internet: se avisa abajo */ }
     if (cc) return linkCoach(code, cc, showError);
-    return showError('No existe ninguna rutina, dieta, gymbro ni coach con ese código.');
+    return showError(kind === 'gymbro' ? 'No existe ningún gymbro con ese código.'
+      : kind === 'rutina' ? 'No existe ninguna rutina con ese código.'
+      : kind === 'dieta' ? 'No existe ninguna dieta con ese código.'
+      : 'No existe ninguna rutina, dieta, gymbro ni coach con ese código.');
   }
   if (data.diet) return importDiet(data);
   if (data.program) return useSharedProgram(data.program, data.ownerName);
@@ -2727,7 +2731,7 @@ function viewAddGymbro() {
       : '<p class="muted">Creando tu código…</p>'}
       <p class="muted hint">Mándale tu link a un amigo. Cuando lo toque quedan conectados como gymbros y pueden chatear. Solo puede agregarte quien tenga tu código.</p>
     </section>
-    ${importForm('¿Te pasaron un código de gymbro?')}`;
+    ${importForm('¿Te pasaron un código de gymbro?', 'gymbro')}`;
 }
 
 // Crea tu código de gymbro la primera vez (si ya existe ese código se prueba otro)
