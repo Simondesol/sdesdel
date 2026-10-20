@@ -4994,7 +4994,7 @@ const guideBody = g => `${g.video
   <p class="muted small" style="margin:0">Guía general. Si tienes una lesión o sientes dolor, consulta a un profesional.</p>`;
 
 // ---------- Ver ejercicios por músculo (al editar una rutina): técnica y video antes de añadirlo ----------
-let exploreOpen = false, exploreQ = '', exploreZone = '', exploreView = null, exploreScroll = 0;   // lista abierta, búsqueda, grupo, ejercicio abierto
+let exploreOpen = false, exploreQ = '', exploreZone = '', exploreView = null, exploreScroll = 0, exploreChips = 0;   // lista abierta, búsqueda, grupo, ejercicio abierto
 const exploreItem = g => `<button type="button" class="food-pick" data-action="explore-open" data-g="${g.id}">
     <span class="grow"><strong>${esc(g.name)}</strong><span class="muted small">${esc(g.musc)}</span></span><span class="chev">›</span></button>`;
 function exploreListHtml() {
@@ -5911,6 +5911,7 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       break;
     case 'explore-open': {   // ver la técnica de uno (se recuerda dónde ibas en la lista)
       exploreScroll = $app.querySelector('.explore-sheet')?.scrollTop || 0;
+      exploreChips = $app.querySelector('.explore-zones')?.scrollLeft || 0;
       exploreView = el.dataset.g;
       render();
       break;
@@ -5918,8 +5919,9 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
     case 'explore-back': {
       exploreView = null;
       render();
-      const sh = $app.querySelector('.explore-sheet');
+      const sh = $app.querySelector('.explore-sheet'), chips = $app.querySelector('.explore-zones');
       if (sh) sh.scrollTop = exploreScroll;
+      if (chips) chips.scrollLeft = exploreChips;   // la fila de músculos queda donde la dejaste
       break;
     }
     case 'explore-close':
