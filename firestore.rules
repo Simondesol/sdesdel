@@ -69,12 +69,12 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['studentName', 'summary']);
       allow delete: if request.auth != null && (request.auth.uid == studentUid || resource.data.coachUid == request.auth.uid);
 
-      // Rutinas que el coach cambió: las escribe el coach y la app del alumno las aplica y las borra
+      // Rutinas, programas y programa activo que el coach cambió: los escribe el coach y la app del alumno los aplica y los borra
       match /edits/{rid} {
         allow read: if request.auth != null && (request.auth.uid == studentUid || isCoachOf(studentUid));
         allow create, update: if isCoachOf(studentUid)
           && request.resource.data.by == request.auth.uid
-          && request.resource.data.keys().hasOnly(['routine', 'deleted', 'at', 'by']);
+          && request.resource.data.keys().hasOnly(['routine', 'program', 'plan', 'deleted', 'kind', 'at', 'by']);
         allow delete: if request.auth != null && (request.auth.uid == studentUid || isCoachOf(studentUid));
       }
     }

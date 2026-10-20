@@ -1018,8 +1018,10 @@ p.reps-by { display: block; }
   background: #1d3a6b; color: #fff; }
 .view-bar .grow { display: grid; gap: 1px; }
 .view-bar .muted { color: #c9d6ee; }
-body.viewing header.bar { top: 52px; }
+body.viewing header.bar { top: var(--viewbar, 52px); }
 .coach-log { padding: 8px 0; border-bottom: 1px solid var(--border); }
 .coach-log-head { display: flex; align-items: baseline; gap: 10px; }
 .coach-log-list { margin: 4px 0 0; padding-left: 18px; color: var(--muted); font-size: 14px; display: grid; gap: 2px; }
 .coach-log:last-child { border-bottom: 0; }
+.student .small-btn { flex: none; min-height: 36px; padding: 0 12px; display: inline-flex; align-items: center; }
+.view-bar .small-btn { flex: none; display: inline-flex; align-items: center; }
