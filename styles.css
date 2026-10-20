@@ -1022,9 +1022,10 @@ p.reps-by { display: block; }
 .student-main .grow { display: grid; gap: 3px; }
 .student-alert { color: var(--danger); font-size: 13px; font-weight: 600; }
 .view-bar { position: sticky; top: 0; z-index: 7; display: flex; align-items: center; gap: 10px; margin: 0 -16px; padding: 8px 16px;
-  background: #1d3a6b; color: #fff; }
+  background: var(--surface); color: var(--text); border-bottom: 2px solid var(--accent); }
+.view-bar strong { color: var(--accent); }
 .view-bar .grow { display: grid; gap: 1px; }
-.view-bar .muted { color: #c9d6ee; }
+.view-bar .muted { color: var(--muted); }
 body.viewing header.bar { top: var(--viewbar, 52px); }
 .coach-log { padding: 8px 0; border-bottom: 1px solid var(--border); }
 .coach-log-head { display: flex; align-items: baseline; gap: 10px; }
@@ -1053,3 +1054,10 @@ body.viewing .hub-btns:empty { display: none; }
 body.viewing-chat [data-action="attach"] { display: none !important; }
 /* Viendo a un alumno: sin Social abajo (se sale con Salir) */
 body.viewing #tabs [data-tab="social"] { display: none; }
+.student-main .avatar { flex: none; }
+.student-chat { flex: none; color: var(--accent); display: grid; place-items: center; text-decoration: none; }
+.invite-row { display: flex; align-items: center; gap: 10px; }
+.invite-row .grow { display: grid; gap: 2px; }
+.invite-row strong { font-size: 20px; letter-spacing: .08em; }
+.invite-row .small-btn { flex: none; display: inline-flex; align-items: center; padding: 0 14px; }
+button.wk-day { font-family: inherit; border: 0; cursor: pointer; padding: 0; }

@@ -247,8 +247,8 @@ function weekCard() {
           `<button class="${w === weekOffset ? 'on' : ''}" data-action="week-sum" data-w="${w}">${label}</button>`).join('')}</div></div>
       <div class="wk-train">
         <span><strong>${s.planned ? `${s.done} de ${s.planned}` : s.done}</strong> ${s.planned ? 'entrenos del plan' : s.done === 1 ? 'entreno' : 'entrenos'}</span>
-        <div class="wk-days" aria-hidden="true">${s.days.map((d, k) =>
-          `<span class="wk-day ${d.trained ? 'done' : d.planned && !d.future ? 'missed' : d.planned ? 'planned' : ''}">${WEEK_LETTERS[k]}</span>`).join('')}</div>
+        <div class="wk-days">${s.days.map((d, k) =>
+          `<button type="button" class="wk-day ${d.trained ? 'done' : d.planned && !d.future ? 'missed' : d.planned ? 'planned' : ''}" data-action="week-day" data-k="${d.k}" aria-label="${fmtDMY(d.k)}">${WEEK_LETTERS[k]}</button>`).join('')}</div>
       </div>
       ${stats.length ? `<div class="wk-stats">${stats.join('')}</div>` : ''}
       ${s.prs.length ? `<span class="muted small">${s.prs.length === 1 ? 'Récord' : `${s.prs.length} récords`}: <strong class="wk-prs">${s.prs.map(esc).join(', ')}</strong></span>` : ''}
@@ -2286,7 +2286,7 @@ const VIEW_OK = ['', 'chat', 'rutinas', 'rutina', 'programas', 'miprograma', 'li
 const VIEW_EXIT = ['social', 'gymbro', 'perfil', 'privacidad', 'cuenta', 'alumnos', 'coach', 'asignar'];
 // Lo que se puede tocar mirando a un alumno, y lo extra en el editor de rutinas
 const VIEW_SAFE = new Set(['back', 'view-exit', 'vid-toggle', 'info', 'toggle-sec', 'range', 'toggle-history', 'hist-month', 'hist-day', 'skin-view', 'measure-view',
-  'prog-open', 'prog-close', 'prog-filter', 'prog-retry', 'week-sum', 'guide-view', 'guide-close', 'explore-zone', 'explore-open', 'explore-back', 'explore-close', 'go-ex', 'prev-ex', 'next-ex']);
+  'prog-open', 'prog-close', 'prog-filter', 'prog-retry', 'week-sum', 'week-day', 'guide-view', 'guide-close', 'explore-zone', 'explore-open', 'explore-back', 'explore-close', 'go-ex', 'prev-ex', 'next-ex']);
 const VIEW_ROUTINE = new Set(['reps-by', 'toggle-drop', 'toggle-bw', 'toggle-ss', 'toggle-rir', 'toggle-unit', 'move', 'ex-open', 'ex-close', 'del-ex', 'dup-routine', 'del-routine',
   'guide-pick', 'guide-change', 'guide-set', 'guide-pick-close', 'explore-list', 'explore-add', 'sugg-ex']);
 const VIEW_PROGRAM = new Set(['myprog-new', 'myprog-weeks', 'myprog-stop', 'myprog-use', 'myprog-del', 'prog-level', 'prog-days', 'prog-add', 'prog-add-one']);
@@ -2651,7 +2651,7 @@ function exitViewing() {
   openEx = null;
   document.body.classList.remove('viewing');
   for (const f of v.queued) f();
-  if (routeParts()[0] === '' || VIEW_OK.includes(routeParts()[0])) location.hash = '#/alumnos';
+  if (routeParts()[0] === '' || VIEW_OK.includes(routeParts()[0])) location.replace('#/alumnos');
   else render();
 }
 // Envía al alumno las rutinas y programas que cambiaste (o borraste) y su programa activo
@@ -2672,7 +2672,7 @@ function pushCoachEdits() {
   if (now.nutri !== v.base.nutri) put('nutri', { nutri: { activeDietId: db.nutrition.activeDietId || null, dietLinks: db.nutrition.dietLinks ? clone(db.nutrition.dietLinks) : null } });
   if (now.target !== v.base.target) put('target', { target: targetOf(db.body) });
   v.base = now;
-  if (jobs.length) Promise.all(jobs).catch(() => notice(`No se pudo enviar el cambio a ${v.name}. Revisa tu internet.`));
+  if (jobs.length) Promise.all(jobs).then(() => showNote(`Enviado a ${v.name} ✓`), () => notice(`No se pudo enviar el cambio a ${v.name}. Revisa tu internet.`));
 }
 
 // Mirando a un alumno, los textos de la app hablan de él ("Hoy a Juan le toca", "Programas de Juan")
@@ -2715,6 +2715,25 @@ function povTexts() {
     if (v !== txt) t.nodeValue = raw.replace(txt, v);
   }
 }
+
+// Mirando a un alumno, la barra de abajo no apila pantallas: así "atrás" desde una pestaña vuelve a su Inicio,
+// y "atrás" desde su Inicio vuelve a Mis alumnos (sale de su vista)
+const TOP_SCREENS = ['rutinas', 'programas', 'historial', 'progreso', 'nutricion', 'peso', 'grasa', 'medidas', 'fotos'];
+document.addEventListener('click', e => {
+  if (!viewing) return;
+  const a = e.target.closest('#tabs a, .range a');
+  if (!a) return;
+  const to = (a.getAttribute('href') || '').replace(/^#\/?/, '').split('/')[0], here = routeParts()[0];
+  if (to === here && !a.getAttribute('href').includes('/', 2)) { e.preventDefault(); return; }
+  if (!TOP_SCREENS.includes(here)) return;   // desde su Inicio (o más adentro) se avanza normal
+  e.preventDefault();
+  if (to === '') history.back();             // a su Inicio: se vuelve atrás
+  else location.replace(a.getAttribute('href'));   // entre pestañas: se reemplaza
+}, true);
+window.addEventListener('hashchange', () => {
+  // Llegaste a Mis alumnos con "atrás" desde su Inicio: se sale de su vista
+  if (viewing && routeParts()[0] === 'alumnos') exitViewing();
+});
 
 // Comentario del coach sobre un entreno: el coach lo escribe mirando al alumno; el alumno lo ve en ese entreno
 function coachCommentHtml(w) {
@@ -2988,8 +3007,10 @@ function viewStudents() {
   const sorted = students.slice().sort((a, b) => ((b.summary || {}).last?.date || '').localeCompare((a.summary || {}).last?.date || ''));
   const list = sorted.map(l => {
     const sm = l.summary || {}, last = sm.last, idle = last ? daysSince(last.date) : null;
+    loadProfile(l.studentUid);   // su foto de perfil (si tiene)
     return `<section class="card student">
       <button class="student-main" data-action="student-view" data-uid="${esc(l.studentUid)}">
+        ${avatarHtml(l.studentName || 'Alumno', ((profiles.get(l.studentUid) || {}).data || {}).stats?.photo || null)}
         <span class="grow"><strong>${esc(l.studentName || 'Alumno')}</strong>
           <span class="muted small">${last ? `Último entreno: ${esc(last.name || 'Entreno')} · ${daysAgo(last.date)}` : 'Todavía no anota entrenamientos'}</span>
           <span class="muted small">Esta semana: ${sm.planned ? `${sm.week || 0} de ${sm.planned}` : plural(sm.week || 0, 'entreno')}${sm.kg ? ` · Peso: ${fmtNum(sm.kg)} kg` : ''}</span>
@@ -2997,11 +3018,10 @@ function viewStudents() {
           ${checkinNew(l) ? '<span class="student-new">Check-in nuevo</span>' : ''}</span>
         <span class="chev">›</span>
       </button>
-      ${chats.some(c => c.id === [user.uid, l.studentUid].sort().join('_')) ? `<a class="btn small-btn" href="#/chat/${[user.uid, l.studentUid].sort().join('_')}">Chat</a>` : ''}
+      ${chats.some(c => c.id === [user.uid, l.studentUid].sort().join('_')) ? `<a class="icon student-chat" href="#/chat/${[user.uid, l.studentUid].sort().join('_')}" aria-label="Chat con ${esc(l.studentName || 'tu alumno')}"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-4.9A8 8 0 1 1 21 12Z"/></svg></a>` : ''}
     </section>`;
   }).join('');
-  return `${header('Mis alumnos', { back: true, sub: 'Modo coach' })}
-    <section class="card share-box">
+  const codeBox = `<section class="card share-box">
       <div class="muted">Tu código de coach</div>
       ${code ? `<div class="code">${fmtCode(code)}</div>
         <div class="ex-actions">
@@ -3010,9 +3030,17 @@ function viewStudents() {
       : coachCodeError ? '<p>No se pudo crear tu código. Revisa tu internet.</p><button class="btn primary" data-action="coach-retry">Reintentar</button>'
       : '<p class="muted">Creando tu código…</p>'}
       <p class="muted hint">Mándaselo solo a tus alumnos: quien lo use te da acceso a todos sus datos. Es distinto de tu código de gymbro.</p>
-    </section>
+    </section>`;
+  // Con alumnos, la lista va primero y el código queda chico abajo (Invitar alumno)
+  const invite = code ? `<section class="card invite-row">
+      <span class="grow"><span class="muted small">Tu código de coach</span><strong>${fmtCode(code)}</strong></span>
+      <button class="btn primary small-btn" data-action="coach-send">+ Invitar alumno</button>
+    </section>` : codeBox;
+  return `${header('Mis alumnos', { back: true, sub: 'Modo coach' })}
+    ${students.length ? '' : codeBox}
     ${students.length ? '<a class="btn block center" href="#/asignar" style="margin:0 0 12px">Asignar rutina o programa</a>' : ''}
     ${!studentsLoaded ? '<p class="empty">Cargando…</p>' : list || '<p class="empty">Todavía no tienes alumnos. Mándales tu código: en Desdel van a Social → Tengo coach.</p>'}
+    ${students.length ? invite : ''}
     <p class="muted small" style="margin-top:20px">Para dejar de usar el modo coach, ve a Cuenta.</p>`;
 }
 
@@ -3786,7 +3814,7 @@ function loadProfile(uid) {
   profiles.set(uid, { ...(p || {}), loading: true });
   cloud.getProfile(uid)
     .then(data => profiles.set(uid, { data, at: Date.now() }), () => profiles.set(uid, { error: true, at: Date.now() }))
-    .then(() => { if (['perfil', 'social', 'chat'].includes(routeParts()[0])) refresh(); });
+    .then(() => { if (['perfil', 'social', 'chat', 'alumnos'].includes(routeParts()[0])) refresh(); });
 }
 
 // Datos del perfil que puedes ocultar (todos se muestran si no los apagas)
@@ -4187,6 +4215,10 @@ function ffmiMissing() {
 function bodyweightCard() {
   const last = db.bodyweight[db.bodyweight.length - 1];
   const change = bwChange(30), gi = goalInfo();
+  if (viewing) {   // mirando a un alumno: toda la tarjeta lleva a su peso
+    return `<a class="card hub" href="#/peso"><div class="hub-top"><span class="hub-icon">⚖️</span><strong>Cuerpo</strong></div>
+      <span class="muted">${last ? `Último peso: ${fmtKg(last.kg)}` : 'Todavía no anota su peso'}</span></a>`;
+  }
   if (!last || last.date !== todayKey()) {
     return `<div class="card hub">
       <a class="hub-top" href="#/peso"><span class="hub-icon">⚖️</span><strong>Cuerpo</strong></a>
@@ -7041,6 +7073,12 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       weekOffset = +el.dataset.w;
       render();
       break;
+    case 'week-day': {   // un día del resumen semanal: su entreno (o el historial de ese mes)
+      const ws = db.workouts.filter(w => dayKeyOf(w.date) === el.dataset.k);
+      if (ws.length === 1) go('#/sesion/' + ws[0].id);
+      else { histMonth = { y: +el.dataset.k.slice(0, 4), m: +el.dataset.k.slice(5, 7) - 1 }; go('#/historial'); }
+      break;
+    }
     case 'del-skin': {
       const k = db.skinfolds.findIndex(e => e.date === el.dataset.date);
       if (k < 0) return;
