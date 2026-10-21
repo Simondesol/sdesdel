@@ -44,6 +44,7 @@ function persistLocal() {
 function save() {
   if (viewing) { scheduleCoachEdits(); return; }   // viendo a un alumno: sus rutinas cambiadas se le envían
   recordPlan();
+  syncDraftRoutine();
   persistLocal(); scheduleSync(); scheduleProfile(); scheduleCoachSummary();
 }
 
@@ -135,8 +136,10 @@ function bestSets(exerciseId, before = db.workouts.length, unit = null, rid = nu
 // Compara lo que se está escribiendo con la mejor marca (null si no hay nada que comparar)
 function liveCmp(s, ex, best) {
   if (!best) return null;
-  // ▲ = ▼ solo cuando escribes algo (con lo de la vez pasada sin tocar no hay nada que comparar)
-  if (s.pw != null || s.pr != null) { if (!typedSet(s) && !s.done) return null; s = { ...s, ...effSet(s) }; }
+  // ▲ = ▼ recién cuando escribes el peso y las repeticiones (con peso corporal basta con las repeticiones)
+  const has = v => v !== '' && v != null;
+  if (!has(s.r) || !(has(s.w) || isBwEx(ex))) return null;
+  s = { ...s, ...effSet(s) };
   const w = num(s.w), r = num(s.r);
   if (w == null && r == null) return null;
   return cmpSet({ w, r, rir: num(s.rir), unit: ex.unit, bw: bwFor(ex, new Date().toISOString()) }, best);
@@ -1107,7 +1110,7 @@ function historyFor(exerciseId, skipId = null) {
 }
 
 // Series al empezar: vacías, con lo de la última vez en gris (pw, pr, prir) como referencia.
-// Al guardar, lo que dejaste vacío se completa con lo de la vez pasada (si no escribes nada, queda igual que esa vez).
+// Al guardar, lo que dejaste vacío se completa con lo de la vez pasada; un ejercicio sin nada anotado no se guarda.
 // Si el objetivo pide más series que la última vez, las nuevas traen de referencia la última serie.
 function prefillSets(prev, rir, goalSets = 0, dropset = false) {
   const ph = s => ({ w: '', r: '', ...(rir ? { rir: '' } : {}), pw: toField(s.w), pr: toField(s.r), ...(rir && s.rir != null ? { prir: toField(s.rir) } : {}) });
@@ -1147,11 +1150,16 @@ const planFields = ex => ({ ...goalFields(ex), ...(ex.dropset ? { dropset: true 
 // Repeticiones distintas por serie: ex.goalRepsBy[j] (vacío = el rango general de Reps)
 const hasRepsBy = ex => (ex.goalSets || 0) >= 2 && Array.isArray(ex.goalRepsBy) && ex.goalRepsBy.slice(0, ex.goalSets).some(Boolean);
 const repsFor = (ex, j) => (hasRepsBy(ex) ? ex.goalRepsBy[j] || '' : ex.goalReps || '');
+// RIR objetivo distinto por serie (con "Distinto por serie" y RIR activado): ex.goalRirBy[j]
+const hasRirBy = ex => !!ex.rir && (ex.goalSets || 0) >= 2 && Array.isArray(ex.goalRirBy) && ex.goalRirBy.slice(0, ex.goalSets).some(Boolean);
+const rirFor = (ex, j) => (hasRirBy(ex) ? ex.goalRirBy[j] || '' : ex.goalRir || '');
+const rirText = ex => (hasRirBy(ex) ? ex.goalRirBy.slice(0, ex.goalSets).map(x => x || '–').join(' / ') : ex.goalRir || '');
 const goalFields = ex => ({
   ...(ex.goalSets ? { goalSets: ex.goalSets } : {}),
   ...(ex.goalReps ? { goalReps: ex.goalReps } : {}),
   ...(hasRepsBy(ex) ? { goalRepsBy: ex.goalRepsBy.slice(0, ex.goalSets || ex.goalRepsBy.length) } : {}),
   ...(ex.goalRir ? { goalRir: ex.goalRir } : {}),
+  ...(hasRirBy(ex) ? { goalRirBy: ex.goalRirBy.slice(0, ex.goalSets) } : {}),
 });
 
 // Texto de una serie guardada: "40 kg × 10" o "40 kg × 10 · RIR 2"
@@ -1284,13 +1292,23 @@ const moreBtn = (key, total) => (total > 7
 
 let openEx = null;   // ejercicio abierto en el editor de rutina (los demás se ven como resumen)
 const repsByOpen = new Set();   // ejercicios con "Distinto por serie" activado (aunque todavía no tengan rangos)
-const repsByOn = ex => (ex.goalSets || 0) >= 2 && (repsByOpen.has(ex.id) || hasRepsBy(ex));
+const repsByOn = ex => (ex.goalSets || 0) >= 2 && (repsByOpen.has(ex.id) || hasRepsBy(ex) || hasRirBy(ex));
 // Casilla Reps: normal, o "Por serie" cuando cada serie tiene su rango
 const repsCell = (ex, i) => (repsByOn(ex)
   ? '<div class="goal-fixed-wrap"><span>Reps</span><span class="goal-fixed">Por serie</span></div>'
   : `<label>Reps<input data-bind="ex-goal-reps" data-i="${i}" inputmode="decimal" value="${esc(ex.goalReps || '')}" placeholder="8-10" autocomplete="off" aria-label="Rango de repeticiones objetivo"></label>`);
-// Una casilla por serie (se redibuja sola al cambiar el número de series)
-const repsByBlock = (ex, i) => (ex.goalSets
+// Casilla RIR obj.: normal, "Por serie" (cada serie con el suyo) o "Fallo" sin RIR
+const rirCell = (ex, i) => (!ex.rir
+  ? '<div class="goal-fixed-wrap"><span>Hasta</span><span class="goal-fixed" title="Activa RIR para poner un RIR objetivo">Fallo</span></div>'
+  : repsByOn(ex)
+    ? '<div class="goal-fixed-wrap"><span>RIR obj.</span><span class="goal-fixed">Por serie</span></div>'
+    : `<label>RIR obj.<input data-bind="ex-goal-rir" data-i="${i}" inputmode="decimal" value="${esc(ex.goalRir || '')}" placeholder="–" autocomplete="off" aria-label="RIR objetivo"></label>`);
+// Una casilla por serie (se redibuja sola al cambiar el número de series); con RIR, una fila por serie: reps y RIR
+const repsByBlock = (ex, i) => (ex.goalSets && ex.rir
+  ? `<div class="reps-by rir-by" data-i="${i}"><span></span><span>Repeticiones</span><span>RIR</span>${Array.from({ length: ex.goalSets }, (_, j) => `<span>Serie ${j + 1}</span>
+      <input data-bind="ex-repby" data-i="${i}" data-j="${j}" inputmode="decimal" value="${esc((ex.goalRepsBy || [])[j] || '')}" placeholder="8-10" autocomplete="off" aria-label="Repeticiones de la serie ${j + 1}">
+      <input data-bind="ex-rirby" data-i="${i}" data-j="${j}" inputmode="decimal" value="${esc((ex.goalRirBy || [])[j] || '')}" placeholder="–" autocomplete="off" aria-label="RIR de la serie ${j + 1}">`).join('')}</div>`
+  : ex.goalSets
   ? `<div class="reps-by" data-i="${i}">${Array.from({ length: ex.goalSets }, (_, j) => `<label><span>Serie ${j + 1}</span>
       <input data-bind="ex-repby" data-i="${i}" data-j="${j}" inputmode="decimal" value="${esc((ex.goalRepsBy || [])[j] || '')}" placeholder="8-10" autocomplete="off" aria-label="Repeticiones de la serie ${j + 1}"></label>`).join('')}</div>`
   : `<p class="muted small reps-by" data-i="${i}">Pon cuántas Series para escribir el rango de cada una.</p>`);
@@ -1312,7 +1330,7 @@ function exSummary(ex) {
   else if (ex.goalSets && ex.goalReps) parts.push(`${ex.goalSets} × ${ex.goalReps}`);
   else if (ex.goalSets) parts.push(plural(ex.goalSets, 'serie'));
   else if (ex.goalReps) parts.push(`${ex.goalReps} reps`);
-  if (ex.rir) parts.push(ex.goalRir ? `RIR ${ex.goalRir}` : 'Con RIR');
+  if (ex.rir) parts.push(rirText(ex) ? `RIR ${rirText(ex)}` : 'Con RIR');
   else if (ex.goalSets || ex.goalReps) parts.push('Al fallo');
   if (ex.dropset) parts.push('Dropset');
   if (ex.bw) parts.push('Peso corporal');
@@ -1336,9 +1354,7 @@ function viewRoutine() {
       <div class="ex-goals" aria-label="Objetivo (opcional)">
         <label>Series<input data-bind="ex-goal-sets" data-i="${i}" inputmode="numeric" value="${ex.goalSets || ''}" placeholder="–" autocomplete="off" aria-label="Series objetivo"></label>
         <div class="reps-cell" data-i="${i}">${repsCell(ex, i)}</div>
-        ${ex.rir   // con RIR activado se escribe el RIR objetivo; sin RIR, la serie va al fallo
-          ? `<label>RIR obj.<input data-bind="ex-goal-rir" data-i="${i}" inputmode="decimal" value="${esc(ex.goalRir || '')}" placeholder="–" autocomplete="off" aria-label="RIR objetivo"></label>`
-          : '<div class="goal-fixed-wrap"><span>Hasta</span><span class="goal-fixed" title="Activa RIR para poner un RIR objetivo">Fallo</span></div>'}
+        <div class="reps-cell rir-cell" data-i="${i}">${rirCell(ex, i)}</div>
         <label>Rest<input data-bind="ex-rest" data-i="${i}" value="${ex.rest ? fmtRest(ex.rest) : ''}" placeholder="m:ss" autocomplete="off" aria-label="Descanso entre series"></label>
       </div>
       <div class="reps-by-wrap" data-i="${i}">${repsByOn(ex) ? repsByBlock(ex, i) : ''}</div>
@@ -1538,7 +1554,7 @@ function viewWorkout() {
         <span class="u">${unitShort(ex.unit)}</span>
         <span class="x">×</span>
         <input inputmode="numeric" data-bind="r" data-i="${i}" data-j="${j}" value="${esc(s.r)}" placeholder="${esc(repsFor(ex, j) || s.pr || 'reps')}" aria-label="Repeticiones serie ${label}">
-        ${ex.rir ? `<input class="rir" inputmode="numeric" data-bind="rir" data-i="${i}" data-j="${j}" value="${esc(s.rir ?? '')}" placeholder="${esc(s.prir || 'RIR')}" aria-label="RIR serie ${label}">` : ''}
+        ${ex.rir ? `<input class="rir" inputmode="numeric" data-bind="rir" data-i="${i}" data-j="${j}" value="${esc(s.rir ?? '')}" placeholder="${esc(rirFor(ex, j) || s.prir || 'RIR')}" aria-label="RIR serie ${label}">` : ''}
         <span class="mark-cell" data-mark="${i}-${j}">${markSpan(liveCmp(s, ex, best[j]))}</span>
         <button class="set-del" data-action="del-set" data-i="${i}" data-j="${j}" aria-label="Borrar serie">✕</button>
       </div>
@@ -1551,7 +1567,7 @@ function viewWorkout() {
   const exInfo = (ex, i) => {
     // Sin RIR activado se va al fallo (se muestra junto al resto del objetivo)
     const goals = [['Series', ex.goalSets], ['Repeticiones', hasRepsBy(ex) ? 'Por serie' : ex.goalReps]].filter(([, v]) => v);
-    if (ex.rir && ex.goalRir) goals.push(['RIR', ex.goalRir]);
+    if (ex.rir && (hasRirBy(ex) || ex.goalRir)) goals.push(['RIR', hasRirBy(ex) ? 'Por serie' : ex.goalRir]);
     else if (!ex.rir && goals.length) goals.push(['Hasta', 'Fallo']);
     let hint = '';
     if (!editing && (ex.goalReps || hasRepsBy(ex))) {
@@ -2221,7 +2237,7 @@ function viewSession(id) {
     ${asRoutine}
     ${(prs => (prs.length ? `<section class="card pr-card"><strong>🔥 ${prs.length === 1 ? 'Nuevo récord' : `${prs.length} récords nuevos`}</strong>
       ${prs.map(pr => `<span>${esc(pr.text)}</span>`).join('')}
-      <span class="muted small">Récord = tu mejor 1RM estimado de la 1ª serie (en cualquier rutina), o superar tu mejor 2ª, 3ª… serie en esta rutina.${prsSent && prsSent.id === w.id ? ' Se lo avisamos a tus gymbros.' : ''}</span></section>` : ''))(newPRs(w))}
+      <span class="muted small">Récord = superar tu mejor 1ª serie (en cualquier rutina), o tu mejor 2ª, 3ª… serie en esta rutina.${prsSent && prsSent.id === w.id ? ' Se lo avisamos a tus gymbros.' : ''}</span></section>` : ''))(newPRs(w))}
     ${viewing ? '' : `<button class="btn primary block" data-action="share-workout" data-id="${w.id}" style="margin:0 0 10px">📤 Compartir entrenamiento</button>`}
     ${blocks}
     ${viewing ? '' : `<a class="btn block center" href="#/editar/${w.id}">Editar entrenamiento</a>
@@ -2408,7 +2424,7 @@ function routineChanges(o, n) {
     const a = old.get(ex.id);
     if (!a) { out.push(`Agregó ${ex.name}${ex.goalSets ? ` (${plural(ex.goalSets, 'serie')}${reps(ex) ? ` × ${reps(ex)}` : ''})` : ''}`); continue; }
     const parts = [ch('series', a.goalSets, ex.goalSets), ch('repeticiones', reps(a), reps(ex)),
-      !!a.rir !== !!ex.rir ? `RIR ${ex.rir ? `activado${ex.goalRir ? ` (${ex.goalRir})` : ''}` : 'desactivado'}` : ex.rir ? ch('RIR', a.goalRir, ex.goalRir) : null,
+      !!a.rir !== !!ex.rir ? `RIR ${ex.rir ? `activado${rirText(ex) ? ` (${rirText(ex)})` : ''}` : 'desactivado'}` : ex.rir ? ch('RIR', rirText(a), rirText(ex)) : null,
       ch('descanso', rest(a), rest(ex)), onOff('dropset', a.dropset, ex.dropset), onOff('peso corporal', a.bw, ex.bw),
       ch('unidad', a.unit, ex.unit), a.guide !== ex.guide ? 'cambió la técnica' : null].filter(Boolean);
     if (a.name !== ex.name) out.push(`Cambió ${a.name} por ${ex.name}${parts.length ? ` (${parts.join(', ')})` : ''}`);
@@ -3520,6 +3536,10 @@ function addFromMessage(id) {
   else if (m.type === 'routine') importRoutineData({ ...data, routine: m.routine });
 }
 
+// Básicos: sus récords muestran el 1RM estimado (o el lastre máx. en dominadas y fondos)
+const E1RM_GUIDES = new Set(['sentadilla', 'sentadilla-frontal', 'peso-muerto', 'peso-muerto-sumo', 'peso-muerto-rumano', 'press-banca', 'press-inclinado-barra',
+  'press-militar', 'press-militar-sentado', 'dominadas', 'dominadas-supinas', 'fondos']);
+const showsE1rm = ex => { const g = guideFor(ex.name, (db.routines.flatMap(r => r.exercises).find(e => e.id === ex.exerciseId) || {}).guide); return !!g && E1RM_GUIDES.has(g.id); };
 // PRs del entrenamiento: 1RM estimado de la 1ª serie mayor que el mejor anterior (en cualquier rutina),
 // y desde la 2ª serie, superar a tu mejor serie de esa misma posición en esa rutina (lo que marca ▲)
 function newPRs(w) {
@@ -3540,7 +3560,8 @@ function newPRs(w) {
     if (prev > 0 && cur > prev + 0.01) {
       const s = ex.sets.find(x => x.w != null);
       const bw = isBwEx(ex);
-      prs.push({ id: ex.exerciseId, name: ex.name, text: `${ex.name}: ${fmtNum(s.w)} ${ex.unit} × ${fmtNum(s.r || 1)}${s.rir != null ? ` · RIR ${fmtNum(s.rir)}` : ''}${bw ? ' + peso corporal' : ''} → ${bw ? 'lastre máx.' : '1RM'} ≈ ${bw ? '+' : ''}${fmtNum(round1(e1rmEx(ex, s, w.date)))} ${ex.unit}` });
+      const est = showsE1rm(ex) ? ` → ${bw ? 'lastre máx.' : '1RM'} ≈ ${bw ? '+' : ''}${fmtNum(round1(e1rmEx(ex, s, w.date)))} ${ex.unit}` : '';
+      prs.push({ id: ex.exerciseId, name: ex.name, text: `${ex.name}: ${fmtNum(s.w)} ${ex.unit} × ${fmtNum(s.r || 1)}${s.rir != null ? ` · RIR ${fmtNum(s.rir)}` : ''}${bw ? ' + peso corporal' : ''}${est}` });
     }
     const best = bestSets(ex.exerciseId, idx < 0 ? db.workouts.length : idx, ex.unit, ex.extra ? null : w.routineId);
     const first = ex.sets.findIndex(x => x.w != null);
@@ -4923,7 +4944,7 @@ function closeTour() { tourOpen = false; setTourSeen(); render(); }
 // Consejo la primera vez que entras a una sección (se cierra con ✕ y no vuelve a salir)
 const TIPS = {
   rutinas: 'Toca una rutina para editarla y Empezar para entrenarla. Si tienes un programa activo, la que te toca hoy aparece marcada.',
-  entrenar: 'En gris está el peso de la vez anterior y tu objetivo de repeticiones. Si no escribes nada, se guarda lo que hiciste la vez anterior; si cambia, escribe lo nuevo. Si no hiciste una serie, bórrala con ✕. ▲ superaste tu mejor serie, = igualaste, ▼ quedaste bajo.',
+  entrenar: 'En gris está el peso de la vez anterior y tu objetivo de repeticiones. Si dejas una casilla vacía, se guarda lo que hiciste la vez anterior; si cambia, escribe lo nuevo. Un ejercicio en el que no anotas nada no se guarda. Si no hiciste una serie, bórrala con ✕. ▲ superaste tu mejor serie, = igualaste, ▼ quedaste bajo.',
   programas: 'Los programas listos traen la semana armada según tus días y nivel. El programa activo es el que te dice qué rutina te toca cada día.',
   historial: 'Toca un día del calendario para ver lo que entrenaste. Desde cada entreno lo puedes editar o compartir.',
   progreso: 'Toca un ejercicio para ver su gráfico y tus récords.',
@@ -5403,24 +5424,66 @@ $toast.addEventListener('click', e => {
 });
 
 // ---------- Entrenamiento ----------
+// Firma de la rutina (para saber si la editaste con el entreno en curso)
+const routineSig = r => { const t = stable(r.exercises); let h = 0; for (let k = 0; k < t.length; k++) h = (h * 31 + t.charCodeAt(k)) | 0; return String(h); };
+const draftEx = (ex, last, rid) => ({
+  exerciseId: ex.id, name: ex.name, unit: ex.unit, rest: ex.rest || 0, rir: !!ex.rir, ...planFields(ex),
+  ...(last ? { ssNext: false } : {}),   // el último no se une con nada
+  sets: prefillSets(lastFor(ex.id, db.workouts.length, rid), ex.rir, ex.goalSets, ex.dropset),
+});
+// Editaste la rutina del entreno en curso: el entreno toma los cambios sin perder lo que ya anotaste
+function syncDraftRoutine() {
+  const d = db.draft;
+  if (!d || !d.routineId || d.free) return;
+  const r = db.routines.find(x => x.id === d.routineId);
+  if (!r) return;
+  const sig = routineSig(r);
+  if (d.rsig === sig) return;
+  const first = d.rsig == null; d.rsig = sig;
+  if (first) return;   // entreno empezado con la versión anterior de la app
+  const used = s => typedSet(s) || (s.rir !== '' && s.rir != null);
+  const posId = (d.exercises[d.pos || 0] || {}).exerciseId, timerId = d.timer ? (d.exercises[d.timer.i] || {}).exerciseId : null;
+  const old = new Map(d.exercises.map(e => [e.exerciseId, e])), lastK = r.exercises.length - 1;
+  const out = r.exercises.map((ex, k) => {
+    const o = old.get(ex.id), fresh = draftEx(ex, k === lastK, r.id);
+    if (!o) return fresh;
+    let sets = o.sets;
+    if ((o.goalSets || 0) !== (ex.goalSets || 0) && ex.goalSets) {   // cambió el número de series
+      sets = [...sets];
+      while (sets.length < ex.goalSets) sets.push(fresh.sets[sets.length] || nextSet(sets, ex.rir));
+      while (sets.length > ex.goalSets && !used(sets[sets.length - 1])) sets.pop();
+    }
+    if (ex.rir && !o.rir) sets = sets.map(x => ({ rir: '', ...x }));
+    const { sets: _, ...plan } = fresh;
+    return { ...plan, sets };
+  });
+  // Los que sacaste de la rutina: se quedan si ya anotaste algo (o si los agregaste mientras entrenabas)
+  d.exercises.forEach((e, k) => {
+    if (r.exercises.some(x => x.id === e.exerciseId) || !(e.extra || touchedEx(e))) return;
+    out.splice(Math.min(k, out.length), 0, { ...e, extra: true, ssNext: false });
+  });
+  d.exercises = out;
+  const at = id => out.findIndex(e => e.exerciseId === id);
+  d.pos = Math.max(0, Math.min(posId != null && at(posId) >= 0 ? at(posId) : d.pos || 0, out.length - 1));
+  if (d.timer) { const t = timerId != null ? at(timerId) : -1; if (t >= 0) d.timer.i = t; else d.timer = null; }
+}
 function startWorkout(r) {
   db.draft = {
     routineId: r.id,
     routineName: r.name,
     start: new Date().toISOString(),
     timer: null,
-    exercises: r.exercises.map((ex, k) => ({
-      exerciseId: ex.id, name: ex.name, unit: ex.unit, rest: ex.rest || 0, rir: !!ex.rir, ...planFields(ex),
-      ...(k === r.exercises.length - 1 ? { ssNext: false } : {}),   // el último no se une con nada
-      sets: prefillSets(lastFor(ex.id, db.workouts.length, r.id), ex.rir, ex.goalSets, ex.dropset),
-    })),
+    rsig: routineSig(r),
+    exercises: r.exercises.map((ex, k) => draftEx(ex, k === r.exercises.length - 1, r.id)),
   };
   save();
   go('#/entrenar');
 }
 
 // Convierte las series escritas en números y quita las vacías
+const touchedEx = ex => ex.sets.some(s => typedSet(s) || (s.rir !== '' && s.rir != null) || (s.drops || []).some(x => x.w !== '' || x.r !== ''));
 const cleanExercises = d => d.exercises
+  .filter(touchedEx)   // si no anotaste nada en un ejercicio, no se guarda (ni siquiera lo de la vez pasada)
   .map(ex => ({
     exerciseId: ex.exerciseId,
     name: ex.name,
@@ -6505,11 +6568,13 @@ $app.addEventListener('click', async e => {
       if (!repsByOn(ex)) {
         // Activar: cada serie parte con el rango que tenías
         ex.goalRepsBy = Array.from({ length: ex.goalSets || 0 }, () => ex.goalReps || '');
+        if (ex.rir) ex.goalRirBy = Array.from({ length: ex.goalSets || 0 }, () => ex.goalRir || '');
         repsByOpen.add(ex.id);
       } else {
-        if (hasRepsBy(ex) && !(await ask('¿Usar un solo rango para todas las series? Se borran los rangos de cada serie.', 'Usar un solo rango'))) return;
+        if ((hasRepsBy(ex) || hasRirBy(ex)) && !(await ask('¿Usar lo mismo en todas las series? Se borra lo que pusiste en cada serie.', 'Usar lo mismo'))) return;
         if (!ex.goalReps) { const first = (ex.goalRepsBy || []).find(Boolean); if (first) ex.goalReps = first; }
-        delete ex.goalRepsBy;
+        if (!ex.goalRir) { const first = (ex.goalRirBy || []).find(Boolean); if (first) ex.goalRir = first; }
+        delete ex.goalRepsBy; delete ex.goalRirBy;
         repsByOpen.delete(ex.id);
       }
       save(); render();
@@ -7542,6 +7607,14 @@ $app.addEventListener('input', e => {
     ex.goalRepsBy = by;
     repsByOpen.add(ex.id);
   }
+  else if (bind === 'ex-rirby') {
+    const ex = curRoutine().exercises[i], text = el.value.trim();
+    const by = Array.from({ length: Math.max(ex.goalSets || 0, j + 1) }, (_, k) => (ex.goalRirBy || [])[k] || '');
+    if (!text) by[j] = '';
+    else { const v = parseRange(text, 10); if (v) by[j] = v; }
+    ex.goalRirBy = by;
+    repsByOpen.add(ex.id);
+  }
   else if (bind === 'ex-goal-sets' || bind === 'ex-goal-reps' || bind === 'ex-goal-rir') {
     // Vacío = sin objetivo; si lo escrito no es válido se mantiene lo anterior
     const ex = curRoutine().exercises[i], text = el.value.trim();
@@ -7556,10 +7629,17 @@ $app.addEventListener('input', e => {
       // Con 1 serie vuelve la casilla Reps normal, con el rango que tenía esa serie
       if ((ex.goalSets || 0) < 2 && ex.goalRepsBy[0]) ex.goalReps = ex.goalRepsBy[0];
     }
+    if (key === 'goalSets' && Array.isArray(ex.goalRirBy)) {   // lo mismo con el RIR de cada serie
+      const by = ex.goalRirBy, last = by[by.length - 1] || ex.goalRir || '';
+      ex.goalRirBy = Array.from({ length: Math.max(by.length, ex.goalSets || 0) }, (_, k) => (k < by.length ? by[k] : last));
+      if ((ex.goalSets || 0) < 2 && ex.goalRirBy[0]) ex.goalRir = ex.goalRirBy[0];
+    }
     if (key === 'goalSets') {   // se actualiza sin redibujar todo (para no cerrar el teclado)
-      const cell = $app.querySelector(`.reps-cell[data-i="${i}"]`), wrap = $app.querySelector(`.reps-by-wrap[data-i="${i}"]`);
+      const cell = $app.querySelector(`.reps-cell:not(.rir-cell)[data-i="${i}"]`), wrap = $app.querySelector(`.reps-by-wrap[data-i="${i}"]`);
       const tgl = $app.querySelector(`.reps-by-toggle[data-i="${i}"]`);
       if (cell) cell.innerHTML = repsCell(ex, i);
+      const rcell = $app.querySelector(`.rir-cell[data-i="${i}"]`);
+      if (rcell) rcell.innerHTML = rirCell(ex, i);
       if (wrap) wrap.innerHTML = repsByOn(ex) ? repsByBlock(ex, i) : '';
       if (tgl) { tgl.hidden = !(ex.goalSets >= 2); tgl.textContent = repsByOn(ex) ? 'Usar un solo rango' : 'Distinto por serie'; }
     }
@@ -7606,9 +7686,9 @@ $app.addEventListener('focusout', e => {
     refresh();   // al salir del cuadro se recalculan las calorías
   } else if (bind === 'wq-ml') {
     refresh();   // al salir del cuadro se ven los botones rápidos actualizados
-  } else if (bind === 'ex-repby') {
+  } else if (bind === 'ex-repby' || bind === 'ex-rirby') {
     const ex = curRoutine() && curRoutine().exercises[+e.target.dataset.i];
-    if (ex) e.target.value = (ex.goalRepsBy || [])[+e.target.dataset.j] || '';
+    if (ex) e.target.value = (ex[bind === 'ex-repby' ? 'goalRepsBy' : 'goalRirBy'] || [])[+e.target.dataset.j] || '';
   } else if (bind && bind.startsWith('ex-goal-')) {
     // Muestra el objetivo guardado ("8 10" queda "8-10"; si no era válido vuelve a lo anterior)
     const ex = curRoutine() && curRoutine().exercises[+e.target.dataset.i];

@@ -1071,3 +1071,8 @@ button.wk-day { font-family: inherit; border: 0; cursor: pointer; padding: 0; }
 .ck-arrow { font-size: 12px; font-weight: 700; color: var(--muted); }
 .ck-photos { color: var(--accent); font-weight: 600; text-decoration: none; font-size: 14px; }
 .ck-older summary { cursor: pointer; color: var(--accent); font-weight: 600; font-size: 14px; padding: 4px 0; }
+/* RIR objetivo por serie (editor de rutina): una fila por serie con reps y RIR */
+.reps-by.rir-by { grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr); align-items: center; column-gap: 8px; row-gap: 6px; }
+.reps-by.rir-by > span { color: var(--muted); font-size: 13px; }
+.reps-by.rir-by > span:nth-child(2), .reps-by.rir-by > span:nth-child(3) { text-align: center; }
+.reps-by.rir-by input { width: 100%; min-width: 0; }
