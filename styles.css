@@ -1080,3 +1080,13 @@ button.wk-day { font-family: inherit; border: 0; cursor: pointer; padding: 0; }
 .swipe-hint { position: fixed; left: 0; top: 50%; z-index: 60; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center;
   background: var(--surface2); color: var(--text); border: 1px solid var(--border); font-size: 26px; line-height: 1; padding-bottom: 3px;
   opacity: 0; transform: translate(-44px, -50%); pointer-events: none; }
+/* Entreno: músculo bajo el nombre y Cambiar ejercicio */
+.ex-title { display: grid; gap: 1px; min-width: 0; }
+.ex-muscle { font-size: 12px; font-weight: 600; color: var(--accent); }
+.ex-head .swap-btn { margin-left: auto; flex: none; min-height: 32px; padding: 0 12px; font-size: 13px; }
+.ex-head .swap-btn + .tech-btn { margin-left: 0; }
+.swap-mode { display: flex; gap: 6px; }
+.swap-mode .chip { flex: 1; justify-content: center; }
+.swap-alt { display: flex; align-items: center; gap: 6px; }
+.swap-alt .food-pick { flex: 1; min-width: 0; }
+.swap-modal .add-row { margin: 0; }
