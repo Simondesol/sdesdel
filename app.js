@@ -5355,6 +5355,39 @@ $app.addEventListener('touchend', e => {
   if (next !== tourStep) { tourStep = next; render(); }
 });
 
+// Deslizar a la derecha = volver (lo mismo que la flecha ‹ de arriba).
+// No cuenta si empiezas en una casilla, un gráfico, un video o una fila que se desliza de lado, ni con una ventana abierta
+let swipe = null;
+const $swipeHint = document.createElement('div');
+$swipeHint.className = 'swipe-hint'; $swipeHint.textContent = '‹'; $swipeHint.setAttribute('aria-hidden', 'true');
+document.body.appendChild($swipeHint);
+const swipeBackBtn = () => $app.querySelector('header.bar [data-action="back"], header.bar a.home');
+const scrollsX = el => {
+  for (; el && el !== $app; el = el.parentElement) if (el.scrollWidth > el.clientWidth + 2 && /auto|scroll/.test(getComputedStyle(el).overflowX)) return true;
+  return false;
+};
+const swipeHint = dx => { const k = Math.max(0, Math.min(1, (dx - 20) / 60)); $swipeHint.style.opacity = k; $swipeHint.style.transform = `translate(${-44 + 56 * k}px, -50%)`; };
+document.addEventListener('touchstart', e => {
+  swipe = null;
+  if (e.touches.length !== 1 || tourOpen || document.querySelector('.modal-back') || !swipeBackBtn()) return;
+  const t = e.target;
+  if (!$app.contains(t) || t.closest('input, textarea, select, video, svg.chart, [contenteditable]') || scrollsX(t)) return;
+  swipe = { x: e.touches[0].clientX, y: e.touches[0].clientY, at: Date.now(), hash: location.hash };
+}, { passive: true });
+document.addEventListener('touchmove', e => {
+  if (!swipe) return;
+  const dx = e.touches[0].clientX - swipe.x, dy = e.touches[0].clientY - swipe.y;
+  if (Math.abs(dy) > 30 && Math.abs(dy) > dx) { swipe = null; swipeHint(0); return; }   // estás bajando o subiendo
+  swipeHint(dx);
+}, { passive: true });
+document.addEventListener('touchend', e => {
+  const sw = swipe; swipe = null; swipeHint(0);
+  if (!sw || location.hash !== sw.hash) return;   // el teléfono ya volvió con su propio gesto
+  const dx = e.changedTouches[0].clientX - sw.x, dy = e.changedTouches[0].clientY - sw.y;
+  if (dx > 80 && Math.abs(dy) < dx * 0.5 && Date.now() - sw.at < 800) { const b = swipeBackBtn(); if (b) b.click(); }
+});
+document.addEventListener('touchcancel', () => { swipe = null; swipeHint(0); });
+
 // ---------- Avisos y confirmaciones ----------
 // Reemplazan a alert() y confirm() del navegador (que en el teléfono muestran "simondesol.github.io dice…").
 // Van fuera de #app para que un render() no los borre. Uno a la vez: si llega otro, espera su turno.

@@ -1076,3 +1076,7 @@ button.wk-day { font-family: inherit; border: 0; cursor: pointer; padding: 0; }
 .reps-by.rir-by > span { color: var(--muted); font-size: 13px; }
 .reps-by.rir-by > span:nth-child(2), .reps-by.rir-by > span:nth-child(3) { text-align: center; }
 .reps-by.rir-by input { width: 100%; min-width: 0; }
+/* Deslizar a la derecha para volver: la flecha que asoma por la izquierda */
+.swipe-hint { position: fixed; left: 0; top: 50%; z-index: 60; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--surface2); color: var(--text); border: 1px solid var(--border); font-size: 26px; line-height: 1; padding-bottom: 3px;
+  opacity: 0; transform: translate(-44px, -50%); pointer-events: none; }
