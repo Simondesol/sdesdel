@@ -1111,3 +1111,8 @@ button.wk-day { font-family: inherit; border: 0; cursor: pointer; padding: 0; }
 .scan-view video { width: 100%; height: 100%; object-fit: cover; display: block; }
 .scan-frame { position: absolute; left: 10%; right: 10%; top: 35%; bottom: 35%; border: 2px solid var(--accent); border-radius: 8px; }
 .scan-code[hidden] { display: none; }
+/* Alternativas en el editor de rutina */
+.alt-head { flex: 1 1 100%; }
+.ex-alts { flex: 1 1 100%; display: grid; gap: 6px; }
+.ex-alts-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.swap-alt .small-btn { flex: none; min-height: 36px; padding: 0 12px; font-size: 13px; }

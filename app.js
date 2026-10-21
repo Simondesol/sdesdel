@@ -1466,6 +1466,9 @@ const moreBtn = (key, total) => (total > 7
   ? `<button class="btn ghost block" data-action="toggle-sec" data-k="${key}">${openSections.has(key) ? 'Ver menos' : `Ver todos (${total})`}</button>` : '');
 
 let openEx = null;   // ejercicio abierto en el editor de rutina (los demás se ven como resumen)
+// Alternativa abierta en el editor (dentro del ejercicio openEx), y si al tocar Listo se vuelve al entreno
+let altEdit = null, editReturn = false;
+const edEx = i => { const ex = curRoutine().exercises[i], a = altEdit && ex && (ex.alts || []).find(x => x.id === altEdit); return a || ex; };
 const repsByOpen = new Set();   // ejercicios con "Distinto por serie" activado (aunque todavía no tengan rangos)
 const repsByOn = ex => (ex.goalSets || 0) >= 2 && (repsByOpen.has(ex.id) || hasRepsBy(ex) || hasRirBy(ex));
 // Casilla Reps: normal, o "Por serie" cuando cada serie tiene su rango
@@ -1519,13 +1522,16 @@ function viewRoutine() {
   if (!r) { location.replace('#/rutinas'); return ''; }
   const last = r.exercises.length - 1;
   const blocks = groupsOf(r), blockOf = k => blocks.findIndex(g => g.includes(k));   // ↑↓ mueven el bloque (superset) completo
-  const items = r.exercises.map((ex, i) => (openEx === i ? `
+  const items = r.exercises.map((ex0, i) => {
+    const alt = openEx === i && altEdit ? (ex0.alts || []).find(a => a.id === altEdit) : null, ex = alt || ex0;
+    return (openEx === i ? `
     <li class="card ex-open">
+      ${alt ? `<div class="alt-head muted small">Alternativa de <strong>${esc(ex0.name)}</strong> · la eliges con Cambiar al entrenar</div>` : ''}
       <input class="grow" data-bind="ex-name" data-i="${i}" value="${esc(ex.name)}" aria-label="Nombre del ejercicio">
       <button class="chip" data-action="toggle-unit" data-i="${i}" aria-label="Cambiar unidad">${ex.unit}</button>
-      <button class="icon" data-action="move" data-i="${i}" data-d="-1" ${blockOf(i) === 0 ? 'disabled' : ''} aria-label="Subir">↑</button>
-      <button class="icon" data-action="move" data-i="${i}" data-d="1" ${blockOf(i) === blocks.length - 1 ? 'disabled' : ''} aria-label="Bajar">↓</button>
-      <button class="icon danger" data-action="del-ex" data-i="${i}" aria-label="Quitar">✕</button>
+      ${alt ? '<span class="grow"></span>' : `<button class="icon" data-action="move" data-i="${i}" data-d="-1" ${blockOf(i) === 0 ? 'disabled' : ''} aria-label="Subir">↑</button>
+      <button class="icon" data-action="move" data-i="${i}" data-d="1" ${blockOf(i) === blocks.length - 1 ? 'disabled' : ''} aria-label="Bajar">↓</button>`}
+      <button class="icon danger" data-action="del-ex" data-i="${i}" aria-label="${alt ? 'Quitar alternativa' : 'Quitar'}">✕</button>
       <div class="ex-goals" aria-label="Objetivo (opcional)">
         <label>Series<input data-bind="ex-goal-sets" data-i="${i}" inputmode="numeric" value="${ex.goalSets || ''}" placeholder="–" autocomplete="off" aria-label="Series objetivo"></label>
         <div class="reps-cell" data-i="${i}">${repsCell(ex, i)}</div>
@@ -1547,7 +1553,9 @@ function viewRoutine() {
         return `<div class="ex-guide"><span class="muted small">Técnica: ${g ? `<strong>${esc(g.name)}</strong>${sure ? ' ✓' : ''}` : 'sin guía'}</span>
           ${sure ? '' : `<button class="link small" data-action="guide-pick" data-i="${i}">${g ? '¿Es otro? Cambiar' : 'Elegir guía'}</button>`}</div>`;
       })(guideFor(ex.name, ex.guide))}
-      ${i < last ? `<button class="chip toggle ss-toggle ${ex.ssNext ? 'on' : ''}" data-action="toggle-ss" data-i="${i}" aria-pressed="${!!ex.ssNext}">🔗 ${ex.ssNext ? 'En superset con el siguiente' : 'Hacer superset con el siguiente'}</button>` : ''}
+      ${!alt && (ex.alts || []).length ? `<div class="ex-alts"><span class="muted small">Alternativas (las eliges con Cambiar al entrenar)</span>
+        <div class="ex-alts-list">${ex.alts.map(a => `<button class="chip" data-action="alt-open" data-i="${i}" data-id="${a.id}">${esc(a.name)} ›</button>`).join('')}</div></div>` : ''}
+      ${i < last && !alt ? `<button class="chip toggle ss-toggle ${ex.ssNext ? 'on' : ''}" data-action="toggle-ss" data-i="${i}" aria-pressed="${!!ex.ssNext}">🔗 ${ex.ssNext ? 'En superset con el siguiente' : 'Hacer superset con el siguiente'}</button>` : ''}
       <button class="btn block ex-done" data-action="ex-close">Listo</button>
     </li>`
     : `
@@ -1555,7 +1563,7 @@ function viewRoutine() {
       <div class="grow"><strong>${esc(ex.name) || '(sin nombre)'}</strong><span class="muted small">${exSummary(ex)}</span></div>
       <span class="chev">›</span>
     </li>`)
-    + (i < last && ex.ssNext ? '<li class="ss-join">🔗 Superset</li>' : '')).join('');
+    + (i < last && ex0.ssNext ? '<li class="ss-join">🔗 Superset</li>' : ''); }).join('');
   return `${header('Editar rutina', { back: true })}
     <label class="field"><span>Nombre de la rutina</span>
       <input data-bind="routine-name" value="${esc(r.name)}" autocomplete="off">
@@ -5403,6 +5411,7 @@ function render() {
   }
 
   if (screen !== 'editar') editBuf = null;
+  if (screen !== 'rutina') { altEdit = null; editReturn = false; }
   else if (!editBuf || editBuf.editOf !== arg) editBuf = makeEditBuf(arg);
   if (screen !== 'sesion' || arg !== justFinished) justFinished = null;
   if (screen !== 'rutina' && screen !== 'dieta' && screen !== 'miprograma') shareResult = null;
@@ -5692,8 +5701,9 @@ function syncDraftRoutine() {
   const used = s => typedSet(s) || (s.rir !== '' && s.rir != null);
   const posId = (d.exercises[d.pos || 0] || {}).exerciseId, timerId = d.timer ? (d.exercises[d.timer.i] || {}).exerciseId : null;
   const old = new Map(d.exercises.map(e => [e.swapOf || e.exerciseId, e])), lastK = r.exercises.length - 1;
-  const out = r.exercises.map((ex, k) => {
-    const o = old.get(ex.id), fresh = draftEx(ex, k === lastK, r.id);
+  const out = r.exercises.map((ex0, k) => {
+    const o = old.get(ex0.id), ap = o && o.swapOf ? altPlan(ex0, o.exerciseId) : null;
+    const ex = ap ? { ...ap, ssNext: ex0.ssNext } : ex0, fresh = draftEx(ex, k === lastK, r.id);
     if (!o) return fresh;
     let sets = o.sets;
     if ((o.goalSets || 0) !== (ex.goalSets || 0) && ex.goalSets) {   // cambió el número de series
@@ -6194,7 +6204,11 @@ const zoneOf = ex => { const g = guideFor(ex.name, ex.guide); return g ? GUIDE_Z
 let swapPick = null;   // { i, always } ejercicio del entreno que vas a cambiar
 const routineExOf = (d, dx) => { const r = d.routineId && !dx.extra && db.routines.find(x => x.id === d.routineId);
   return r ? r.exercises.find(e => e.id === (dx.swapOf || dx.exerciseId)) || null : null; };
-const altOf = x => ({ id: x.id, name: x.name, unit: x.unit, ...(x.guide && x.guide !== 'none' ? { guide: x.guide } : {}) });
+const PLAN_KEYS = ['rest', 'rir', 'goalSets', 'goalReps', 'goalRepsBy', 'goalRir', 'goalRirBy', 'dropset', 'bw'];
+const planOf = x => Object.fromEntries(PLAN_KEYS.filter(k => x[k] != null && x[k] !== false).map(k => [k, Array.isArray(x[k]) ? [...x[k]] : x[k]]));
+const altOf = x => ({ id: x.id, name: x.name, unit: x.unit, ...(x.guide && x.guide !== 'none' ? { guide: x.guide } : {}), ...planOf(x), own: true });
+// Configuración con la que se entrena una alternativa: la suya, o (alternativas antiguas) la del ejercicio de la rutina
+const altPlan = (rex, id) => { const a = rex && (rex.alts || []).find(x => x.id === id); return a && a.own ? a : null; };
 function swapSheetHtml() {
   const d = db.draft, dx = swapPick && d && d.exercises[swapPick.i];
   if (!dx) return '';
@@ -6207,7 +6221,7 @@ function swapSheetHtml() {
   const altRow = a => `<div class="swap-alt">
       <button type="button" class="food-pick" data-action="swap-to" data-id="${a.id}">
         <span class="grow"><strong>${a.orig ? 'Volver a ' : ''}${esc(a.name)}</strong><span class="muted small">${lastTxt(a)}</span></span><span class="chev">›</span></button>
-      ${a.orig ? '' : `<button class="icon small" data-action="swap-alt-del" data-id="${a.id}" aria-label="Quitar ${esc(a.name)} de tus alternativas">✕</button>`}</div>`;
+      ${a.orig ? '' : `<button class="btn small-btn" data-action="swap-alt-edit" data-id="${a.id}" aria-label="Editar ${esc(a.name)}">Editar</button>`}</div>`;
   const always = !!(rex && swapPick.always);
   return `<div class="modal-wrap">
     <div class="modal-back" data-action="swap-close"></div>
@@ -6243,23 +6257,38 @@ async function swapExercise(alt) {
   if (!dx || alt.id === dx.exerciseId) return;
   if (touchedEx(dx) && !await ask(`Ya anotaste series en "${dx.name}". ¿Cambiarlo igual? Esas series no se guardan.`, 'Cambiar')) return;
   const rex = routineExOf(d, dx), always = !!(rex && swapPick.always);
-  if (rex && alt.id !== rex.id && !(rex.alts || []).some(a => a.id === alt.id)) (rex.alts ||= []).push(altOf(alt));   // la próxima vez es un toque
+  // Nueva: parte con la configuración del ejercicio que reemplaza, y se abre para ajustarla
+  const isNew = !!rex && alt.id !== rex.id && !(rex.alts || []).some(a => a.id === alt.id);
+  if (isNew) (rex.alts ||= []).push({ ...planOf(rex), ...altOf(alt), ...planOf(rex), unit: alt.unit, own: true });   // la próxima vez es un toque
   if (always && alt.id !== rex.id) {   // la alternativa pasa a la rutina y el de antes queda como alternativa
-    rex.alts = [altOf(rex), ...rex.alts.filter(a => a.id !== alt.id)];
-    Object.assign(rex, { id: alt.id, name: alt.name, unit: alt.unit });
+    const a = rex.alts.find(x => x.id === alt.id), src = a && a.own ? a : rex;
+    const plan = planOf(src);
+    rex.alts = [altOf(rex), ...rex.alts.filter(x => x.id !== alt.id)];
+    for (const k of PLAN_KEYS) delete rex[k];
+    Object.assign(rex, { id: alt.id, name: alt.name, unit: alt.unit }, plan);
     if (alt.guide) rex.guide = alt.guide; else delete rex.guide;
   }
-  const plan = rex || dx, { guide: _g, ...pf } = planFields(plan);
+  const plan = (rex && alt.id !== rex.id && altPlan(rex, alt.id)) || rex || dx, { guide: _g, ...pf } = planFields(plan);
   d.exercises[i] = {
-    exerciseId: alt.id, name: alt.name, unit: alt.unit, rest: dx.rest, rir: dx.rir, ...pf,
+    exerciseId: alt.id, name: alt.name, unit: alt.unit, rest: plan.rest || 0, rir: !!plan.rir, ...pf,
     ...(alt.guide ? { guide: alt.guide } : {}), ...('ssNext' in dx ? { ssNext: dx.ssNext } : {}), ...(dx.extra ? { extra: true } : {}),
     ...(rex && alt.id !== rex.id ? { swapOf: rex.id } : {}),
     sets: prefillSets(lastFor(alt.id, db.workouts.length, dx.extra ? null : d.routineId) || lastFor(alt.id), dx.rir, plan.goalSets, plan.dropset),
   };
   d.done = (d.done || []).filter(x => x !== dx.exerciseId);
   swapPick = null;
-  save(); render(); syncModalHistory();
+  save();
   showNote(always ? `Ahora tu rutina usa ${alt.name}` : `Hoy haces ${alt.name}`);
+  if (isNew || always) return openAltEditor(d.routineId, rex, always ? null : alt.id);   // ajustar series, reps, RIR, descanso…
+  render(); syncModalHistory();
+}
+// Abre el editor de la rutina en ese ejercicio (o su alternativa); "Listo" vuelve al entreno
+function openAltEditor(rid, rex, altId) {
+  const r = db.routines.find(x => x.id === rid), k = r ? r.exercises.indexOf(rex) : -1;
+  if (k < 0) { render(); syncModalHistory(); return; }
+  openEx = k; altEdit = altId; editReturn = true; swapPick = null;
+  if (modalPushed) { modalPushed = false; location.replace(`#/rutina/${rid}`); }   // reemplaza el paso de la ventana
+  else go(`#/rutina/${rid}`);
 }
 function swapNew(f) {
   const name = f.elements.title.value.trim(), d = db.draft, dx = swapPick && d && d.exercises[swapPick.i];
@@ -6270,7 +6299,7 @@ function swapNew(f) {
   swapExercise({ id: found ? found.id : uid(), name: found ? found.name : name, unit: found ? found.unit : dx.unit, ...(g ? { guide: g.id } : {}) });
 }
 function setGuide(ctx, id) {
-  const r = db.routines.find(x => x.id === ctx.rid), ex = r && r.exercises.find(e => e.id === ctx.exId);
+  const r = db.routines.find(x => x.id === ctx.rid), ex = r && (r.exercises.find(e => e.id === ctx.exId) || r.exercises.flatMap(e => e.alts || []).find(a => a.id === ctx.exId));
   if (ex) ex.guide = id;
   const d = cur();
   const dx = d && d.exercises.find(e => e.exerciseId === ctx.exId);
@@ -6895,7 +6924,7 @@ $app.addEventListener('click', async e => {
       startFree();
       break;
     case 'reps-by': {
-      const ex = curRoutine().exercises[i];
+      const ex = edEx(i);
       if (!repsByOn(ex)) {
         // Activar: cada serie parte con el rango que tenías
         ex.goalRepsBy = Array.from({ length: ex.goalSets || 0 }, () => ex.goalReps || '');
@@ -7049,7 +7078,7 @@ $app.addEventListener('click', async e => {
     case 'toggle-drop':
     case 'toggle-bw':
     case 'toggle-ss': {
-      const ex = curRoutine().exercises[i], key = { 'toggle-drop': 'dropset', 'toggle-bw': 'bw', 'toggle-ss': 'ssNext' }[action];
+      const ex = edEx(i), key = { 'toggle-drop': 'dropset', 'toggle-bw': 'bw', 'toggle-ss': 'ssNext' }[action];
       if (ex[key]) delete ex[key]; else ex[key] = true;
       save(); render();
       if (ex[key] && action === 'toggle-drop') showNote('Dropset activado: cuando entrenes, la última serie trae una fila para anotar la bajada de peso.');
@@ -7057,14 +7086,14 @@ $app.addEventListener('click', async e => {
       break;
     }
     case 'toggle-rir': {
-      const ex = curRoutine().exercises[i];
+      const ex = edEx(i);
       ex.rir = !ex.rir;
       save(); render();
       if (ex.rir) showNote('RIR activado: cuando entrenes, anotas cuántas repeticiones te quedaban en cada serie. Arriba puedes poner un RIR objetivo.');
       break;
     }
     case 'toggle-unit': {
-      const ex = curRoutine().exercises[i];
+      const ex = edEx(i);
       ex.unit = UNITS[(UNITS.indexOf(ex.unit) + 1) % UNITS.length];   // kg → lb → placas → kg
       save(); render();
       break;
@@ -7083,20 +7112,39 @@ $app.addEventListener('click', async e => {
       break;
     }
     case 'ex-open':
-      openEx = i;
+      openEx = i; altEdit = null; editReturn = false;
       render();
       { const card = $app.querySelector('.ex-open'); if (card) card.scrollIntoView({ block: 'nearest' }); }
       break;
     case 'ex-close':
-      openEx = null;
+      if (editReturn) { editReturn = false; openEx = null; altEdit = null; goBack(); break; }   // vuelve al entreno
+      if (altEdit) altEdit = null; else openEx = null;
       render();
       break;
+    case 'alt-open': {   // editar una alternativa (las antiguas parten con la configuración del ejercicio)
+      const ex = curRoutine().exercises[i], a = (ex.alts || []).find(x => x.id === el.dataset.id);
+      if (!a) break;
+      if (!a.own) Object.assign(a, planOf(ex), { own: true });
+      openEx = i; altEdit = a.id;
+      render();
+      { const card = $app.querySelector('.ex-open'); if (card) card.scrollIntoView({ block: 'nearest' }); }
+      break;
+    }
     case 'toggle-sec':
       if (!openSections.delete(el.dataset.k)) openSections.add(el.dataset.k);
       render();
       break;
     case 'del-ex': {
       const r = curRoutine();
+      if (altEdit) {
+        const ex = r.exercises[i], a = (ex.alts || []).find(x => x.id === altEdit);
+        if (!a || !await ask(`¿Quitar "${a.name}" de tus alternativas? Su historial se mantiene.`)) return;
+        ex.alts = ex.alts.filter(x => x !== a);
+        if (!ex.alts.length) delete ex.alts;
+        altEdit = null;
+        save(); render();
+        break;
+      }
       if (!await ask(`¿Quitar "${r.exercises[i].name}" de la rutina? Su historial se mantiene.`)) return;
       r.exercises.splice(i, 1);
       openEx = null;
@@ -7294,7 +7342,7 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       break;
     case 'guide-pick': {   // desde el editor de rutina
       const r = curRoutine();
-      guidePick = { rid: r.id, exId: r.exercises[i].id, q: '' };
+      guidePick = { rid: r.id, exId: edEx(i).id, q: '' };
       render();
       syncModalHistory();
       break;
@@ -7397,12 +7445,11 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       if (alt) await swapExercise(alt);
       break;
     }
-    case 'swap-alt-del': {
+    case 'swap-alt-edit': {
       const d = db.draft, rex = routineExOf(d, d.exercises[swapPick.i]), a = rex && (rex.alts || []).find(x => x.id === el.dataset.id);
-      if (!a || !await ask(`¿Quitar "${a.name}" de tus alternativas? Su historial se mantiene.`)) return;
-      rex.alts = rex.alts.filter(x => x.id !== a.id);
-      if (!rex.alts.length) delete rex.alts;
-      save(); render();
+      if (!a) break;
+      if (!a.own) Object.assign(a, planOf(rex), { own: true });
+      openAltEditor(d.routineId, rex, a.id);
       break;
     }
     case 'sugg-ex': {   // sugerencia elegida al agregar un ejercicio: se agrega con su guía
@@ -7984,13 +8031,13 @@ $app.addEventListener('input', e => {
   if (bind === 'wq-ml') setQuick(el);
   else if (bind === 'pace-amt') setPaceAmount(el);
   else if (bind === 'routine-name') curRoutine().name = el.value;
-  else if (bind === 'ex-name') curRoutine().exercises[i].name = el.value;
+  else if (bind === 'ex-name') edEx(i).name = el.value;
   else if (bind === 'ex-rest') {
     const sec = parseRest(el.value);
-    if (sec !== null) curRoutine().exercises[i].rest = sec;
+    if (sec !== null) edEx(i).rest = sec;
   }
   else if (bind === 'ex-repby') {
-    const ex = curRoutine().exercises[i], text = el.value.trim();
+    const ex = edEx(i), text = el.value.trim();
     const by = Array.from({ length: Math.max(ex.goalSets || 0, j + 1) }, (_, k) => (ex.goalRepsBy || [])[k] || '');
     if (!text) by[j] = '';
     else { const v = parseRange(text, 100); if (v) by[j] = v; }
@@ -7998,7 +8045,7 @@ $app.addEventListener('input', e => {
     repsByOpen.add(ex.id);
   }
   else if (bind === 'ex-rirby') {
-    const ex = curRoutine().exercises[i], text = el.value.trim();
+    const ex = edEx(i), text = el.value.trim();
     const by = Array.from({ length: Math.max(ex.goalSets || 0, j + 1) }, (_, k) => (ex.goalRirBy || [])[k] || '');
     if (!text) by[j] = '';
     else { const v = parseRange(text, 10); if (v) by[j] = v; }
@@ -8007,7 +8054,7 @@ $app.addEventListener('input', e => {
   }
   else if (bind === 'ex-goal-sets' || bind === 'ex-goal-reps' || bind === 'ex-goal-rir') {
     // Vacío = sin objetivo; si lo escrito no es válido se mantiene lo anterior
-    const ex = curRoutine().exercises[i], text = el.value.trim();
+    const ex = edEx(i), text = el.value.trim();
     const key = { 'ex-goal-sets': 'goalSets', 'ex-goal-reps': 'goalReps', 'ex-goal-rir': 'goalRir' }[bind];
     if (!text) delete ex[key];
     else if (key === 'goalSets') { const n = parseInt(text, 10); if (n >= 1 && n <= 20 && String(n) === text) ex.goalSets = n; }
@@ -8070,18 +8117,18 @@ $app.addEventListener('focusout', e => {
     editingNote = null;
     redrawNote(+e.target.dataset.i);
   } else if (bind === 'ex-rest') {
-    const ex = curRoutine() && curRoutine().exercises[+e.target.dataset.i];
+    const ex = curRoutine() && edEx(+e.target.dataset.i);
     if (ex) e.target.value = ex.rest ? fmtRest(ex.rest) : '';   // muestra el tiempo como m:ss
   } else if (bind === 'pace-amt') {
     refresh();   // al salir del cuadro se recalculan las calorías
   } else if (bind === 'wq-ml') {
     refresh();   // al salir del cuadro se ven los botones rápidos actualizados
   } else if (bind === 'ex-repby' || bind === 'ex-rirby') {
-    const ex = curRoutine() && curRoutine().exercises[+e.target.dataset.i];
+    const ex = curRoutine() && edEx(+e.target.dataset.i);
     if (ex) e.target.value = (ex[bind === 'ex-repby' ? 'goalRepsBy' : 'goalRirBy'] || [])[+e.target.dataset.j] || '';
   } else if (bind && bind.startsWith('ex-goal-')) {
     // Muestra el objetivo guardado ("8 10" queda "8-10"; si no era válido vuelve a lo anterior)
-    const ex = curRoutine() && curRoutine().exercises[+e.target.dataset.i];
+    const ex = curRoutine() && edEx(+e.target.dataset.i);
     if (ex) e.target.value = { 'ex-goal-sets': ex.goalSets, 'ex-goal-reps': ex.goalReps, 'ex-goal-rir': ex.goalRir }[bind] || '';
   }
 });
