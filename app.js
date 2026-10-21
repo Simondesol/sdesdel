@@ -139,7 +139,7 @@ function liveCmp(s, ex, best) {
   // ▲ = ▼ recién cuando escribes el peso y las repeticiones (con peso corporal basta con las repeticiones)
   const has = v => v !== '' && v != null;
   if (!has(s.r) || !(has(s.w) || isBwEx(ex))) return null;
-  s = { ...s, ...effSet(s) };
+  s = { ...s, ...bwEff(s, lastreEx(ex)) };
   const w = num(s.w), r = num(s.r);
   if (w == null && r == null) return null;
   return cmpSet({ w, r, rir: num(s.rir), unit: ex.unit, bw: bwFor(ex, new Date().toISOString()) }, best);
@@ -1129,6 +1129,9 @@ function prefillSets(prev, rir, goalSets = 0, dropset = false) {
 }
 // Lo que vale de una serie: lo escrito o, si está vacío, lo de la vez pasada
 const effSet = s => ({ w: s.w !== '' && s.w != null ? s.w : s.pw ?? '', r: s.r !== '' && s.r != null ? s.r : s.pr ?? '', rir: s.rir !== '' && s.rir != null ? s.rir : s.prir ?? '' });
+// Peso corporal (dominadas, fondos…): el lastre vacío es 0, no el de la vez pasada
+const lastreEx = ex => ex.unit !== 'placas' && isBwEx(ex);
+const bwEff = (s, bw) => { const e = effSet(s); return bw && (s.w === '' || s.w == null) ? { ...e, w: '0' } : e; };
 const typedSet = s => (s.w !== '' && s.w != null) || (s.r !== '' && s.r != null);
 // La serie se guarda si tiene algo: lo que escribiste o, si no, lo de la vez pasada (para borrar una serie que no hiciste: ✕)
 const setCounts = s => { const e = effSet(s); return e.w !== '' || e.r !== ''; };
@@ -1546,7 +1549,7 @@ function viewWorkout() {
         <span></span>
         <button class="set-del" data-action="del-drop" data-i="${i}" data-j="${j}" data-k="${k}" aria-label="Quitar bajada">✕</button>
       </div>`).join('');
-    const wPh = s.pw || (ex.unit === 'placas' ? 'placas' : isBwEx(ex) ? 'lastre' : 'peso');
+    const wPh = lastreEx(ex) ? '0' : s.pw || (ex.unit === 'placas' ? 'placas' : 'peso');
     return `
       <div class="set ${ex.rir ? 'has-rir' : ''}">
         <span class="n">${label}</span>
@@ -5491,9 +5494,9 @@ const cleanExercises = d => d.exercises
     ...(ex.rir ? { rir: true } : {}),
     ...(ex.bw ? { bw: true } : {}),
     sets: ex.sets
-      .filter(setCounts)
+      .filter(s => { const e = bwEff(s, lastreEx(ex)); return lastreEx(ex) ? e.r !== '' : e.w !== '' || e.r !== ''; })
       .map(s => {
-        const e = effSet(s);
+        const e = bwEff(s, lastreEx(ex));
         const set = { w: num(e.w), r: num(e.r) }; const rir = num(e.rir); if (ex.rir && rir != null) set.rir = rir;
         const drops = (s.drops || []).map(effSet).map(x => ({ w: num(x.w), r: num(x.r) })).filter(x => x.w != null || x.r != null);
         if (drops.length) set.drops = drops;   // bajadas del dropset
