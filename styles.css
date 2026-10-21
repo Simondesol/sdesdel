@@ -1090,3 +1090,7 @@ button.wk-day { font-family: inherit; border: 0; cursor: pointer; padding: 0; }
 .swap-alt { display: flex; align-items: center; gap: 6px; }
 .swap-alt .food-pick { flex: 1; min-width: 0; }
 .swap-modal .add-row { margin: 0; }
+/* Camino a la meta en el gráfico de peso */
+.chart .goal-path { fill: none; stroke: var(--danger); stroke-width: 2; opacity: .85; }
+.lg-path { width: 16px; border-top: 2px solid var(--danger); }
+.goal-path-note { margin: 0; color: var(--text); }

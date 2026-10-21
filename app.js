@@ -4079,10 +4079,11 @@ function niceTicks(lo, hi) {
 
 // opts.trend: línea de tendencia ({ t, y }); opts.goal: línea de meta; opts.dotsOnly: los registros van como puntos
 function chartSvg(points, unit, days, label = 'Peso máximo por sesión', opts = {}) {
-  const { trend = null, goal = null, dotsOnly = false } = opts;
+  const { trend = null, goal = null, dotsOnly = false, goalPath: gp = null } = opts;
   const W = 340, H = 200, L = 38, R = 14, T = 20, B = 26;
   const t1 = Math.max(Date.now(), ...points.map(p => p.t)), t0 = t1 - days * 86400000;
-  const ys = [...points.map(p => p.y), ...(trend ? trend.map(p => p.y) : []), ...(goal != null ? [goal] : [])];
+  const gpFrom = gp ? Math.max(t0, gp.start) : null;
+  const ys = [...points.map(p => p.y), ...(trend ? trend.map(p => p.y) : []), ...(gp && gpFrom < t1 ? [gp.at(gpFrom), gp.at(t1)] : goal != null ? [goal] : [])];
   const ticks = niceTicks(Math.min(...ys), Math.max(...ys));
   const y0 = ticks[0], y1 = ticks[ticks.length - 1];
   const x = t => L + ((t - t0) / (t1 - t0)) * (W - L - R);
@@ -4099,7 +4100,11 @@ function chartSvg(points, unit, days, label = 'Peso máximo por sesión', opts =
     ? `<polyline class="line" points="${chart.points.map(p => `${p.x},${p.yPx}`).join(' ')}"/>` : '';
   const trendLine = trend && trend.length > 1
     ? `<polyline class="line trend" points="${trend.map(p => `${x(p.t)},${y(p.y)}`).join(' ')}"/>` : '';
-  const goalLine = goal != null
+  const gpTimes = gp && gpFrom < t1 ? [gpFrom, ...(gp.reach > gpFrom && gp.reach < t1 ? [gp.reach] : []), t1] : null;
+  const goalLine = gpTimes
+    ? `<polyline class="goal-path" points="${gpTimes.map(t => `${x(t)},${y(gp.at(t))}`).join(' ')}"/>
+       ${gp.reach < t1 ? `<text x="${x(Math.max(gp.reach, gpFrom))}" y="${y(gp.goal) + (gp.goal > gp.at(gpFrom) ? -6 : 14)}" class="axis">Meta ${fmtNum(gp.goal)}</text>` : ''}`
+    : goal != null
     ? `<line class="goal-line" x1="${L}" x2="${W - R}" y1="${y(goal)}" y2="${y(goal)}"/>
        <text x="${L + 4}" y="${y(goal) - 5}" class="axis">Meta ${fmtNum(goal)}</text>` : '';
   // Con muchos puntos solo se dibuja la línea y el último punto (al tocar se marca el elegido);
@@ -4237,6 +4242,22 @@ function bwTrend(list) {
 }
 
 // Meta de peso (opcional): avance desde el peso que tenías al ponerla y fecha estimada
+// Camino a la meta: desde tu peso de inicio hasta la meta, a tu ritmo (la fecha meta, o si no, el ritmo de Nutrición);
+// al llegar a la meta sigue plano. null si no hay cómo saber el ritmo
+function goalPath() {
+  const g = db.body.goal;
+  if (!g || g.startKg == null || !g.startDate) return null;
+  const dir = Math.sign(g.kg - g.startKg);
+  if (!dir) return null;
+  const start = Date.parse(bwIso(g.startDate));
+  let perDay = null, src = 'date';
+  if (g.by) { const d = (Date.parse(bwIso(g.by)) - start) / 86400000; if (d > 0) perDay = (g.kg - g.startKg) / d; }
+  if (perDay == null) { const pm = paceMonth(db.body); if (pm && Math.sign(pm) === dir) { perDay = pm / DAYS_PER_MONTH; src = 'pace'; } }
+  if (!perDay) return null;
+  const reach = start + ((g.kg - g.startKg) / perDay) * 86400000;
+  const at = t => (t <= start ? g.startKg : t >= reach ? g.kg : g.startKg + (perDay * (t - start)) / 86400000);
+  return { start, reach, at, src, perMonth: perDay * DAYS_PER_MONTH, goal: g.kg };
+}
 function goalInfo() {
   const g = db.body.goal, last = db.bodyweight[db.bodyweight.length - 1];
   if (!g || !last || g.startKg == null) return null;
@@ -4322,8 +4343,11 @@ function viewBodyweight() {
     t: Date.parse(bwIso(e.date)), date: bwIso(e.date), y: e.kg,
     tip: fmtKg(e.kg),
   }));
-  const gi = goalInfo();
+  const gi = goalInfo(), gp = gi ? goalPath() : null;
   chart = null;
+  // Dónde deberías ir hoy según tu camino, contra tu tendencia
+  const nowTrend = gp && !gi.reached && db.bodyweight.length ? (tr => tr[tr.length - 1].y)(bwTrend(db.bodyweight.slice(-1))) : null;
+  const pathDiff = nowTrend != null ? round1(nowTrend - gp.at(Date.now())) : null;
 
   const form = `<form class="stack card" data-form="bodyweight" novalidate>
       ${today ? '<span class="muted small">Hoy ya anotaste tu peso; puedes corregirlo.</span>' : ''}
@@ -4348,8 +4372,13 @@ function viewBodyweight() {
             <button class="btn primary">Guardar</button>
           </div>
         </label>
+        <label class="field"><span>Para cuándo (opcional)</span>
+          <div class="date-field"><span class="date-show">${g && g.by ? fmtDMY(g.by) : 'Sin fecha: usa tu ritmo de Nutrición'}</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>
+            <input type="date" name="by" data-bind="goal-by" value="${g && g.by ? g.by : ''}" min="${todayKey()}" aria-label="Fecha meta"></div></label>
         <p class="form-msg" hidden></p>
         <div class="ex-actions">
+          ${g && g.by ? '<button type="button" class="btn ghost" data-action="goal-by-clear">Sin fecha</button>' : ''}
           ${g ? '<button type="button" class="btn ghost danger-text" data-action="goal-del">Quitar meta</button>' : ''}
           <button type="button" class="btn ghost" data-action="goal-cancel">Cancelar</button>
         </div>
@@ -4361,6 +4390,10 @@ function viewBodyweight() {
         <div class="goal-top"><span class="muted small">Inicio: ${fmtKg(gi.g.startKg)} (${bwDate(gi.g.startDate)})</span>
           <span class="muted small">${gi.reached ? '' : `Faltan ${fmtKg(gi.left)}`}</span></div>
         <p class="muted small" style="margin:0">${gi.forecast}</p>
+        ${gi.reached ? '' : gp ? `<p class="small goal-path-note">Tu camino: ${signed(round1(gp.perMonth))} kg al mes${gp.src === 'date' ? ` hasta el ${fmtDMY(gi.g.by)}` : ' (tu ritmo de Nutrición)'}.
+            Hoy deberías estar en ${fmtKg(round1(gp.at(Date.now())))}${pathDiff == null ? '' : Math.abs(pathDiff) < 0.3 ? ': vas justo en el camino.'
+              : `: vas ${fmtKg(Math.abs(pathDiff))} ${(pathDiff > 0) === (gi.g.kg > gi.g.startKg) ? 'adelantado' : 'atrasado'}.`}</p>`
+          : '<p class="muted small" style="margin:0">Pon una fecha a tu meta (Cambiar) o un ritmo en Nutrición para ver tu camino en el gráfico.</p>'}
       </section>`
     : g ? `<section class="card goal-top">
         <span class="muted">Meta: <strong>${fmtKg(g.kg)}</strong> · empieza a contar con tu primer peso</span>
@@ -4383,12 +4416,12 @@ function viewBodyweight() {
         <div class="stat"><span class="muted">Mín – Máx</span><strong>${fmtNum(round1(Math.min(...ys)))}–${fmtNum(round1(Math.max(...ys)))}</strong></div>
       </div>
       <section class="card chart-card">
-        ${chartSvg(points, 'kg', days, 'Peso corporal por día', { trend, goal: gi ? gi.g.kg : null, dotsOnly: !!trend })}
+        ${chartSvg(points, 'kg', days, 'Peso corporal por día', { trend, goal: gi ? gi.g.kg : null, goalPath: gp, dotsOnly: !!trend })}
         <div class="tip" hidden></div>
         ${trend || gi ? `<div class="chart-legend">
           <span><i class="lg-dot"></i>Pesajes</span>
           ${trend ? '<span><i class="lg-line"></i>Tendencia (7 días)</span>' : ''}
-          ${gi ? '<span><i class="lg-goal"></i>Meta</span>' : ''}
+          ${gp ? '<span><i class="lg-path"></i>Camino a la meta</span>' : gi ? '<span><i class="lg-goal"></i>Meta</span>' : ''}
         </div>` : ''}
       </section>`;
   }
@@ -4451,6 +4484,8 @@ function saveGoal(f) {
     const last = db.bodyweight[db.bodyweight.length - 1];
     db.body.goal = { kg: round1(g), startKg: last ? last.kg : null, startDate: last ? last.date : todayKey() };
   }
+  const by = f.elements.by ? f.elements.by.value : '';
+  if (by && by > todayKey()) db.body.goal.by = by; else delete db.body.goal.by;
   goalEditing = false;
   save();
   render();
@@ -6811,6 +6846,12 @@ $app.addEventListener('click', async e => {
       goalEditing = false;
       render();
       break;
+    case 'goal-by-clear': {
+      const inp = $app.querySelector('[data-bind="goal-by"]');
+      if (inp) { inp.value = ''; inp.dispatchEvent(new Event('change', { bubbles: true })); }
+      el.remove();
+      break;
+    }
     case 'goal-del':
       delete db.body.goal;
       goalEditing = false;
@@ -7656,6 +7697,11 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
 $app.addEventListener('change', async e => {
   const b = e.target.dataset.bind;
   if (b === 'prog-cmp') { progCmp[+e.target.dataset.k] = e.target.value; render(); return; }
+  if (b === 'goal-by') {
+    const show = e.target.parentElement.querySelector('.date-show');
+    if (show) show.textContent = e.target.value ? fmtDMY(e.target.value) : 'Sin fecha: usa tu ritmo de Nutrición';
+    return;
+  }
   if (b === 'prog-date') {
     if (progNew && e.target.value) progNew.date = e.target.value;
     const show = e.target.parentElement.querySelector('.date-show');
