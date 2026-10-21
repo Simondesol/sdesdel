@@ -503,7 +503,8 @@ function viewFoods() {
       </div><span class="chev">›</span>
     </a>`).join('');
   return `${header('Nutrición', {})}${nutriTabs('alimentos')}
-    <a class="btn primary block center" href="#/alimento/nuevo" style="margin:0 0 12px">+ Nuevo alimento</a>
+    <div class="ex-actions foods-top"><a class="btn primary center" href="#/alimento/nuevo">+ Nuevo alimento</a>
+      <button class="btn scan-wide" data-action="scan">${BARCODE_ICON}Escanear código</button></div>
     <input class="search" type="search" data-bind="food-search" value="${esc(foodQuery)}" placeholder="🔍 Buscar en mis alimentos y en la base…" autocomplete="off" aria-label="Buscar alimento">
     <div class="food-list">${list || '<p class="empty">Todavía no agregas alimentos propios. Al armar tu dieta puedes usar los de la base de Desdel, o crear los tuyos con su etiqueta.</p>'}</div>
     <div class="base-results"></div>
@@ -680,6 +681,7 @@ function viewDietEditor(id) {
       ${items || '<p class="muted small" style="margin:6px 0">Agrega alimentos a esta comida.</p>'}
       <form class="add-item" data-form="add-item" data-m="${mi}" novalidate>
         <div class="add-row" style="margin-top:0">
+          <button type="button" class="icon scan-btn" data-action="scan" aria-label="Escanear código de barras">${BARCODE_ICON}</button>
           <input name="q" data-bind="food-q" data-m="${mi}" placeholder="🔍 Buscar alimento…" autocomplete="off" aria-label="Buscar alimento">
           <input name="g" inputmode="decimal" placeholder="g" class="grams" aria-label="Gramos">
           <button type="button" class="chip mode-chip" data-action="add-mode" hidden aria-label="Cambiar entre gramos y unidades">u</button>
@@ -912,6 +914,7 @@ function extrasSection() {
   const form = extraMode === 'food'
     ? `<form class="add-item" data-form="extra-food" novalidate>
         <div class="add-row" style="margin-top:0">
+          <button type="button" class="icon scan-btn" data-action="scan" aria-label="Escanear código de barras">${BARCODE_ICON}</button>
           <input name="q" data-bind="food-q" placeholder="🔍 Buscar alimento…" autocomplete="off" aria-label="Buscar alimento">
           <input name="g" inputmode="decimal" placeholder="g" class="grams" aria-label="Gramos">
           <button type="button" class="chip mode-chip" data-action="add-mode" hidden aria-label="Cambiar entre gramos y unidades">u</button>
@@ -945,6 +948,175 @@ function extrasSection() {
 }
 
 // Lee el formulario de buscar alimento (dieta o extras): { foodId, g } o { foodId, n }, o null si falta algo
+// Elegir un alimento en el buscador de una comida o de los extras (al tocarlo en la lista, o al escanearlo)
+function pickFoodIn(form, id) {
+  const food = foodById(id);
+  if (!form || !food) return;
+  form.dataset.food = id;
+  form.elements.q.value = food.name;
+  form.querySelector('.food-results').innerHTML = '';
+  // Alimentos de la base con porción: por defecto se anotan en unidades (se puede cambiar a gramos)
+  const chip = form.querySelector('[data-action="add-mode"]');
+  chip.hidden = !food.unitG;
+  form.dataset.mode = food.unitG ? 'u' : 'g';
+  setAddMode(form, food);
+  form.elements.g.focus();
+}
+
+// ---------- Escanear código de barras ----------
+// Con la cámara (en Android el teléfono lo lee solo; en iPhone se carga un lector) o escribiendo el número.
+// Busca primero en tus alimentos (por su código) y si no en Open Food Facts, una base abierta con valores por 100 g.
+// Lo revisas, se guarda en tus alimentos con su código y queda elegido donde lo escaneaste.
+const ZXING_URL = 'https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js';
+const BARCODE_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V4h3M18 4h3v3M21 17v3h-3M6 20H3v-3M7 8v8M10 8v8M13 8v8M15.5 8v8M18 8v8"/></svg>';
+const $scan = document.createElement('div');
+$scan.hidden = true;
+document.body.appendChild($scan);
+let scanCtx = null, scanPushed = false;   // { target, stream, reader, timer }
+const loadScript = src => new Promise((ok, fail) => {
+  if (document.querySelector(`script[src="${src}"]`) && window.ZXing) return ok();
+  const sc = document.createElement('script'); sc.src = src; sc.onload = ok; sc.onerror = fail; document.head.appendChild(sc);
+});
+const scanMsg = t => { const m = $scan.querySelector('.scan-msg'); if (m) m.textContent = t; };
+function stopCamera(ctx) {
+  if (!ctx) return;
+  clearTimeout(ctx.timer);
+  if (ctx.reader) try { ctx.reader.reset(); } catch (e) { /* ya estaba detenido */ }
+  if (ctx.stream) ctx.stream.getTracks().forEach(t => t.stop());
+  ctx.stream = null; ctx.reader = null;
+}
+function openScanner(target) {
+  closeScanner();
+  scanCtx = { target };
+  $scan.innerHTML = `<div class="modal-wrap scan-wrap">
+    <div class="modal-back" data-scan="close"></div>
+    <section class="modal card scan-modal" role="dialog" aria-modal="true" aria-label="Escanear código de barras">
+      <div class="guide-head"><h2>Escanear código</h2><button class="icon small" data-scan="close" aria-label="Cerrar">✕</button></div>
+      <div class="scan-view"><video playsinline muted></video><div class="scan-frame"></div></div>
+      <p class="muted small scan-msg" style="margin:0">Abriendo la cámara…</p>
+      <form class="add-row scan-code" style="margin:0" novalidate>
+        <input name="code" inputmode="numeric" placeholder="O escribe el número del código" autocomplete="off" aria-label="Número del código de barras">
+        <button class="btn">Buscar</button>
+      </form>
+      <div class="scan-result"></div>
+    </section></div>`;
+  $scan.hidden = false;
+  history.pushState({ scan: 1 }, ''); scanPushed = true;   // "atrás" cierra el escáner
+  startCamera(scanCtx);
+}
+function closeScanner() {
+  if (!scanCtx) return;
+  stopCamera(scanCtx);
+  scanCtx = null;
+  $scan.hidden = true; $scan.innerHTML = '';
+  if (scanPushed) { scanPushed = false; history.back(); }
+}
+window.addEventListener('popstate', () => { if (scanPushed) { scanPushed = false; closeScanner(); } });
+async function startCamera(ctx) {
+  const view = $scan.querySelector('.scan-view'), video = $scan.querySelector('video');
+  const noCam = t => { scanMsg(t); if (view) view.hidden = true; };
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return noCam('Aquí no se puede usar la cámara. Escribe el número que está bajo las barras.');
+  try { ctx.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false }); }
+  catch (e) { return noCam('No se pudo abrir la cámara (revisa el permiso). Puedes escribir el número que está bajo las barras.'); }
+  if (scanCtx !== ctx) return stopCamera(ctx);
+  video.srcObject = ctx.stream;
+  await video.play().catch(() => {});
+  scanMsg('Apunta al código de barras del envase.');
+  if ('BarcodeDetector' in window) {
+    const bd = new BarcodeDetector({ formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e'] });
+    const tick = async () => {
+      if (scanCtx !== ctx || !ctx.stream) return;
+      try { const r = await bd.detect(video); if (r[0] && r[0].rawValue) return scanFound(ctx, r[0].rawValue); } catch (e) { /* cuadro sin código */ }
+      ctx.timer = setTimeout(tick, 250);
+    };
+    tick();
+    return;
+  }
+  try { await loadScript(ZXING_URL); } catch (e) { return scanMsg('Sin internet no se puede leer el código con la cámara. Escribe el número.'); }
+  if (scanCtx !== ctx || !window.ZXing) return;
+  const Z = window.ZXing, hints = new Map();
+  hints.set(Z.DecodeHintType.POSSIBLE_FORMATS, [Z.BarcodeFormat.EAN_13, Z.BarcodeFormat.EAN_8, Z.BarcodeFormat.UPC_A, Z.BarcodeFormat.UPC_E]);
+  ctx.reader = new Z.BrowserMultiFormatReader(hints);
+  ctx.reader.decodeFromVideoElementContinuously(video, res => { if (res && scanCtx === ctx) scanFound(ctx, res.getText()); });
+}
+function scanFound(ctx, code) {
+  stopCamera(ctx);
+  if (navigator.vibrate) navigator.vibrate(60);
+  lookupBarcode(code);
+}
+const offNum = (n, k) => { const v = Number(n[`${k}_100g`]); return Number.isFinite(v) ? round1(v) : null; };
+async function lookupBarcode(raw) {
+  const code = String(raw).replace(/\D/g, ''), ctx = scanCtx;
+  if (!ctx) return;
+  if (code.length < 8) { scanMsg('Ese número es muy corto: los códigos tienen 8 o 13 dígitos.'); return; }
+  stopCamera(ctx);
+  const view = $scan.querySelector('.scan-view'); if (view) view.hidden = true;
+  const mine = N().foods.find(f => f.barcode === code);
+  if (mine) return useScannedFood(mine);
+  scanMsg(`Código ${code} · buscando…`);
+  let prod = null, offline = false;
+  try {
+    const r = await fetch(`https://world.openfoodfacts.org/api/v2/product/${code}.json?fields=product_name,product_name_es,brands,nutriments`);
+    const j = await r.json();
+    if (j && j.status === 1 && j.product) {
+      const n = j.product.nutriments || {};
+      let kcal = offNum(n, 'energy-kcal');
+      if (kcal == null && offNum(n, 'energy') != null) kcal = Math.round(offNum(n, 'energy') / 4.184);
+      const brand = (j.product.brands || '').split(',')[0].trim();
+      const name = (j.product.product_name_es || j.product.product_name || '').trim();
+      prod = { name: [name, brand && !normText(name).includes(normText(brand)) ? brand : ''].filter(Boolean).join(' · '),
+        kcal, p: offNum(n, 'proteins'), c: offNum(n, 'carbohydrates'), f: offNum(n, 'fat') };
+    }
+  } catch (e) { offline = true; }
+  if (scanCtx !== ctx) return;
+  scanMsg(prod ? `Código ${code} · encontrado en Open Food Facts` : offline ? `Código ${code} · sin internet para buscarlo` : `Código ${code} · no está en la base`);
+  const v = k => (prod && prod[k] != null ? toField(prod[k]) : '');
+  const field = (k, label, unit) => `<label class="field"><span>${label}</span>
+      <div class="add-row" style="margin-top:0"><input name="${k}" inputmode="decimal" value="${v(k)}" autocomplete="off"><span class="unit-label">${unit}</span></div></label>`;
+  $scan.querySelector('.scan-code').hidden = true;
+  $scan.querySelector('.scan-result').innerHTML = `<form class="stack scan-food" data-code="${code}" novalidate>
+      <p class="small" style="margin:0">${prod ? 'Revisa que coincida con la etiqueta (valores por 100 g). Los datos los sube la comunidad y a veces tienen errores.'
+        : 'Cópialo de la etiqueta del envase, por 100 g. Queda guardado con su código: la próxima vez lo encuentras al escanear.'}</p>
+      <label class="field"><span>Nombre</span><input name="name" value="${esc(prod ? prod.name : '')}" placeholder="Ej. Yoghurt protein frutilla" autocomplete="off"></label>
+      ${field('p', 'Proteínas', 'g')}${field('c', 'Carbohidratos', 'g')}${field('f', 'Grasas', 'g')}
+      ${field('kcal', 'Calorías (si lo dejas vacío se calcula con los macros)', 'kcal')}
+      <p class="form-msg" hidden></p>
+      <button class="btn primary block">Guardar${ctx.target ? ' y usar' : ''}</button>
+      <button type="button" class="btn ghost block" data-scan="again">Escanear otro</button>
+    </form>`;
+}
+function saveScanned(f) {
+  const val = k => num(f.elements[k].value), name = f.elements.name.value.trim();
+  const p = val('p'), c = val('c'), fat = val('f');
+  if (!name) return formMsg(f, 'Escribe el nombre del alimento.');
+  if ([p, c, fat].some(x => x == null || x < 0 || x > 100)) return formMsg(f, 'Escribe proteínas, carbohidratos y grasas por 100 g (entre 0 y 100).');
+  let kcal = val('kcal');
+  if (kcal == null) kcal = Math.round(p * 4 + c * 4 + fat * 9);
+  if (kcal < 0 || kcal > 1000) return formMsg(f, 'Las calorías por 100 g deben estar entre 0 y 1000.');
+  const food = { id: uid(), name, kcal: round1(kcal), p: round1(p), c: round1(c), f: round1(fat), barcode: f.dataset.code };
+  N().foods.push(food);
+  save();
+  useScannedFood(food);
+}
+function useScannedFood(food) {
+  const t = scanCtx && scanCtx.target;
+  closeScanner();
+  const form = t && $app.querySelector(t.m != null ? `[data-form="add-item"][data-m="${t.m}"]` : `[data-form="${t.form}"]`);
+  if (form) { pickFoodIn(form, food.id); showNote(`${food.name}: escribe los gramos`); }
+  else { render(); showNote(`Guardado en tus alimentos: ${food.name}`); }
+}
+$scan.addEventListener('click', e => {
+  const a = e.target.closest('[data-scan]');
+  if (!a) return;
+  if (a.dataset.scan === 'close') closeScanner();
+  else if (a.dataset.scan === 'again') openScanner(scanCtx && scanCtx.target);
+});
+$scan.addEventListener('submit', e => {
+  e.preventDefault();
+  if (e.target.matches('.scan-code')) lookupBarcode(e.target.elements.code.value);
+  else if (e.target.matches('.scan-food')) saveScanned(e.target);
+});
+
 function readFoodForm(f) {
   const typed = normText(f.elements.q.value.trim());
   const exact = typed && [...N().foods, ...BASE_FOODS].find(x => normText(x.name) === typed);
@@ -1554,7 +1726,7 @@ function viewWorkout() {
       <div class="set ${ex.rir ? 'has-rir' : ''}">
         <span class="n">${label}</span>
         <input inputmode="decimal" data-bind="w" data-i="${i}" data-j="${j}" value="${esc(s.w)}" placeholder="${esc(wPh)}" aria-label="${ex.unit === 'placas' ? 'Placas' : isBwEx(ex) ? 'Lastre' : 'Peso'} serie ${label}">
-        <span class="u">${unitShort(ex.unit)}</span>
+        <button type="button" class="u unit-btn" data-action="draft-unit" data-i="${i}" aria-label="Unidad: ${ex.unit}. Tocar para cambiar">${unitShort(ex.unit)}</button>
         <span class="x">×</span>
         <input inputmode="numeric" data-bind="r" data-i="${i}" data-j="${j}" value="${esc(s.r)}" placeholder="${esc(repsFor(ex, j) || s.pr || 'reps')}" aria-label="Repeticiones serie ${label}">
         ${ex.rir ? `<input class="rir" inputmode="numeric" data-bind="rir" data-i="${i}" data-j="${j}" value="${esc(s.rir ?? '')}" placeholder="${esc(rirFor(ex, j) || s.prir || 'RIR')}" aria-label="RIR serie ${label}">` : ''}
@@ -6031,7 +6203,7 @@ function swapSheetHtml() {
   const lastTxt = a => { const pv = lastFor(a.id); const st = pv && pv.ex.sets[0];
     return st ? `Última vez ${fmtNum(st.w)} ${pv.ex.unit} × ${fmtNum(st.r)}` : 'Sin historial todavía'; };
   const alts = [...(rex && dx.swapOf ? [{ ...altOf(rex), orig: true }] : []), ...(rex ? rex.alts || [] : [])].filter(a => a.id !== dx.exerciseId);
-  const others = g ? guidesOf(g.zone).filter(x => !sameName(x.name, dx.name) && !alts.some(a => sameName(a.name, x.name)) && !(rex && sameName(rex.name, x.name))) : [];
+  const others = swapOthers(dx, alts, rex, g, swapPick.q);
   const altRow = a => `<div class="swap-alt">
       <button type="button" class="food-pick" data-action="swap-to" data-id="${a.id}">
         <span class="grow"><strong>${a.orig ? 'Volver a ' : ''}${esc(a.name)}</strong><span class="muted small">${lastTxt(a)}</span></span><span class="chev">›</span></button>
@@ -6051,12 +6223,21 @@ function swapSheetHtml() {
         <button class="btn">Crear</button>
       </form>
       <p class="muted small" style="margin:0">Otra máquina o variante del mismo ejercicio: crea una alternativa con su propio historial.</p>
-      ${others.length ? `<h3 class="guide-zone">Otros de ${GUIDE_ZONES[g.zone]}</h3><div class="guide-list">${others.map(o => `<button type="button" class="food-pick" data-action="swap-to" data-g="${o.id}">
-        <span class="grow"><strong>${esc(o.name)}</strong><span class="muted small">${esc(o.musc)}</span></span><span class="chev">›</span></button>`).join('')}</div>` : ''}
+      <h3 class="guide-zone">${g ? `Otros de ${GUIDE_ZONES[g.zone]}` : 'Otros ejercicios'}</h3>
+      <input data-bind="swap-q" value="${esc(swapPick.q || '')}" placeholder="Buscar cualquier ejercicio" autocomplete="off" aria-label="Buscar ejercicio">
+      <div class="guide-list swap-others">${swapOthersHtml(others, swapPick.q)}</div>
       <button class="btn block" data-action="swap-close">Cancelar</button>
     </section>
   </div>`;
 }
+// Otros ejercicios: los del mismo músculo, o al buscar, cualquiera por su nombre
+function swapOthers(dx, alts, rex, g, q) {
+  const skip = x => sameName(x.name, dx.name) || alts.some(a => sameName(a.name, x.name)) || (rex && sameName(rex.name, x.name));
+  return (q && q.trim() ? searchGuides(q, 40) : g ? guidesOf(g.zone) : []).filter(x => !skip(x));
+}
+const swapOthersHtml = (list, q) => (list.length ? list.map(o => `<button type="button" class="food-pick" data-action="swap-to" data-g="${o.id}">
+    <span class="grow"><strong>${esc(o.name)}</strong><span class="muted small">${esc(o.musc)}</span></span><span class="chev">›</span></button>`).join('')
+  : `<p class="muted small" style="margin:0">${q && q.trim() ? 'No hay ejercicios con ese nombre. Puedes crearlo arriba como alternativa.' : 'Busca un ejercicio por su nombre.'}</p>`);
 async function swapExercise(alt) {
   const d = db.draft, i = swapPick.i, dx = d && d.exercises[i];
   if (!dx || alt.id === dx.exerciseId) return;
@@ -7180,8 +7361,22 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       render();
       syncModalHistory();
       break;
+    case 'draft-unit': {   // kg → lb → placas: en este entreno y en tu rutina (o en la alternativa)
+      const d = cur(), ex = d.exercises[i];
+      ex.unit = UNITS[(UNITS.indexOf(ex.unit) + 1) % UNITS.length];
+      if (!isEditing()) {
+        const r = d.routineId && db.routines.find(x => x.id === d.routineId);
+        for (const re of r ? r.exercises : []) {
+          if (re.id === ex.exerciseId) re.unit = ex.unit;
+          for (const a of re.alts || []) if (a.id === ex.exerciseId) a.unit = ex.unit;
+        }
+      }
+      save(); render();
+      showNote(`${ex.name}: ahora en ${ex.unit}`);
+      break;
+    }
     case 'swap-open':
-      swapPick = { i, always: false };
+      swapPick = { i, always: false, q: '' };
       render(); syncModalHistory();
       break;
     case 'swap-close':
@@ -7197,7 +7392,7 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       let alt;
       if (el.dataset.g) {   // otro ejercicio del mismo músculo (con su guía)
         const g = GUIDE_BY_ID.get(el.dataset.g), found = findExercise(g.name);
-        alt = { id: found ? found.id : uid(), name: found ? found.name : g.name, unit: found ? found.unit : dx.unit, guide: g.id };
+        alt = { id: found ? found.id : uid(), name: found ? found.name : g.name, unit: found ? found.unit : dx.unit === 'lb' ? 'lb' : 'kg', guide: g.id };
       } else alt = [...(rex ? [altOf(rex), ...(rex.alts || [])] : [])].find(a => a.id === el.dataset.id);
       if (alt) await swapExercise(alt);
       break;
@@ -7277,19 +7472,14 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       histDay = el.dataset.date && el.dataset.date !== histDay ? el.dataset.date : null;   // tocar de nuevo = todo el mes
       render();
       break;
-    case 'pick-food': {
-      const form = el.closest('form'), food = foodById(id);
-      form.dataset.food = id;
-      form.elements.q.value = food.name;
-      form.querySelector('.food-results').innerHTML = '';
-      // Alimentos de la base con porción: por defecto se anotan en unidades (se puede cambiar a gramos)
-      const chip = form.querySelector('[data-action="add-mode"]');
-      chip.hidden = !food.unitG;
-      form.dataset.mode = food.unitG ? 'u' : 'g';
-      setAddMode(form, food);
-      form.elements.g.focus();
+    case 'scan': {   // desde una comida de la dieta, los extras de hoy o Mis alimentos
+      const form = el.closest('form');
+      openScanner(form ? (form.dataset.m != null ? { m: form.dataset.m } : { form: form.dataset.form }) : null);
       break;
     }
+    case 'pick-food':
+      pickFoodIn(el.closest('form'), id);
+      break;
     case 'add-mode': {
       const form = el.closest('form'), food = foodById(form.dataset.food);
       form.dataset.mode = form.dataset.mode === 'u' ? 'g' : 'u';
@@ -7735,6 +7925,15 @@ $app.addEventListener('input', e => {
     exploreQ = el.value;
     const list = $app.querySelector('.explore-list');
     if (list) list.innerHTML = exploreListHtml();
+    return;
+  }
+  if (bind === 'swap-q') {
+    const d = db.draft, dx = swapPick && d && d.exercises[swapPick.i];
+    if (!dx) return;
+    swapPick.q = el.value;
+    const rex = routineExOf(d, dx), alts = [...(rex && dx.swapOf ? [altOf(rex)] : []), ...(rex ? rex.alts || [] : [])];
+    const list = $app.querySelector('.swap-others');
+    if (list) list.innerHTML = swapOthersHtml(swapOthers(dx, alts, rex, guideFor(dx.name, dx.guide), el.value), el.value);
     return;
   }
   if (bind === 'guide-q') {
