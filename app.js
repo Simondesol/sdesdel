@@ -1734,7 +1734,7 @@ function viewWorkout() {
       <div class="set ${ex.rir ? 'has-rir' : ''}">
         <span class="n">${label}</span>
         <input inputmode="decimal" data-bind="w" data-i="${i}" data-j="${j}" value="${esc(s.w)}" placeholder="${esc(wPh)}" aria-label="${ex.unit === 'placas' ? 'Placas' : isBwEx(ex) ? 'Lastre' : 'Peso'} serie ${label}">
-        <button type="button" class="u unit-btn" data-action="draft-unit" data-i="${i}" aria-label="Unidad: ${ex.unit}. Tocar para cambiar">${unitShort(ex.unit)}</button>
+        <span class="u">${unitShort(ex.unit)}</span>
         <span class="x">×</span>
         <input inputmode="numeric" data-bind="r" data-i="${i}" data-j="${j}" value="${esc(s.r)}" placeholder="${esc(repsFor(ex, j) || s.pr || 'reps')}" aria-label="Repeticiones serie ${label}">
         ${ex.rir ? `<input class="rir" inputmode="numeric" data-bind="rir" data-i="${i}" data-j="${j}" value="${esc(s.rir ?? '')}" placeholder="${esc(rirFor(ex, j) || s.prir || 'RIR')}" aria-label="RIR serie ${label}">` : ''}
@@ -7412,20 +7412,6 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       render();
       syncModalHistory();
       break;
-    case 'draft-unit': {   // kg → lb → placas: en este entreno y en tu rutina (o en la alternativa)
-      const d = cur(), ex = d.exercises[i];
-      ex.unit = UNITS[(UNITS.indexOf(ex.unit) + 1) % UNITS.length];
-      if (!isEditing()) {
-        const r = d.routineId && db.routines.find(x => x.id === d.routineId);
-        for (const re of r ? r.exercises : []) {
-          if (re.id === ex.exerciseId) re.unit = ex.unit;
-          for (const a of re.alts || []) if (a.id === ex.exerciseId) a.unit = ex.unit;
-        }
-      }
-      save(); render();
-      showNote(`${ex.name}: ahora en ${ex.unit}`);
-      break;
-    }
     case 'swap-open':
       swapPick = { i, always: false, q: '' };
       render(); syncModalHistory();
