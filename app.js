@@ -6429,7 +6429,7 @@ function guidePickerHtml() {
   </div>`;
 }
 const guideBody = g => `${g.video
-    ? `<video class="guide-video" src="${esc(g.video)}" autoplay muted loop playsinline preload="auto" data-action="vid-toggle" title="Toca para pausar"></video>`
+    ? `<video class="guide-video${g.sq ? ' sq' : ''}" src="${esc(g.video)}" autoplay muted loop playsinline preload="auto" data-action="vid-toggle" title="Toca para pausar"></video>`
     : ANIMS[g.id] && isLocal ? `<div class="guide-anim" data-anim="${g.id}" title="Toca para pausar"></div>` : ''}
   <h3>Puntos clave</h3>
   <ul class="guide-ul">${g.cues.map(c => `<li>${esc(c)}</li>`).join('')}</ul>

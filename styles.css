@@ -1117,3 +1117,5 @@ button.wk-day { font-family: inherit; border: 0; cursor: pointer; padding: 0; }
 /* Progreso de un ejercicio: filtro por rutina */
 .prog-rids { display: flex; gap: 6px; overflow-x: auto; margin: -4px -16px 12px; padding: 0 16px 2px; scrollbar-width: none; }
 .prog-rids .chip { flex: none; }
+/* Videos de técnica grabados en vertical: cuadrados, se ven enteros */
+.guide-video.sq { aspect-ratio: 1 / 1; }
