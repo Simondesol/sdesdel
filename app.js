@@ -6052,6 +6052,23 @@ function unifyExerciseIds() {
   if (db.body.prPick) db.body.prPick = [...new Set(db.body.prPick.map(m))];
   return true;
 }
+// Ejercicios con el nombre antiguo de una guía que cambiamos de nombre: pasan al nombre nuevo (mismo ejercicio, mismo
+// historial). Así al agregarlo de nuevo desde la lista se reconoce como el mismo
+const OLD_GUIDE_NAMES = { 'press declinado': 'press-declinado', 'escaladores': 'escaladores', 'curl bayesiano en polea': 'curl-bayesiano',
+  'sentadilla bulgara': 'sentadilla-bulgara', 'zancada hacia atras': 'zancada-inversa', 'zancada estatica (split squat)': 'split-squat',
+  'zancadas': 'zancadas', 'jalon a una mano en polea': 'jalon-unilateral' };
+function renameOldGuideNames() {
+  let changed = false;
+  const fix = e => {
+    const gid = OLD_GUIDE_NAMES[normText(String(e.name || '').trim())];
+    if (!gid || (e.guide && e.guide !== gid)) return;
+    e.name = GUIDE_BY_ID.get(gid).name; changed = true;
+  };
+  for (const r of db.routines) for (const e of r.exercises) { fix(e); (e.alts || []).forEach(fix); }
+  for (const w of db.workouts) w.exercises.forEach(fix);
+  if (db.draft) db.draft.exercises.forEach(fix);
+  return changed;
+}
 function backfillWorkoutGuides() {
   const guide = new Map();
   for (const r of db.routines) for (const e of r.exercises) {
@@ -6899,7 +6916,7 @@ async function handleUser(u) {
   status = 'ready';
   planSeen = stable(db.plan || null);
   migrateLoosePlan();
-  if ([relinkGuideAlts(), unifyExerciseIds(), backfillWorkoutGuides()].some(Boolean)) save();
+  if ([renameOldGuideNames(), relinkGuideAlts(), unifyExerciseIds(), backfillWorkoutGuides()].some(Boolean)) save();
   // Si el teléfono cerró la app en medio del entrenamiento, al abrirla vuelves a él (no al inicio)
   if (firstOpen && db.draft && routeParts()[0] === '') location.replace('#/entrenar');
   firstOpen = false;
