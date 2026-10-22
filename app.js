@@ -1770,7 +1770,7 @@ function viewWorkout() {
   };
   const historyHtml = ex => historyFor(ex.exerciseId, d.editOf).map(({ w, ex: pex }) => `
       <div class="hist-item">
-        <div class="muted">${fmtDate(w.date)}</div>
+        <div class="muted">${fmtDate(w.date)}${w.routineName ? ` · ${esc(w.routineName)}` : ''}</div>
         ${setsChips(pex)}
       </div>`).join('') || '<p class="muted">Aún no hay historial de este ejercicio.</p>';
   // pre: letra del ejercicio en un superset ("A "), para saber de cuál es cada descanso
@@ -2491,7 +2491,7 @@ const VIEW_OK = ['', 'chat', 'rutinas', 'rutina', 'programas', 'miprograma', 'li
 const VIEW_EXIT = ['social', 'gymbro', 'perfil', 'privacidad', 'cuenta', 'alumnos', 'coach', 'asignar'];
 // Lo que se puede tocar mirando a un alumno, y lo extra en el editor de rutinas
 const VIEW_SAFE = new Set(['back', 'view-exit', 'vid-toggle', 'info', 'toggle-sec', 'range', 'toggle-history', 'hist-month', 'hist-day', 'skin-view', 'measure-view',
-  'prog-open', 'prog-close', 'prog-filter', 'prog-retry', 'week-sum', 'week-day', 'guide-view', 'guide-close', 'explore-zone', 'explore-open', 'explore-back', 'explore-close', 'go-ex', 'prev-ex', 'next-ex']);
+  'prog-open', 'prog-close', 'prog-filter', 'prog-retry', 'week-sum', 'week-day', 'guide-view', 'guide-close', 'explore-zone', 'explore-open', 'explore-back', 'explore-close', 'go-ex', 'prev-ex', 'next-ex', 'prog-rid']);
 const VIEW_ROUTINE = new Set(['reps-by', 'toggle-drop', 'toggle-bw', 'toggle-ss', 'toggle-rir', 'toggle-unit', 'move', 'ex-open', 'ex-close', 'del-ex', 'dup-routine', 'del-routine',
   'guide-pick', 'guide-change', 'guide-set', 'guide-pick-close', 'explore-list', 'explore-add', 'sugg-ex']);
 const VIEW_PROGRAM = new Set(['myprog-new', 'myprog-weeks', 'myprog-stop', 'myprog-use', 'myprog-del', 'prog-level', 'prog-days', 'prog-add', 'prog-add-one']);
@@ -4193,6 +4193,8 @@ function viewProfile(arg) {
 const RANGES = [['semana', 'Semana', 7], ['mes', 'Mes', 30], ['3m', '3 meses', 91], ['6m', '6 meses', 182]];      // peso corporal
 const EX_RANGES = [['mes', 'Mes', 30], ['3m', '3 meses', 91], ['6m', '6 meses', 182], ['1a', '1 año', 365]];   // ejercicios
 let progressRange = '3m';   // período del gráfico de ejercicios
+let progressRid = { ex: null, r: '' };   // rutina elegida en el gráfico de un ejercicio ('' = todas; 'libre' = sin rutina)
+const ridKey = w => w.routineId || 'libre';
 let bwRange = '3m';         // período del gráfico de peso corporal
 let chart = null;   // puntos del gráfico en pantalla (para el tooltip)
 
@@ -4228,8 +4230,8 @@ function e1rmEx(ex, s, dateIso) {
 }
 
 // Un punto por sesión: el 1RM estimado de la primera serie con peso
-function progressPoints(exerciseId, days) {
-  const rows = historyFor(exerciseId).reverse();          // de la más antigua a la más reciente
+function progressPoints(exerciseId, days, rid = '') {
+  const rows = historyFor(exerciseId).reverse().filter(({ w }) => !rid || ridKey(w) === rid);   // de la más antigua a la más reciente
   if (!rows.length) return { unit: 'kg', points: [] };
   const unit = rows[rows.length - 1].ex.unit;
   const since = Date.now() - days * 86400000;
@@ -4241,7 +4243,7 @@ function progressPoints(exerciseId, days) {
     if (!s) continue;
     const set = { w: s.w, r: s.r, rir: s.rir, unit: ex.unit };
     const y = round1(convertWeight(e1rmEx(ex, s, w.date), ex.unit, unit));
-    points.push({ t, date: w.date, y, set, tip: `${fmtNum(y)} ${unit} <span class="muted">(${setText(set, set.unit)})</span>` });
+    points.push({ t, date: w.date, y, set, rname: w.routineName || 'Sin rutina', tip: `${fmtNum(y)} ${unit} <span class="muted">(${setText(set, set.unit)})</span>` });
   }
   return { unit, points };
 }
@@ -5310,10 +5312,17 @@ function viewProgressExercise(id) {
   if (!rows.length) { location.replace('#/progreso'); return ''; }
   const name = rows[0].ex.name;
   const days = EX_RANGES.find(r => r[0] === progressRange)[2];
-  const { unit, points } = progressPoints(id, days);
+  // Rutinas donde lo hiciste: si son varias, se puede ver cada una por separado (al principio o al final de la rutina rindes distinto)
+  if (progressRid.ex !== id) progressRid = { ex: id, r: '' };
+  const rids = new Map();
+  for (const { w } of rows) if (!rids.has(ridKey(w))) rids.set(ridKey(w), (db.routines.find(r => r.id === w.routineId) || {}).name || w.routineName || 'Sin rutina');
+  if (!rids.has(progressRid.r)) progressRid.r = '';
+  const rid = progressRid.r;
+  const { unit, points } = progressPoints(id, days, rid);
   chart = null;
 
-  const range = rangeButtons(EX_RANGES, progressRange, 'ex');
+  const range = rangeButtons(EX_RANGES, progressRange, 'ex') + (rids.size > 1 ? `<div class="prog-rids" role="group" aria-label="Rutina">
+      ${[['', 'Todas'], ...rids].map(([k, n]) => `<button class="chip toggle ${rid === k ? 'on' : ''}" data-action="prog-rid" data-r="${esc(k)}" aria-pressed="${rid === k}">${esc(n)}</button>`).join('')}</div>` : '');
   const bwEx = isBwEx({ exerciseId: id, bw: rows[0].ex.bw });
   const sub = bwEx ? 'Lastre máximo estimado' : 'Tu fuerza estimada (1RM)';
 
@@ -5331,7 +5340,7 @@ function viewProgressExercise(id) {
   </div>${bwEx ? '' : infoBox('rm')}`;
 
   const table = points.slice().reverse().map(p => `
-    <div class="prog-row"><span class="muted">${fmtDate(p.date)}</span><span>${setText(p.set, p.set.unit)} <span class="muted">→ ${bwEx ? '+' : ''}${fmtNum(p.y)} ${unit}</span></span></div>`).join('');
+    <div class="prog-row"><span class="muted">${fmtDate(p.date)}${rids.size > 1 && !rid ? `<br><span class="small">${esc(p.rname)}</span>` : ''}</span><span>${setText(p.set, p.set.unit)} <span class="muted">→ ${bwEx ? '+' : ''}${fmtNum(p.y)} ${unit}</span></span></div>`).join('');
 
   return `${header(name, { back: true, sub })}
     ${range}
@@ -5411,8 +5420,8 @@ function render() {
   }
 
   if (screen !== 'editar') editBuf = null;
-  if (screen !== 'rutina') { altEdit = null; editReturn = false; }
   else if (!editBuf || editBuf.editOf !== arg) editBuf = makeEditBuf(arg);
+  if (screen !== 'rutina') { altEdit = null; editReturn = false; }
   if (screen !== 'sesion' || arg !== justFinished) justFinished = null;
   if (screen !== 'rutina' && screen !== 'dieta' && screen !== 'miprograma') shareResult = null;
   if (screen !== 'chat') { attach = null; editingMsg = null; selectedMsg = null; }
@@ -5832,6 +5841,9 @@ function saveEdit() {
   goBack();
 }
 
+// Ejercicio nuevo en una rutina: si ya lo tienes en otra (mismo nombre), es el mismo (historial y progreso juntos).
+// Repetido en esta misma rutina ("Agregar igual"): uno aparte
+const exIdFor = (name, r) => { const f = !r.exercises.some(e => sameName(e.name, name)) && findExercise(name); return f ? f.id : uid(); };
 // Busca un ejercicio que ya exista con ese nombre (en rutinas o historial) para mantener su historial
 function findExercise(name) {
   for (const r of db.routines) {
@@ -5987,6 +5999,48 @@ function relinkGuideAlts() {
     changed = true;
   }
   return changed;
+}
+// Mismo nombre en distintas rutinas (o en tu historial) con ids distintos: pasan a ser uno (el con más sesiones).
+// No se juntan: dos iguales dentro de una misma rutina, ni dos iguales dentro de un mismo entreno.
+function unifyExerciseIds() {
+  const key = n => normText(String(n || '').trim()), groups = new Map(), inGroups = new Map();
+  const note = (name, id, n) => {
+    const k = key(name);
+    if (!k || !id) return;
+    const g = groups.get(k) || new Map(); g.set(id, (g.get(id) || 0) + n); groups.set(k, g);
+    (inGroups.get(id) || inGroups.set(id, new Set()).get(id)).add(k);
+  };
+  for (const r of db.routines) for (const e of r.exercises) note(e.name, e.id, 0);
+  for (const w of db.workouts) for (const e of w.exercises) note(e.name, e.exerciseId, 1);
+  const to = new Map();
+  for (const g of groups.values()) {
+    if (g.size < 2) continue;
+    const ids = [...g.keys()].filter(id => inGroups.get(id).size === 1);   // uno renombrado (aparece con 2 nombres) queda como está
+    if (ids.length < 2) continue;
+    const keep = ids.reduce((a, b) => (g.get(b) > g.get(a) ? b : a));
+    for (const id of ids) if (id !== keep) to.set(id, keep);
+  }
+  // Dos de ellos en la misma rutina: ese nombre no se junta
+  for (const r of db.routines) {
+    const seen = new Map();
+    for (const e of r.exercises) {
+      const t = to.get(e.id) || e.id;
+      if (seen.has(t) && seen.get(t) !== e.id) for (const [a, b] of [...to]) if (b === t) to.delete(a);
+      seen.set(t, e.id);
+    }
+  }
+  if (!to.size) return false;
+  const m = id => to.get(id) || id;
+  for (const r of db.routines) for (const e of r.exercises) {
+    e.id = m(e.id);
+    if (e.alts) { e.alts = e.alts.filter((a, k, all) => (a.id = m(a.id)) !== e.id && all.findIndex(x => m(x.id) === a.id) === k); if (!e.alts.length) delete e.alts; }
+  }
+  const remap = list => { const ids = list.map(e => m(e.exerciseId)); list.forEach((e, k) => { if (ids.indexOf(ids[k]) === ids.lastIndexOf(ids[k])) e.exerciseId = ids[k]; }); };
+  for (const w of db.workouts) remap(w.exercises);
+  if (db.draft) { remap(db.draft.exercises); for (const e of db.draft.exercises) if (e.swapOf) e.swapOf = m(e.swapOf); }
+  for (const [a, b] of to) { if (db.notes[a] && !db.notes[b]) db.notes[b] = db.notes[a]; delete db.notes[a]; }
+  if (db.body.prPick) db.body.prPick = [...new Set(db.body.prPick.map(m))];
+  return true;
 }
 function migrateLoosePlan() {
   if (!planIsLoose()) return;
@@ -6787,7 +6841,7 @@ async function handleUser(u) {
   status = 'ready';
   planSeen = stable(db.plan || null);
   migrateLoosePlan();
-  if (relinkGuideAlts()) save();
+  if ([relinkGuideAlts(), unifyExerciseIds()].some(Boolean)) save();
   // Si el teléfono cerró la app en medio del entrenamiento, al abrirla vuelves a él (no al inicio)
   if (firstOpen && db.draft && routeParts()[0] === '') location.replace('#/entrenar');
   firstOpen = false;
@@ -7111,6 +7165,10 @@ $app.addEventListener('click', async e => {
       delete db.body.goal;
       goalEditing = false;
       save(); render();
+      break;
+    case 'prog-rid':
+      progressRid.r = el.dataset.r;
+      render();
       break;
     case 'range':
       if (el.dataset.s === 'bw') bwRange = el.dataset.r;
@@ -7441,7 +7499,7 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       if (f) lastUnit = f.elements.unit.value;
       exploreOpen = false; exploreView = null;
       if (!(await okRepeatedEx(g.name))) { syncModalHistory(); return; }
-      curRoutine().exercises.push({ id: uid(), name: g.name, unit: lastUnit, rest: 0, guide: g.id });
+      curRoutine().exercises.push({ id: exIdFor(g.name, curRoutine()), name: g.name, unit: lastUnit, rest: 0, guide: g.id });
       openEx = curRoutine().exercises.length - 1;   // queda abierto para poner series y repeticiones
       exploreQ = '';   // la próxima vez la lista parte sin búsqueda
       save(); render();
@@ -7496,7 +7554,7 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       if (!g || !f) return;
       lastUnit = f.elements.unit.value;
       if (!(await okRepeatedEx(g.name))) return;
-      curRoutine().exercises.push({ id: uid(), name: g.name, unit: lastUnit, rest: 0, guide: g.id });
+      curRoutine().exercises.push({ id: exIdFor(g.name, curRoutine()), name: g.name, unit: lastUnit, rest: 0, guide: g.id });
       openEx = curRoutine().exercises.length - 1;
       save(); render();
       break;
@@ -8257,7 +8315,8 @@ $app.addEventListener('submit', async e => {
   } else if (f.dataset.form === 'new-ex') {
     lastUnit = f.elements.unit.value;
     if (!(await okRepeatedEx(title))) return;
-    curRoutine().exercises.push({ id: uid(), name: title, unit: lastUnit, rest: 0 });
+    const r = curRoutine(), id = exIdFor(title, r);   // antes de agregarlo: si ya está en esta rutina, va aparte
+    r.exercises.push({ id, name: title, unit: lastUnit, rest: 0 });
     openEx = curRoutine().exercises.length - 1;   // el nuevo queda abierto para configurarlo
     save(); render();
     $app.querySelector('[data-form="new-ex"] input').focus();

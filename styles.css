@@ -1114,3 +1114,6 @@ button.wk-day { font-family: inherit; border: 0; cursor: pointer; padding: 0; }
 .ex-alts { flex: 1 1 100%; display: grid; gap: 6px; }
 .ex-alts-list { display: flex; flex-wrap: wrap; gap: 6px; }
 .swap-alt .small-btn { flex: none; min-height: 36px; padding: 0 12px; font-size: 13px; }
+/* Progreso de un ejercicio: filtro por rutina */
+.prog-rids { display: flex; gap: 6px; overflow-x: auto; margin: -4px -16px 12px; padding: 0 16px 2px; scrollbar-width: none; }
+.prog-rids .chip { flex: none; }
