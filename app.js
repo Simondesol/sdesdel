@@ -5968,6 +5968,26 @@ function planFromProgram(p) {
 }
 const nextProgramName = () => { let n = db.programs.length + 1; while (db.programs.some(p => sameName(p.name, `Programa ${n}`))) n++; return `Programa ${n}`; };
 // Quien ya tenía su plan armado (antes de existir los programas): se guarda solo como programa activo
+// Una alternativa elegida de la lista (se llama igual que la guía) que quedó separada de tu ejercicio con esa misma
+// técnica ("Prensa de piernas" nuevo, cuando ya tenías "Prensa"): pasa a ser tu ejercicio y sus series se juntan con su historial
+function relinkGuideAlts() {
+  let changed = false;
+  for (const r of db.routines) for (const ex of r.exercises) for (const a of ex.alts || []) {
+    const g = a.guide && GUIDE_BY_ID.get(a.guide);
+    if (!g || a.name !== g.name) continue;   // las creadas a mano ("Pec deck · máquina 2") quedan aparte a propósito
+    const mine = (myGuideMap().get(g.id) || []).find(c => c.id !== a.id && c.hist && unitKind(c.unit) === unitKind(a.unit));
+    if (!mine || mine.id === ex.id || ex.alts.some(x => x.id === mine.id)) continue;
+    const from = a.id;
+    Object.assign(a, { id: mine.id, name: mine.name, unit: mine.unit });
+    for (const w of db.workouts) {
+      if (w.exercises.some(e => e.exerciseId === mine.id)) continue;   // ese día hiciste los dos: quedan separados
+      for (const e of w.exercises) if (e.exerciseId === from) { e.exerciseId = mine.id; e.name = mine.name; }
+    }
+    if (db.draft) for (const e of db.draft.exercises) if (e.exerciseId === from) { e.exerciseId = mine.id; e.name = mine.name; }
+    changed = true;
+  }
+  return changed;
+}
 function migrateLoosePlan() {
   if (!planIsLoose()) return;
   let name = 'Mi programa';
@@ -6214,8 +6234,7 @@ function swapSheetHtml() {
   if (!dx) return '';
   const rex = routineExOf(d, dx);
   const g = guideFor(dx.name, dx.guide);
-  const lastTxt = a => { const pv = lastFor(a.id); const st = pv && pv.ex.sets[0];
-    return st ? `Última vez ${fmtNum(st.w)} ${pv.ex.unit} × ${fmtNum(st.r)}` : 'Sin historial todavía'; };
+  const lastTxt = a => lastSetText(a.id);
   const alts = [...(rex && dx.swapOf ? [{ ...altOf(rex), orig: true }] : []), ...(rex ? rex.alts || [] : [])].filter(a => a.id !== dx.exerciseId);
   const others = swapOthers(dx, alts, rex, g, swapPick.q);
   const altRow = a => `<div class="swap-alt">
@@ -6245,13 +6264,35 @@ function swapSheetHtml() {
     </section>
   </div>`;
 }
-// Otros ejercicios: los del mismo músculo, o al buscar, cualquiera por su nombre
+// Tus ejercicios agrupados por su guía de técnica (rutinas, sus alternativas e historial), para no crear uno nuevo
+// cuando ya lo tienes con otro nombre. Cada guía → [{ id, name, unit, hist }] (primero los de tus rutinas)
+function myGuideMap() {
+  const hist = new Set(db.workouts.flatMap(w => w.exercises.map(e => e.exerciseId)));
+  const map = new Map(), seen = new Set();
+  const add = (id, name, unit, guide) => {
+    if (seen.has(id)) return;
+    seen.add(id);
+    const g = guideFor(name, guide);
+    if (!g) return;
+    if (!map.has(g.id)) map.set(g.id, []);
+    map.get(g.id).push({ id, name, unit, hist: hist.has(id) });
+  };
+  for (const r of db.routines) for (const e of r.exercises) { add(e.id, e.name, e.unit, e.guide); for (const a of e.alts || []) add(a.id, a.name, a.unit, a.guide); }
+  for (let k = db.workouts.length - 1; k >= 0; k--) for (const e of db.workouts[k].exercises) add(e.exerciseId, e.name, e.unit);
+  return map;
+}
+const mineFor = (map, gid) => { const l = map.get(gid) || []; return l.find(c => c.hist) || l[0] || null; };
+const lastSetText = id => { const pv = lastFor(id); const st = pv && pv.ex.sets[0];
+  return st ? `Última vez ${fmtNum(st.w)} ${pv.ex.unit} × ${fmtNum(st.r)}` : 'Sin historial todavía'; };
+// Otros ejercicios: los del mismo músculo, o al buscar, cualquiera por su nombre (con tu nombre si ya lo tienes)
 function swapOthers(dx, alts, rex, g, q) {
-  const skip = x => sameName(x.name, dx.name) || alts.some(a => sameName(a.name, x.name)) || (rex && sameName(rex.name, x.name));
-  return (q && q.trim() ? searchGuides(q, 40) : g ? guidesOf(g.zone) : []).filter(x => !skip(x));
+  const map = myGuideMap(), taken = new Set([dx.exerciseId, ...(rex ? [rex.id] : []), ...alts.map(a => a.id)]);
+  const skip = x => sameName(x.name, dx.name) || alts.some(a => sameName(a.name, x.name)) || (rex && sameName(rex.name, x.name))
+    || (g && x.id === g.id) || (mineFor(map, x.id) && taken.has(mineFor(map, x.id).id));
+  return (q && q.trim() ? searchGuides(q, 40) : g ? guidesOf(g.zone) : []).filter(x => !skip(x)).map(x => ({ ...x, mine: mineFor(map, x.id) }));
 }
 const swapOthersHtml = (list, q) => (list.length ? list.map(o => `<button type="button" class="food-pick" data-action="swap-to" data-g="${o.id}">
-    <span class="grow"><strong>${esc(o.name)}</strong><span class="muted small">${esc(o.musc)}</span></span><span class="chev">›</span></button>`).join('')
+    <span class="grow"><strong>${esc(o.mine ? o.mine.name : o.name)}</strong><span class="muted small">${o.mine ? `Tu ejercicio · ${lastSetText(o.mine.id)}` : esc(o.musc)}</span></span><span class="chev">›</span></button>`).join('')
   : `<p class="muted small" style="margin:0">${q && q.trim() ? 'No hay ejercicios con ese nombre. Puedes crearlo arriba como alternativa.' : 'Busca un ejercicio por su nombre.'}</p>`);
 // edit: después de cambiarlo se abre su editor (botón Editar de una alternativa)
 async function swapExercise(alt, edit = false) {
@@ -6746,6 +6787,7 @@ async function handleUser(u) {
   status = 'ready';
   planSeen = stable(db.plan || null);
   migrateLoosePlan();
+  if (relinkGuideAlts()) save();
   // Si el teléfono cerró la app en medio del entrenamiento, al abrirla vuelves a él (no al inicio)
   if (firstOpen && db.draft && routeParts()[0] === '') location.replace('#/entrenar');
   firstOpen = false;
@@ -7428,7 +7470,7 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       const d = db.draft, dx = d.exercises[swapPick.i], rex = routineExOf(d, dx);
       let alt;
       if (el.dataset.g) {   // otro ejercicio del mismo músculo (con su guía)
-        const g = GUIDE_BY_ID.get(el.dataset.g), found = findExercise(g.name);
+        const g = GUIDE_BY_ID.get(el.dataset.g), found = findExercise(g.name) || mineFor(myGuideMap(), g.id);
         alt = { id: found ? found.id : uid(), name: found ? found.name : g.name, unit: found ? found.unit : dx.unit === 'lb' ? 'lb' : 'kg', guide: g.id };
       } else alt = [...(rex ? [altOf(rex), ...(rex.alts || [])] : [])].find(a => a.id === el.dataset.id);
       if (alt) await swapExercise(alt);
