@@ -1590,10 +1590,14 @@ function viewRoutine() {
 }
 
 // Agregar un ejercicio que ya está en la rutina: casi siempre se quería hacer otra serie
-async function okRepeatedEx(name) {
-  const r = curRoutine(), k = r.exercises.findIndex(ex => sameName(ex.name, name));
+// Ya está en esta rutina: con el mismo nombre, o con otro nombre y la misma técnica ("Laterales mancuerna" = Elevaciones laterales)
+async function okRepeatedEx(name, gid = null) {
+  const r = curRoutine(), g = gid ? GUIDE_BY_ID.get(gid) : guideFor(name);
+  let k = r.exercises.findIndex(ex => sameName(ex.name, name));
+  if (k < 0 && g) k = r.exercises.findIndex(ex => (guideFor(ex.name, ex.guide) || {}).id === g.id);
   if (k < 0) return true;
-  if (await ask(`"${r.exercises[k].name}" ya está en esta rutina.\n\nSi quieres hacer más series, no lo agregues otra vez: cambia el número de Series. Cada serie, con su peso, se anota al entrenar (Empezar rutina).\n\n¿Agregarlo igual?`, 'Agregar igual')) return true;
+  const same = sameName(r.exercises[k].name, name) ? '' : ` con la misma técnica (${g.name})`;
+  if (await ask(`"${r.exercises[k].name}" ya está en esta rutina${same}.\n\nSi quieres hacer más series, no lo agregues otra vez: cambia el número de Series. Cada serie, con su peso, se anota al entrenar (Empezar rutina).\n\n¿Agregarlo igual?`, 'Agregar igual')) return true;
   openEx = k;   // se abre el que ya estaba, para cambiar sus series
   render();
   return false;
@@ -7587,7 +7591,7 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       if (!g || !curRoutine()) return;
       if (f) lastUnit = f.elements.unit.value;
       exploreOpen = false; exploreView = null;
-      if (!(await okRepeatedEx(g.name))) { syncModalHistory(); return; }
+      if (!(await okRepeatedEx(g.name, g.id))) { syncModalHistory(); return; }
       { const id = await exIdForAdd(g.name, curRoutine(), g.id); curRoutine().exercises.push({ id, name: g.name, unit: lastUnit, rest: 0, guide: g.id }); }
       openEx = curRoutine().exercises.length - 1;   // queda abierto para poner series y repeticiones
       exploreQ = '';   // la próxima vez la lista parte sin búsqueda
@@ -7642,7 +7646,7 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       const g = GUIDE_BY_ID.get(el.dataset.g), f = $app.querySelector('[data-form="new-ex"]');
       if (!g || !f) return;
       lastUnit = f.elements.unit.value;
-      if (!(await okRepeatedEx(g.name))) return;
+      if (!(await okRepeatedEx(g.name, g.id))) return;
       { const id = await exIdForAdd(g.name, curRoutine(), g.id); curRoutine().exercises.push({ id, name: g.name, unit: lastUnit, rest: 0, guide: g.id }); }
       openEx = curRoutine().exercises.length - 1;
       save(); render();
