@@ -1395,7 +1395,11 @@ function viewHome() {
     </div>`;
   }).join('')
     + (last > 0 ? `<button class="link small routine-sort" data-action="routine-sort">${routineSort ? 'Listo' : 'Ordenar rutinas'}</button>` : '')
-    + (guideRenames().length ? '<button class="link small routine-sort" data-action="rename-to-guides">Usar los nombres de la técnica</button>' : '');
+    + (guideRenames().length ? '<button class="link small routine-sort" data-action="rename-to-guides">Usar los nombres de la técnica</button>' : '')
+    + (deletedRoutines().length ? `<button class="link small routine-sort" data-action="restore-open">${restoreOpen ? 'Ocultar rutinas borradas' : 'Recuperar una rutina borrada'}</button>
+      ${restoreOpen ? `<section class="card restore-list">${deletedRoutines().map(x => `<div class="prog-row"><span class="grow"><strong>${esc(x.name)}</strong>
+        <span class="muted small">${plural(x.count, 'entreno')} · última vez ${esc(agoText(x.date))}</span></span>
+        <button class="btn small-btn" data-action="restore-routine" data-id="${esc(x.id)}">Recuperar</button></div>`).join('')}</section>` : ''}` : '');
   const free = d ? '' : routines
     ? '<button class="btn block" data-action="start-free" style="margin:0 0 12px">Entrenar sin rutina</button>'
     : `<section class="card stack free-start">
@@ -3976,6 +3980,42 @@ function plannedRoutine(dateKey) {
 const trainedOn = (dateKey, routineId) => db.workouts.some(w => dayKeyOf(w.date) === dateKey && (!routineId || w.routineId === routineId));
 
 // Días del plan en que toca una rutina: ["lunes y jueves"] o ["semana 1: lunes", "semana 2: jueves"]
+// Rutinas que ya no están pero tienen entrenos guardados: se pueden recuperar con sus ejercicios (y su historial)
+let restoreOpen = false;
+function deletedRoutines() {
+  const have = new Set(db.routines.map(r => r.id)), map = new Map();
+  for (const w of db.workouts) {
+    if (!w.routineId || have.has(w.routineId)) continue;
+    const x = map.get(w.routineId) || { id: w.routineId, count: 0 };
+    x.count++; x.name = w.routineName || 'Rutina'; x.date = w.date;
+    map.set(w.routineId, x);
+  }
+  return [...map.values()].sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
+}
+// La arma con los ejercicios de sus últimos entrenos (en el orden de la última vez), con el mismo id: se conecta con su
+// historial. Las series = las que hiciste la última vez; repeticiones y descanso no se guardan en los entrenos
+function restoreRoutine(rid) {
+  const ws = db.workouts.filter(w => w.routineId === rid).slice(-4).reverse();
+  if (!ws.length) return null;
+  const seen = new Map();
+  for (const w of ws) for (const e of w.exercises) if (!seen.has(e.exerciseId)) seen.set(e.exerciseId, e);
+  let name = ws[0].routineName || 'Rutina';
+  for (let n = 2; db.routines.some(r => sameName(r.name, name)); n++) name = `${ws[0].routineName} ${n}`;
+  const r = { id: rid, name, exercises: [...seen.values()].map(e => ({ id: e.exerciseId, name: e.name, unit: e.unit, rest: 0, goalSets: e.sets.length,
+    ...(e.rir ? { rir: true } : {}), ...(e.bw ? { bw: true } : {}), ...(e.guide ? { guide: e.guide } : {}) })) };
+  db.routines.push(r);
+  // Vuelve a los días donde estaba en tu programa (lo dice el historial de tu plan), si esos días siguen libres
+  const old = (db.planLog || []).slice().reverse().find(x => x.plan && x.plan.days.some(wk => wk.r.includes(rid)));
+  if (old && db.plan && old.plan.prog === db.plan.prog) {
+    const prog = db.programs.find(p => p.id === db.plan.prog);
+    old.plan.days.forEach((wk, w) => wk.r.forEach((id, d) => {
+      if (id !== rid) return;
+      if (db.plan.days[w] && !db.plan.days[w].r[d]) db.plan.days[w].r[d] = rid;
+      if (prog && prog.days[w] && !prog.days[w].r[d]) prog.days[w].r[d] = rid;
+    }));
+  }
+  return r;
+}
 function planUses(routineId) {
   const p = db.plan;
   if (!p) return [];
@@ -7157,6 +7197,19 @@ $app.addEventListener('click', async e => {
       if (infoOpen.has(el.dataset.k)) infoOpen.delete(el.dataset.k); else infoOpen.add(el.dataset.k);
       render();
       break;
+    case 'restore-open':
+      restoreOpen = !restoreOpen;
+      render();
+      break;
+    case 'restore-routine': {
+      const r = restoreRoutine(el.dataset.id);
+      if (!r) break;
+      restoreOpen = false;
+      save();
+      go('#/rutina/' + r.id);
+      setTimeout(() => showNote('Recuperada: revisa las repeticiones y el descanso de cada ejercicio'), 300);
+      break;
+    }
     case 'rename-to-guides': {
       const list = guideRenames();
       if (!list.length) break;
@@ -7402,10 +7455,12 @@ $app.addEventListener('click', async e => {
 
 Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       if (!await ask(`¿Eliminar la rutina "${r.name}"? Tu historial se mantiene.${warn}`)) return;
+      const before = { routines: [...db.routines], plan: db.plan ? clone(db.plan) : null, programs: clone(db.programs) };
       db.routines = db.routines.filter(x => x !== r);
       if (db.plan) for (const wk of db.plan.days) wk.r = wk.r.map(id => (id === r.id ? null : id));
       for (const pg of db.programs) for (const wk of pg.days) wk.r = wk.r.map(id => (id === r.id ? null : id));
       save(); goBack();
+      setTimeout(() => showUndo(`Rutina "${r.name}" eliminada`, () => { Object.assign(db, before); save(); render(); hideToast(); }), 450);   // después de volver (al cambiar de pantalla se esconde el aviso)
       break;
     }
 
