@@ -5758,6 +5758,7 @@ const cleanExercises = d => d.exercises
     unit: ex.unit,
     ...(ex.rir ? { rir: true } : {}),
     ...(ex.bw ? { bw: true } : {}),
+    ...(ex.guide && ex.guide !== 'none' ? { guide: ex.guide } : {}),   // su técnica: así se reconoce aunque lo saques de la rutina
     sets: ex.sets
       .filter(s => { const e = bwEff(s, lastreEx(ex)); return lastreEx(ex) ? e.r !== '' : e.w !== '' || e.r !== ''; })
       .map(s => {
@@ -5823,7 +5824,7 @@ function makeEditBuf(id) {
     start: w.date,
     exercises: w.exercises.map(ex => ({
       exerciseId: ex.exerciseId, name: ex.name, unit: ex.unit, rest: 0,
-      rir: !!ex.rir,
+      rir: !!ex.rir, ...(ex.bw ? { bw: true } : {}), ...(ex.guide ? { guide: ex.guide } : {}),
       sets: ex.sets.map(s => ({
         w: toField(s.w), r: toField(s.r), ...(ex.rir ? { rir: toField(s.rir) } : {}),
         ...(s.drops ? { drops: s.drops.map(x => ({ w: toField(x.w), r: toField(x.r) })) } : {}),
@@ -5842,8 +5843,17 @@ function saveEdit() {
 }
 
 // Ejercicio nuevo en una rutina: si ya lo tienes en otra (mismo nombre), es el mismo (historial y progreso juntos).
-// Repetido en esta misma rutina ("Agregar igual"): uno aparte
-const exIdFor = (name, r) => { const f = !r.exercises.some(e => sameName(e.name, name)) && findExercise(name); return f ? f.id : uid(); };
+// Repetido en esta misma rutina ("Agregar igual"): uno aparte. Si lo tienes con OTRO nombre y la misma técnica (y con
+// historial), pregunta si es el mismo: "Abs colgado" → "Elevación de piernas colgado" sigue con su historial
+async function exIdForAdd(name, r, gid = null) {
+  if (!r.exercises.some(e => sameName(e.name, name)) && findExercise(name)) return findExercise(name).id;
+  const g = gid ? GUIDE_BY_ID.get(gid) : guideFor(name);
+  const cand = g && (myGuideMap().get(g.id) || []).find(c => c.hist && !sameName(c.name, name) && !r.exercises.some(e => e.id === c.id));
+  if (cand && await dialog(`Ya tienes "${cand.name}" con esta misma técnica. ¿Es el mismo ejercicio?
+
+Si es el mismo, sigue con su historial.`, { ok: 'Sí, es el mismo', cancel: 'No, es otro' })) return cand.id;
+  return uid();
+}
 // Busca un ejercicio que ya exista con ese nombre (en rutinas o historial) para mantener su historial
 function findExercise(name) {
   for (const r of db.routines) {
@@ -6041,6 +6051,16 @@ function unifyExerciseIds() {
   for (const [a, b] of to) { if (db.notes[a] && !db.notes[b]) db.notes[b] = db.notes[a]; delete db.notes[a]; }
   if (db.body.prPick) db.body.prPick = [...new Set(db.body.prPick.map(m))];
   return true;
+}
+function backfillWorkoutGuides() {
+  const guide = new Map();
+  for (const r of db.routines) for (const e of r.exercises) {
+    if (e.guide && e.guide !== 'none') guide.set(e.id, e.guide);
+    for (const a of e.alts || []) if (a.guide) guide.set(a.id, a.guide);
+  }
+  let changed = false;
+  for (const w of db.workouts) for (const e of w.exercises) if (!e.guide && guide.has(e.exerciseId)) { e.guide = guide.get(e.exerciseId); changed = true; }
+  return changed;
 }
 function migrateLoosePlan() {
   if (!planIsLoose()) return;
@@ -6370,7 +6390,7 @@ function myGuideMap() {
     map.get(g.id).push({ id, name, unit, hist: hist.has(id) });
   };
   for (const r of db.routines) for (const e of r.exercises) { add(e.id, e.name, e.unit, e.guide); for (const a of e.alts || []) add(a.id, a.name, a.unit, a.guide); }
-  for (let k = db.workouts.length - 1; k >= 0; k--) for (const e of db.workouts[k].exercises) add(e.exerciseId, e.name, e.unit);
+  for (let k = db.workouts.length - 1; k >= 0; k--) for (const e of db.workouts[k].exercises) add(e.exerciseId, e.name, e.unit, e.guide);
   return map;
 }
 const mineFor = (map, gid) => { const l = map.get(gid) || []; return l.find(c => c.hist) || l[0] || null; };
@@ -6879,7 +6899,7 @@ async function handleUser(u) {
   status = 'ready';
   planSeen = stable(db.plan || null);
   migrateLoosePlan();
-  if ([relinkGuideAlts(), unifyExerciseIds()].some(Boolean)) save();
+  if ([relinkGuideAlts(), unifyExerciseIds(), backfillWorkoutGuides()].some(Boolean)) save();
   // Si el teléfono cerró la app en medio del entrenamiento, al abrirla vuelves a él (no al inicio)
   if (firstOpen && db.draft && routeParts()[0] === '') location.replace('#/entrenar');
   firstOpen = false;
@@ -7537,7 +7557,7 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       if (f) lastUnit = f.elements.unit.value;
       exploreOpen = false; exploreView = null;
       if (!(await okRepeatedEx(g.name))) { syncModalHistory(); return; }
-      curRoutine().exercises.push({ id: exIdFor(g.name, curRoutine()), name: g.name, unit: lastUnit, rest: 0, guide: g.id });
+      { const id = await exIdForAdd(g.name, curRoutine(), g.id); curRoutine().exercises.push({ id, name: g.name, unit: lastUnit, rest: 0, guide: g.id }); }
       openEx = curRoutine().exercises.length - 1;   // queda abierto para poner series y repeticiones
       exploreQ = '';   // la próxima vez la lista parte sin búsqueda
       save(); render();
@@ -7592,7 +7612,7 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       if (!g || !f) return;
       lastUnit = f.elements.unit.value;
       if (!(await okRepeatedEx(g.name))) return;
-      curRoutine().exercises.push({ id: exIdFor(g.name, curRoutine()), name: g.name, unit: lastUnit, rest: 0, guide: g.id });
+      { const id = await exIdForAdd(g.name, curRoutine(), g.id); curRoutine().exercises.push({ id, name: g.name, unit: lastUnit, rest: 0, guide: g.id }); }
       openEx = curRoutine().exercises.length - 1;
       save(); render();
       break;
@@ -8353,7 +8373,7 @@ $app.addEventListener('submit', async e => {
   } else if (f.dataset.form === 'new-ex') {
     lastUnit = f.elements.unit.value;
     if (!(await okRepeatedEx(title))) return;
-    const r = curRoutine(), id = exIdFor(title, r);   // antes de agregarlo: si ya está en esta rutina, va aparte
+    const r = curRoutine(), id = await exIdForAdd(title, r);   // antes de agregarlo: si ya está en esta rutina, va aparte
     r.exercises.push({ id, name: title, unit: lastUnit, rest: 0 });
     openEx = curRoutine().exercises.length - 1;   // el nuevo queda abierto para configurarlo
     save(); render();
