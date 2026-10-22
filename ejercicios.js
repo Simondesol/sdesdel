@@ -654,7 +654,7 @@ export const GUIDES = [
     musc: 'Cuádriceps y glúteos',
     cues: ['Espalda apoyada y hombros bajo los cojines', 'Pies en la mitad de la plataforma, al ancho de hombros', 'Baja profundo con las rodillas hacia adelante', 'Sube empujando con todo el pie'],
     errs: ['Recorrido corto', 'Rodillas hacia adentro'] },
-  { id: 'zancadas', zone: 'cuadriceps', name: 'Zancadas', alias: ['estocadas', 'lunges', 'desplantes', 'zancadas con mancuernas', 'zancada', 'estocada', 'zancadas caminando'], video: 'videos/zancadas.mp4',
+  { id: 'zancadas', zone: 'cuadriceps', name: 'Zancadas con mancuernas', alias: ['zancadas', 'estocadas', 'lunges', 'desplantes', 'zancada', 'estocada', 'zancadas caminando', 'zancadas caminando con mancuernas', 'dumbbell walking lunge'], video: 'videos/zancadas.mp4',
     musc: 'Cuádriceps y glúteos',
     cues: ['Da un paso largo y baja hasta que la rodilla de atrás casi toque el suelo', 'Rodilla delantera en línea con el pie', 'Torso firme', 'Empuja con el talón delantero para volver'],
     errs: ['Paso muy corto (carga mucho la rodilla)', 'Rodilla delantera hacia adentro'] },
