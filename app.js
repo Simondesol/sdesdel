@@ -6099,8 +6099,53 @@ function viewMyProgram(id) {
       <span class="muted small">Toca el número para cambiarlo (de 1 a 4).</span>
     </section>
     ${db.routines.length ? weeks : '<p class="empty">Primero crea tus rutinas en la pestaña Rutinas; después eliges qué día va cada una.</p>'}
+    ${(v => volumeHtml(v.planned, active ? weekDoneVolume() : null, v.missing))(myProgVolume(p))}
     <p class="muted small" style="margin:14px 0 0">Para enviárselo a un alumno o gymbro, en su chat toca ＋ → Enviar un programa.</p>
     <button class="btn ghost block danger-text" data-action="myprog-del" style="margin-top:20px">Eliminar programa</button>`;
+}
+
+// ---------- Series por músculo a la semana (en los programas) ----------
+// Cada ejercicio suma sus series objetivo a su músculo principal (el de su guía de técnica)
+const VOL_RANGE = [6, 15];   // series por semana por músculo: lo típico para hipertrofia
+const VOL_MAX = 20;          // tope de la barra
+const guideIdOf = id => { for (const r of db.routines) for (const e of r.exercises) { if (e.id === id) return e.guide; const a = (e.alts || []).find(x => x.id === id); if (a) return a.guide; } return undefined; };
+const zoneOfEx = (name, guide) => { const g = guideFor(name, guide); return g ? g.zone : ''; };
+const addTo = (m, k, n) => m.set(k, (m.get(k) || 0) + n);
+// Lo que planifica uno de tus programas (si se repite cada 2+ semanas, el promedio por semana)
+function myProgVolume(p) {
+  const planned = new Map(); let missing = 0;
+  for (const wk of p.days.slice(0, p.weeks)) for (const rid of wk.r) {
+    const r = rid && db.routines.find(x => x.id === rid);
+    for (const e of r ? r.exercises : []) { if (e.goalSets) addTo(planned, zoneOfEx(e.name, e.guide), e.goalSets / p.weeks); else missing++; }
+  }
+  return { planned, missing };
+}
+// Lo que llevas esta semana (de lunes a hoy), en todos tus entrenos
+function weekDoneVolume() {
+  const done = new Map(), since = weekStart(Date.now());
+  for (const w of db.workouts) {
+    if (Date.parse(w.date) < since) continue;
+    for (const e of w.exercises) addTo(done, zoneOfEx(e.name, guideIdOf(e.exerciseId)), e.sets.length);
+  }
+  return done;
+}
+function volumeHtml(planned, done = null, missing = 0) {
+  const zones = [...Object.keys(GUIDE_ZONES), ''].filter(z => planned.get(z) || (done && done.get(z)));
+  if (!zones.length) return '';
+  const pct = n => `${Math.min(100, (n / VOL_MAX) * 100)}%`;
+  const rows = zones.map(z => {
+    const pl = round1(planned.get(z) || 0), dn = done ? done.get(z) || 0 : null;
+    const cls = !z ? 'none' : pl < VOL_RANGE[0] ? 'low' : pl > VOL_RANGE[1] ? 'high' : 'ok';
+    return `<div class="vol-row ${cls}"><span class="vol-name">${z ? GUIDE_ZONES[z] : 'Sin músculo'}</span>
+      <span class="vol-bar"><i class="pl" style="width:${pct(pl)}"></i>${dn != null ? `<i class="dn" style="width:${pct(dn)}"></i>` : ''}</span>
+      <span class="vol-n">${dn != null ? `${fmtNum(dn)} / ` : ''}${fmtNum(pl)}</span></div>`;
+  }).join('');
+  return `<h2>Series por semana</h2>
+    <section class="card vol-card">
+      ${rows}
+      <p class="muted small" style="margin:6px 0 0">${done ? 'Números: las que llevas esta semana / las planificadas. ' : ''}<span class="vol-key ok">Verde</span>: entre ${VOL_RANGE[0]} y ${VOL_RANGE[1]} series por semana, lo típico para hipertrofia (la franja de la barra). Gris: menos. <span class="vol-key high">Amarillo</span>: más.
+        Cuenta el músculo principal de cada ejercicio.${planned.get('') ? ' "Sin músculo": ejercicios sin guía de técnica (elígela en Editar rutina).' : ''}${missing ? ` ${plural(missing, 'ejercicio')} sin series objetivo no se ${missing === 1 ? 'cuenta' : 'cuentan'}.` : ''}</p>
+    </section>`;
 }
 
 // ---------- Programas (rutinas listas + plan semanal) ----------
@@ -6165,6 +6210,9 @@ function viewProgram(id) {
     ${levelToggle()}
     ${week}
     <button class="btn primary block" data-action="prog-add" style="margin:0 0 16px">Añadir a mis programas</button>
+    ${(() => { const planned = new Map();
+      for (const k of lv.week) if (k) for (const [gid, sets] of lv.routines[k].ex) addTo(planned, GUIDE_BY_ID.get(gid).zone, sets);
+      return volumeHtml(planned); })()}
     ${routines}
     <p class="muted small">Queda en Mis programas: desde ahí lo usas como tu plan, o lo cambias y se lo envías a un alumno. Cada ejercicio trae sus series, repeticiones, RIR, descanso y guía de técnica.</p>
     <button class="btn primary block" data-action="prog-add">Añadir a mis programas</button>`;
