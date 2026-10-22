@@ -6302,8 +6302,8 @@ function searchGuides(q, limit = 6) {
     const score = texts.includes(phrase) ? -1 : texts[0].startsWith(phrase) ? 0 : words.every(w => nameWords.some(t => t.startsWith(w))) ? 1 : texts.some(t => t.startsWith(phrase)) ? 2 : 3;
     hits.push({ g, score });
   }
-  // A igual puntaje, el nombre más corto (el ejercicio básico antes que sus variantes)
-  return hits.sort((a, b) => a.score - b.score || a.g.name.length - b.g.name.length).slice(0, limit).map(h => h.g);
+  // A igual puntaje, en orden alfabético (cada ejercicio queda junto a sus variantes, como en la lista por músculo)
+  return hits.sort((a, b) => a.score - b.score || a.g.name.localeCompare(b.g.name, 'es')).slice(0, limit).map(h => h.g);
 }
 
 let guideView = null;   // índice del ejercicio (en el entrenamiento) cuya guía está abierta
