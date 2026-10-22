@@ -1129,7 +1129,6 @@ button.wk-day { font-family: inherit; border: 0; cursor: pointer; padding: 0; }
 .vol-bar .pl { background: var(--muted); opacity: .55; }
 .vol-row.ok .vol-bar .pl { background: var(--accent); opacity: .55; }
 .vol-row.high .vol-bar .pl { background: #e0a526; opacity: .6; }
-.vol-bar .dn { background: var(--accent); }
 .vol-n { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
 .vol-row.low .vol-n, .vol-row.none .vol-n { color: var(--muted); }
 .vol-row.ok .vol-n { color: var(--accent); }
