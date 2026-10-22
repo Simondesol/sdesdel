@@ -819,7 +819,7 @@ export const GUIDES = [
     musc: 'Cuádriceps y glúteos',
     cues: ['Barra sobre la espalda alta y pie de atrás apoyado en un banco', 'Pie de adelante bien adelante del banco', 'Baja recto hasta que la rodilla de atrás casi toque el suelo', 'Haz todas las repeticiones de un lado y luego cambia'],
     errs: ['Pie de adelante muy cerca del banco', 'Rodilla de adelante hacia adentro'] },
-  { id: 'split-squat-barra', zone: 'cuadriceps', name: 'Zancada estática con barra', alias: ['split squat con barra', 'zancada estatica con barra', 'barbell split squat'], video: 'videos/split-squat-barra.mp4',
+  { id: 'split-squat-barra', zone: 'cuadriceps', name: 'Zancada estática con barra', alias: ['split squat con barra', 'zancada estatica con barra', 'barbell split squat'], video: 'videos/split-squat-barra-lado.mp4',
     musc: 'Cuádriceps y glúteos',
     cues: ['Barra sobre la espalda alta, un pie adelante y otro atrás', 'Baja recto hasta que la rodilla de atrás casi toque el suelo', 'El peso va en el pie de adelante', 'Haz todas las repeticiones de un lado y luego cambia'],
     errs: ['Pies en la misma línea (pierdes el equilibrio)', 'Empujar con la pierna de atrás'] },
