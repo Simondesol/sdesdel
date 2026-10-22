@@ -181,7 +181,7 @@ export const GUIDES = [
     musc: 'Dorsal, espalda media y bíceps',
     cues: ['Palmas mirándose, en las asas paralelas', 'Pecho arriba y muslos fijos bajo el cojín', 'Tira llevando los codos hacia las costillas hasta la parte alta del pecho', 'Sube lento hasta estirar los brazos'],
     errs: ['Echarse muy atrás', 'Tirar solo con los brazos'] },
-  { id: 'jalon-unilateral', zone: 'espalda', name: 'Jalón a una mano en polea', alias: ['jalon unilateral', 'jalon a una mano', 'polea alta a una mano', 'single arm pulldown', 'jalon unilateral en polea'], video: 'videos/jalon-unilateral.mp4', sq: true,
+  { id: 'jalon-unilateral', zone: 'espalda', name: 'Jalón unilateral en polea', alias: ['jalon a una mano en polea', 'jalon unilateral', 'jalon a una mano', 'polea alta a una mano', 'single arm pulldown', 'jalon unilateral en polea'], video: 'videos/jalon-unilateral.mp4', sq: true,
     musc: 'Dorsal',
     cues: ['Agarre a una mano, brazo bien estirado arriba', 'Tira el codo hacia la cadera, no hacia atrás', 'Aprieta el dorsal abajo un segundo', 'Sube lento sintiendo el estiramiento del costado'],
     errs: ['Girar el torso para ayudarte', 'Tirar con el bíceps'] },
