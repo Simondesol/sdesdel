@@ -1394,7 +1394,8 @@ function viewHome() {
       <button class="btn primary" data-action="start" data-id="${r.id}" ${r.exercises.length ? '' : 'disabled'}>Empezar</button>`}
     </div>`;
   }).join('')
-    + (last > 0 ? `<button class="link small routine-sort" data-action="routine-sort">${routineSort ? 'Listo' : 'Ordenar rutinas'}</button>` : '');
+    + (last > 0 ? `<button class="link small routine-sort" data-action="routine-sort">${routineSort ? 'Listo' : 'Ordenar rutinas'}</button>` : '')
+    + (guideRenames().length ? '<button class="link small routine-sort" data-action="rename-to-guides">Usar los nombres de la técnica</button>' : '');
   const free = d ? '' : routines
     ? '<button class="btn block" data-action="start-free" style="margin:0 0 12px">Entrenar sin rutina</button>'
     : `<section class="card stack free-start">
@@ -6076,6 +6077,23 @@ function renameOldGuideNames() {
 // Le cambiaste el nombre a un ejercicio de tu rutina ("Dips" → "Fondos en paralelas"): su historial pasa a llamarse igual,
 // así lo encuentras con el nombre nuevo en Historial y Progreso. Si el mismo ejercicio tiene nombres distintos en dos
 // rutinas, no se toca
+// Ejercicios de tus rutinas cuyo nombre no es el de su guía de técnica ("Laterales mancuerna" → Elevaciones laterales).
+// No se tocan las alternativas ni los que chocarían con otro ejercicio tuyo que ya se llama así (ej. "Pec deck · máquina 2")
+function guideRenames() {
+  const taken = new Map();   // nombre → ids que ya lo usan
+  const note = (id, n) => { const k = normText(String(n || '').trim()); (taken.get(k) || taken.set(k, new Set()).get(k)).add(id); };
+  for (const r of db.routines) for (const e of r.exercises) { note(e.id, e.name); for (const a of e.alts || []) note(a.id, a.name); }
+  const out = [];
+  for (const r of db.routines) for (const e of r.exercises) {
+    if (e.guide === 'none') continue;
+    const g = guideFor(e.name, e.guide);
+    if (!g || normText(e.name.trim()) === normText(g.name)) continue;
+    const users = taken.get(normText(g.name));
+    if (users && [...users].some(id => id !== e.id)) continue;
+    out.push({ e, to: g.name, gid: g.id });
+  }
+  return out;
+}
 function syncHistoryNames() {
   const name = new Map(), clash = new Set();
   const note = (id, n) => { n = String(n || '').trim(); if (!n) return; if (name.has(id) && name.get(id) !== n) clash.add(id); else name.set(id, n); };
@@ -7139,6 +7157,18 @@ $app.addEventListener('click', async e => {
       if (infoOpen.has(el.dataset.k)) infoOpen.delete(el.dataset.k); else infoOpen.add(el.dataset.k);
       render();
       break;
+    case 'rename-to-guides': {
+      const list = guideRenames();
+      if (!list.length) break;
+      const lines = [...new Set(list.map(x => `${x.e.name} → ${x.to}`))];
+      const shown = lines.slice(0, 15).join('\n') + (lines.length > 15 ? `\n… y ${lines.length - 15} más` : '');
+      if (!await ask(`¿Usar los nombres de la técnica? Tus ejercicios pasan a llamarse como su guía (su historial también):\n\n${shown}`, 'Cambiar nombres')) break;
+      for (const { e, to, gid } of list) { e.name = to; e.guide = gid; }
+      syncHistoryNames();
+      save(); render();
+      showNote(`Listo: ${plural(lines.length, 'nombre')} cambiado${lines.length === 1 ? '' : 's'}`);
+      break;
+    }
     case 'routine-sort':
       routineSort = !routineSort;
       render();
