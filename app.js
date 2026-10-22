@@ -6252,9 +6252,11 @@ function swapOthers(dx, alts, rex, g, q) {
 const swapOthersHtml = (list, q) => (list.length ? list.map(o => `<button type="button" class="food-pick" data-action="swap-to" data-g="${o.id}">
     <span class="grow"><strong>${esc(o.name)}</strong><span class="muted small">${esc(o.musc)}</span></span><span class="chev">›</span></button>`).join('')
   : `<p class="muted small" style="margin:0">${q && q.trim() ? 'No hay ejercicios con ese nombre. Puedes crearlo arriba como alternativa.' : 'Busca un ejercicio por su nombre.'}</p>`);
-async function swapExercise(alt) {
+// edit: después de cambiarlo se abre su editor (botón Editar de una alternativa)
+async function swapExercise(alt, edit = false) {
   const d = db.draft, i = swapPick.i, dx = d && d.exercises[i];
-  if (!dx || alt.id === dx.exerciseId) return;
+  if (!dx) return;
+  if (alt.id === dx.exerciseId) { if (edit) openAltEditor(d.routineId, routineExOf(d, dx), alt.id); return; }
   if (touchedEx(dx) && !await ask(`Ya anotaste series en "${dx.name}". ¿Cambiarlo igual? Esas series no se guardan.`, 'Cambiar')) return;
   const rex = routineExOf(d, dx), always = !!(rex && swapPick.always);
   // Nueva: parte con la configuración del ejercicio que reemplaza, y se abre para ajustarla
@@ -6279,7 +6281,7 @@ async function swapExercise(alt) {
   swapPick = null;
   save();
   showNote(always ? `Ahora tu rutina usa ${alt.name}` : `Hoy haces ${alt.name}`);
-  if (isNew || always) return openAltEditor(d.routineId, rex, always ? null : alt.id);   // ajustar series, reps, RIR, descanso…
+  if (isNew || always || edit) return openAltEditor(d.routineId, rex, always ? null : alt.id);   // ajustar series, reps, RIR, descanso…
   render(); syncModalHistory();
 }
 // Abre el editor de la rutina en ese ejercicio (o su alternativa); "Listo" vuelve al entreno
@@ -7449,7 +7451,7 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       const d = db.draft, rex = routineExOf(d, d.exercises[swapPick.i]), a = rex && (rex.alts || []).find(x => x.id === el.dataset.id);
       if (!a) break;
       if (!a.own) Object.assign(a, planOf(rex), { own: true });
-      openAltEditor(d.routineId, rex, a.id);
+      await swapExercise(a, true);   // queda elegida en el entreno y se abre para editarla
       break;
     }
     case 'sugg-ex': {   // sugerencia elegida al agregar un ejercicio: se agrega con su guía
