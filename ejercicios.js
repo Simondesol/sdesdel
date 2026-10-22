@@ -629,6 +629,10 @@ export const GUIDES = [
     musc: 'Tríceps',
     cues: ['Polea alta con cuerda, codos pegados al cuerpo', 'Estira los brazos hacia abajo separando las puntas de la cuerda', 'Aprieta el tríceps abajo', 'Sube lento hasta que el antebrazo pase la horizontal'],
     errs: ['Mover los codos hacia adelante', 'Inclinarse para empujar con el peso del cuerpo'] },
+  { id: 'triceps-katana', zone: 'triceps', name: 'Extensión de tríceps katana', alias: ['katana', 'extension katana', 'extension de triceps katana', 'extension triceps katana', 'katana en polea', 'katana triceps extension', 'cable katana extension'], video: 'videos/triceps-katana.mp4', sq: true,
+    musc: 'Tríceps (sobre todo la cabeza larga)',
+    cues: ['De espaldas a una polea baja: toma el agarre con la mano del lado contrario, así el cable cruza por tu espalda', 'Codo arriba, apuntando al techo, con la mano detrás de la cabeza', 'Extiende el brazo hacia arriba y un poco hacia afuera, como sacando una espada de la espalda', 'Baja lento hasta sentir el tríceps estirado detrás de la cabeza'],
+    errs: ['Mover el codo hacia adelante o hacia abajo', 'Arquear la espalda baja para ayudarte'] },
   // ---------- Piernas (cuádriceps, femoral, glúteo, pantorrilla) ----------
   { id: 'sentadilla', zone: 'cuadriceps', name: 'Sentadilla', alias: ['sentadilla con barra', 'squat', 'sentadilla libre', 'sentadilla trasera', 'back squat', 'sentadillas'], video: 'videos/sentadilla.mp4',
     musc: 'Cuádriceps, glúteos y aductores',
