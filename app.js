@@ -6221,7 +6221,8 @@ function swapSheetHtml() {
   const altRow = a => `<div class="swap-alt">
       <button type="button" class="food-pick" data-action="swap-to" data-id="${a.id}">
         <span class="grow"><strong>${a.orig ? 'Volver a ' : ''}${esc(a.name)}</strong><span class="muted small">${lastTxt(a)}</span></span><span class="chev">›</span></button>
-      ${a.orig ? '' : `<button class="btn small-btn" data-action="swap-alt-edit" data-id="${a.id}" aria-label="Editar ${esc(a.name)}">Editar</button>`}</div>`;
+      ${a.orig ? '' : `<button class="btn small-btn" data-action="swap-alt-edit" data-id="${a.id}" aria-label="Editar ${esc(a.name)}">Editar</button>
+        <button class="icon small danger" data-action="swap-alt-del" data-id="${a.id}" aria-label="Quitar ${esc(a.name)} de tus alternativas">✕</button>`}</div>`;
   const always = !!(rex && swapPick.always);
   return `<div class="modal-wrap">
     <div class="modal-back" data-action="swap-close"></div>
@@ -7445,6 +7446,14 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
         alt = { id: found ? found.id : uid(), name: found ? found.name : g.name, unit: found ? found.unit : dx.unit === 'lb' ? 'lb' : 'kg', guide: g.id };
       } else alt = [...(rex ? [altOf(rex), ...(rex.alts || [])] : [])].find(a => a.id === el.dataset.id);
       if (alt) await swapExercise(alt);
+      break;
+    }
+    case 'swap-alt-del': {
+      const d = db.draft, rex = routineExOf(d, d.exercises[swapPick.i]), a = rex && (rex.alts || []).find(x => x.id === el.dataset.id);
+      if (!a || !await ask(`¿Quitar "${a.name}" de tus alternativas? Su historial se mantiene.`)) return;
+      rex.alts = rex.alts.filter(x => x !== a);
+      if (!rex.alts.length) delete rex.alts;
+      save(); render();
       break;
     }
     case 'swap-alt-edit': {
