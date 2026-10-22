@@ -6069,6 +6069,20 @@ function renameOldGuideNames() {
   if (db.draft) db.draft.exercises.forEach(fix);
   return changed;
 }
+// Le cambiaste el nombre a un ejercicio de tu rutina ("Dips" → "Fondos en paralelas"): su historial pasa a llamarse igual,
+// así lo encuentras con el nombre nuevo en Historial y Progreso. Si el mismo ejercicio tiene nombres distintos en dos
+// rutinas, no se toca
+function syncHistoryNames() {
+  const name = new Map(), clash = new Set();
+  const note = (id, n) => { n = String(n || '').trim(); if (!n) return; if (name.has(id) && name.get(id) !== n) clash.add(id); else name.set(id, n); };
+  for (const r of db.routines) for (const e of r.exercises) { note(e.id, e.name); for (const a of e.alts || []) note(a.id, a.name); }
+  let changed = false;
+  for (const w of db.workouts) for (const e of w.exercises) {
+    const n = name.get(e.exerciseId);
+    if (n && !clash.has(e.exerciseId) && e.name !== n) { e.name = n; changed = true; }
+  }
+  return changed;
+}
 function backfillWorkoutGuides() {
   const guide = new Map();
   for (const r of db.routines) for (const e of r.exercises) {
@@ -6916,7 +6930,7 @@ async function handleUser(u) {
   status = 'ready';
   planSeen = stable(db.plan || null);
   migrateLoosePlan();
-  if ([renameOldGuideNames(), relinkGuideAlts(), unifyExerciseIds(), backfillWorkoutGuides()].some(Boolean)) save();
+  if ([renameOldGuideNames(), relinkGuideAlts(), unifyExerciseIds(), backfillWorkoutGuides(), syncHistoryNames()].some(Boolean)) save();
   // Si el teléfono cerró la app en medio del entrenamiento, al abrirla vuelves a él (no al inicio)
   if (firstOpen && db.draft && routeParts()[0] === '') location.replace('#/entrenar');
   firstOpen = false;
@@ -8288,6 +8302,8 @@ $app.addEventListener('focusout', e => {
   if (bind === 'note' && editingNote !== null) {
     editingNote = null;
     redrawNote(+e.target.dataset.i);
+  } else if (bind === 'ex-name') {
+    if (syncHistoryNames()) save();   // al terminar de escribir: el historial toma el nombre nuevo
   } else if (bind === 'ex-rest') {
     const ex = curRoutine() && edEx(+e.target.dataset.i);
     if (ex) e.target.value = ex.rest ? fmtRest(ex.rest) : '';   // muestra el tiempo como m:ss
