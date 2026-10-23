@@ -1505,11 +1505,10 @@ const infoOpen = new Set();
 const infoBtn = k => `<button class="info-btn ${infoOpen.has(k) ? 'on' : ''}" data-action="info" data-k="${k}" aria-label="¿Qué es?" aria-expanded="${infoOpen.has(k)}">ⓘ</button>`;
 const infoBox = k => (infoOpen.has(k) ? `<p class="info-box">${INFO[k]}</p>` : '');
 let routineSort = false;
-// Miniatura del video de técnica en Editar rutina: al tocarla se abre la técnica en grande (sin video: un recuadro)
-let routineGuide = null;   // ejercicio de la rutina cuya técnica está abierta
-const exThumb = (ex, i) => { const g = guideFor(ex.name, ex.guide);
+// Miniatura del video de técnica en Editar rutina: tocarla lo reproduce ahí mismo (sin video: un recuadro vacío)
+const exThumb = ex => { const g = guideFor(ex.name, ex.guide);
   return g && g.video
-    ? `<button type="button" class="ex-thumb" data-action="thumb-open" data-i="${i}" aria-label="Ver la técnica de ${esc(g.name)}"><video src="${esc(g.video)}" muted playsinline preload="metadata"></video><span class="ex-thumb-play" aria-hidden="true"></span></button>`
+    ? `<button type="button" class="ex-thumb" data-action="thumb-play" aria-label="Ver el video de ${esc(g.name)}"><video src="${esc(g.video)}" muted loop playsinline preload="metadata"></video><span class="ex-thumb-play" aria-hidden="true"></span></button>`
     : '<span class="ex-thumb none" aria-hidden="true">Sin video</span>'; };   // Rutinas: modo para cambiar el orden (flechas en vez de Editar / Empezar)
 
 // "4 × 8-10 · RIR 2 · Dropset · Rest 1:30"
@@ -1571,7 +1570,7 @@ function viewRoutine() {
     </li>`
     : `
     <li class="card ex-closed" data-action="ex-open" data-i="${i}" role="button" tabindex="0">
-      ${exThumb(ex, i)}
+      ${exThumb(ex)}
       <div class="grow"><strong>${esc(ex.name) || '(sin nombre)'}</strong>
         ${zoneOf(ex) ? `<span class="ex-zone-chip">${zoneOf(ex)}</span>` : ''}
         <span class="muted small">${exSummary(ex)}</span></div>
@@ -1600,8 +1599,7 @@ function viewRoutine() {
     <button class="btn block" data-action="dup-routine">Duplicar rutina</button>
     <button class="btn ghost block danger-text" data-action="del-routine">Eliminar rutina</button>
     ${guidePickerHtml()}
-    ${exploreSheetHtml()}
-    ${routineGuide != null && r.exercises[routineGuide] ? guideViewHtml(r.exercises[routineGuide], routineGuide) : ''}`;
+    ${exploreSheetHtml()}`;
 }
 
 // Agregar un ejercicio que ya está en la rutina: casi siempre se quería hacer otra serie
@@ -2510,7 +2508,7 @@ const VIEW_OK = ['', 'chat', 'rutinas', 'rutina', 'programas', 'miprograma', 'li
 const VIEW_EXIT = ['social', 'gymbro', 'perfil', 'privacidad', 'cuenta', 'alumnos', 'coach', 'asignar'];
 // Lo que se puede tocar mirando a un alumno, y lo extra en el editor de rutinas
 const VIEW_SAFE = new Set(['back', 'view-exit', 'vid-toggle', 'info', 'toggle-sec', 'range', 'toggle-history', 'hist-month', 'hist-day', 'skin-view', 'measure-view',
-  'prog-open', 'prog-close', 'prog-filter', 'prog-retry', 'week-sum', 'week-day', 'guide-view', 'guide-close', 'explore-zone', 'explore-open', 'explore-back', 'explore-close', 'go-ex', 'prev-ex', 'next-ex', 'prog-rid', 'thumb-open']);
+  'prog-open', 'prog-close', 'prog-filter', 'prog-retry', 'week-sum', 'week-day', 'guide-view', 'guide-close', 'explore-zone', 'explore-open', 'explore-back', 'explore-close', 'go-ex', 'prev-ex', 'next-ex', 'prog-rid', 'thumb-play']);
 const VIEW_ROUTINE = new Set(['reps-by', 'toggle-drop', 'toggle-bw', 'toggle-ss', 'toggle-rir', 'toggle-unit', 'move', 'ex-open', 'ex-close', 'del-ex', 'dup-routine', 'del-routine',
   'guide-pick', 'guide-change', 'guide-set', 'guide-pick-close', 'explore-list', 'explore-add', 'sugg-ex']);
 const VIEW_PROGRAM = new Set(['myprog-new', 'myprog-weeks', 'myprog-stop', 'myprog-use', 'myprog-del', 'prog-level', 'prog-days', 'prog-add', 'prog-add-one']);
@@ -5476,7 +5474,7 @@ function render() {
 
   if (screen !== 'editar') editBuf = null;
   else if (!editBuf || editBuf.editOf !== arg) editBuf = makeEditBuf(arg);
-  if (screen !== 'rutina') { altEdit = null; editReturn = false; routineGuide = null; }
+  if (screen !== 'rutina') { altEdit = null; editReturn = false; }
   if (screen !== 'sesion' || arg !== justFinished) justFinished = null;
   if (screen !== 'rutina' && screen !== 'dieta' && screen !== 'miprograma') shareResult = null;
   if (screen !== 'chat') { attach = null; editingMsg = null; selectedMsg = null; }
@@ -6422,14 +6420,14 @@ function searchGuides(q, limit = 6) {
 let guideView = null;   // índice del ejercicio (en el entrenamiento) cuya guía está abierta
 let modalPushed = false;   // hay un paso extra en el historial para que "atrás" cierre la ventana
 function syncModalHistory() {
-  const open = !!guidePick || guideView != null || exploreOpen || !!swapPick || routineGuide != null;
+  const open = !!guidePick || guideView != null || exploreOpen || !!swapPick;
   if (open && !modalPushed) { history.pushState({ modal: 1 }, ''); modalPushed = true; }
   else if (!open && modalPushed) { modalPushed = false; history.back(); }
 }
 window.addEventListener('popstate', () => {
   if (!modalPushed) return;
   modalPushed = false;
-  if (guidePick || guideView != null || exploreOpen || swapPick || routineGuide != null) { guidePick = null; guideView = null; exploreOpen = false; exploreView = null; swapPick = null; routineGuide = null; render(); }
+  if (guidePick || guideView != null || exploreOpen || swapPick) { guidePick = null; guideView = null; exploreOpen = false; exploreView = null; swapPick = null; render(); }
 });
 let guidePick = null;   // { rid, exId, q } elegir la guía de un ejercicio a mano
 const zoneOf = ex => { const g = guideFor(ex.name, ex.guide); return g ? GUIDE_ZONES[g.zone] : ''; };
@@ -6634,17 +6632,16 @@ function exploreSheetHtml() {
   </div>`;
 }
 
-function guideViewHtml(rex = null, ri = null) {   // rex: un ejercicio de la rutina (Editar rutina)
-  const d = cur(), ex = rex || (d && d.exercises[guideView]);
+function guideViewHtml() {
+  const d = cur(), ex = d && d.exercises[guideView];
   if (!ex) return '';
-  const change = rex ? `data-action="guide-pick" data-i="${ri}"` : 'data-action="guide-change"';
   const g = guideFor(ex.name, ex.guide);
   const body = g
     ? `<span class="muted small">${guideKey(g.name) === guideKey(ex.name) ? '' : `${esc(g.name)} · `}Trabaja: ${esc(g.musc)}</span>
        ${guideBody(g)}
-       <button class="link small" ${change} style="justify-self:start">¿No es este ejercicio? Cambiar guía</button>`
+       <button class="link small" data-action="guide-change" style="justify-self:start">¿No es este ejercicio? Cambiar guía</button>`
     : `<p class="muted" style="margin:0">Todavía no hay guía para este ejercicio.</p>
-       <button class="btn block" ${change}>Elegir una guía</button>
+       <button class="btn block" data-action="guide-change">Elegir una guía</button>
        <a class="btn primary block center" href="https://ig.me/m/${IG_USER}" target="_blank" rel="noopener">Pide esta guía</a>
        <span class="muted small">Se abre un mensaje a @${IG_USER} en Instagram. Cuéntanos qué ejercicio es.</span>`;
   return `<div class="modal-wrap">
@@ -7201,11 +7198,11 @@ $app.addEventListener('click', async e => {
       save(); render();
       break;
     }
-    case 'thumb-open':   // miniatura en Editar rutina: la técnica en grande
-      routineGuide = i;
-      render();
-      syncModalHistory();
+    case 'thumb-play': {   // miniatura en Editar rutina: play / pausa ahí mismo
+      const v = el.querySelector('video');
+      if (v.paused) { v.play().catch(() => {}); el.classList.add('playing'); } else { v.pause(); el.classList.remove('playing'); }
       break;
+    }
     case 'vid-toggle':   // video de técnica: tocar pausa o sigue
       if (el.paused) el.play().catch(() => {}); else el.pause();
       break;
@@ -7633,14 +7630,13 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       syncModalHistory();
       break;
     case 'guide-close':
-      guideView = null; routineGuide = null;
+      guideView = null;
       render();
       syncModalHistory();
       break;
     case 'guide-pick': {   // desde el editor de rutina
       const r = curRoutine();
       guidePick = { rid: r.id, exId: edEx(i).id, q: '' };
-      routineGuide = null;
       render();
       syncModalHistory();
       break;
