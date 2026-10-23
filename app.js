@@ -1504,7 +1504,12 @@ const INFO = {
 const infoOpen = new Set();
 const infoBtn = k => `<button class="info-btn ${infoOpen.has(k) ? 'on' : ''}" data-action="info" data-k="${k}" aria-label="¿Qué es?" aria-expanded="${infoOpen.has(k)}">ⓘ</button>`;
 const infoBox = k => (infoOpen.has(k) ? `<p class="info-box">${INFO[k]}</p>` : '');
-let routineSort = false;   // Rutinas: modo para cambiar el orden (flechas en vez de Editar / Empezar)
+let routineSort = false;
+// Miniatura del video de técnica en Editar rutina: tocarla lo reproduce ahí mismo (sin video: un recuadro vacío)
+const exThumb = ex => { const g = guideFor(ex.name, ex.guide);
+  return g && g.video
+    ? `<button type="button" class="ex-thumb" data-action="thumb-play" aria-label="Ver el video de ${esc(g.name)}"><video src="${esc(g.video)}" muted loop playsinline preload="metadata"></video><span class="ex-thumb-play" aria-hidden="true"></span></button>`
+    : '<span class="ex-thumb none" aria-hidden="true">Sin video</span>'; };   // Rutinas: modo para cambiar el orden (flechas en vez de Editar / Empezar)
 
 // "4 × 8-10 · RIR 2 · Dropset · Rest 1:30"
 function exSummary(ex) {
@@ -1565,8 +1570,11 @@ function viewRoutine() {
     </li>`
     : `
     <li class="card ex-closed" data-action="ex-open" data-i="${i}" role="button" tabindex="0">
-      <div class="grow"><strong>${esc(ex.name) || '(sin nombre)'}</strong><span class="muted small">${exSummary(ex)}</span></div>
-      <span class="chev">›</span>
+      ${exThumb(ex)}
+      <div class="grow"><strong>${esc(ex.name) || '(sin nombre)'}</strong>
+        ${zoneOf(ex) ? `<span class="ex-zone-chip">${zoneOf(ex)}</span>` : ''}
+        <span class="muted small">${exSummary(ex)}</span></div>
+      <button class="btn small-btn ex-edit-btn" data-action="ex-open" data-i="${i}">Editar</button>
     </li>`)
     + (i < last && ex0.ssNext ? '<li class="ss-join">🔗 Superset</li>' : ''); }).join('');
   return `${header('Editar rutina', { back: true })}
@@ -2500,7 +2508,7 @@ const VIEW_OK = ['', 'chat', 'rutinas', 'rutina', 'programas', 'miprograma', 'li
 const VIEW_EXIT = ['social', 'gymbro', 'perfil', 'privacidad', 'cuenta', 'alumnos', 'coach', 'asignar'];
 // Lo que se puede tocar mirando a un alumno, y lo extra en el editor de rutinas
 const VIEW_SAFE = new Set(['back', 'view-exit', 'vid-toggle', 'info', 'toggle-sec', 'range', 'toggle-history', 'hist-month', 'hist-day', 'skin-view', 'measure-view',
-  'prog-open', 'prog-close', 'prog-filter', 'prog-retry', 'week-sum', 'week-day', 'guide-view', 'guide-close', 'explore-zone', 'explore-open', 'explore-back', 'explore-close', 'go-ex', 'prev-ex', 'next-ex', 'prog-rid']);
+  'prog-open', 'prog-close', 'prog-filter', 'prog-retry', 'week-sum', 'week-day', 'guide-view', 'guide-close', 'explore-zone', 'explore-open', 'explore-back', 'explore-close', 'go-ex', 'prev-ex', 'next-ex', 'prog-rid', 'thumb-play']);
 const VIEW_ROUTINE = new Set(['reps-by', 'toggle-drop', 'toggle-bw', 'toggle-ss', 'toggle-rir', 'toggle-unit', 'move', 'ex-open', 'ex-close', 'del-ex', 'dup-routine', 'del-routine',
   'guide-pick', 'guide-change', 'guide-set', 'guide-pick-close', 'explore-list', 'explore-add', 'sugg-ex']);
 const VIEW_PROGRAM = new Set(['myprog-new', 'myprog-weeks', 'myprog-stop', 'myprog-use', 'myprog-del', 'prog-level', 'prog-days', 'prog-add', 'prog-add-one']);
@@ -7188,6 +7196,11 @@ $app.addEventListener('click', async e => {
         repsByOpen.delete(ex.id);
       }
       save(); render();
+      break;
+    }
+    case 'thumb-play': {   // miniatura en Editar rutina: play / pausa ahí mismo
+      const v = el.querySelector('video');
+      if (v.paused) { v.play().catch(() => {}); el.classList.add('playing'); } else { v.pause(); el.classList.remove('playing'); }
       break;
     }
     case 'vid-toggle':   // video de técnica: tocar pausa o sigue
