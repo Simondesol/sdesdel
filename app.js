@@ -4027,6 +4027,16 @@ function restoreRoutine(rid) {
   return r;
 }
 
+function planUses(routineId) {
+  const p = db.plan;
+  if (!p) return [];
+  const join = list => (list.length > 1 ? `${list.slice(0, -1).join(', ')} y ${list[list.length - 1]}` : list[0]);
+  return p.days.slice(0, p.weeks).map((wk, w) => {
+    const days = DAY_NAMES.filter((_, d) => wk.r[d] === routineId).map(n => n.toLowerCase());
+    return days.length ? `${p.weeks > 1 ? `semana ${w + 1}: ` : ''}${join(days)}` : null;
+  }).filter(Boolean);
+}
+
 
 // ---------- Perfil de gymbro ----------
 // Cada uno publica un resumen (récords, estadísticas, últimos entrenamientos) en profiles/{uid}; solo sus gymbros lo pueden leer.
@@ -7475,7 +7485,11 @@ $app.addEventListener('click', async e => {
       break;
     }
     case 'del-routine': {
-      const r = curRoutine();
+      const r = curRoutine(), uses = planUses(r.id);
+      const warn = uses.length ? `
+
+Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
+      if (!await ask(`¿Eliminar la rutina "${r.name}"? Tu historial se mantiene.${warn}`)) return;
       const before = { routines: [...db.routines], plan: db.plan ? clone(db.plan) : null, programs: clone(db.programs) };
       db.routines = db.routines.filter(x => x !== r);
       if (db.plan) for (const wk of db.plan.days) wk.r = wk.r.map(id => (id === r.id ? null : id));
@@ -7614,9 +7628,7 @@ $app.addEventListener('click', async e => {
     }
     case 'myprog-del': {
       const p = db.programs.find(x => x.id === routeParts()[1]);
-      if (!p) return;
-      const before = { programs: [...db.programs], plan: db.plan ? clone(db.plan) : null };
-      undoDel(`Programa "${p.name || '(sin nombre)'}" eliminado`, () => { Object.assign(db, before); }, 450);
+      if (!p || !await ask(`¿Eliminar el programa "${p.name || '(sin nombre)'}"? Tus rutinas y tu plan no se borran.`)) return;
       db.programs = db.programs.filter(x => x !== p);
       if (db.plan && db.plan.prog === p.id) delete db.plan.prog;   // tu plan sigue igual, pero ya no es de un programa
       save();
@@ -8005,9 +8017,10 @@ $app.addEventListener('click', async e => {
       break;
     }
     case 'meal-del': {
-      const diet = dietById(routeParts()[1]), m = +el.dataset.m, [meal] = diet.meals.splice(m, 1);
+      const diet = dietById(routeParts()[1]), meal = diet.meals[+el.dataset.m];
+      if (meal.items.length && !await ask(`¿Eliminar "${meal.name}" con sus alimentos?`)) return;
+      diet.meals.splice(+el.dataset.m, 1);
       save(); render();
-      undoDel(`"${meal.name}" eliminada`, () => { diet.meals.splice(Math.min(m, diet.meals.length), 0, meal); });
       break;
     }
     case 'item-del': {
@@ -8022,8 +8035,7 @@ $app.addEventListener('click', async e => {
       break;
     case 'diet-del': {
       const diet = dietById(routeParts()[1]);
-      const before = { diets: [...N().diets], activeDietId: N().activeDietId };
-      undoDel(`Dieta "${diet.name}" eliminada`, () => { Object.assign(N(), before); }, 450);
+      if (!await ask(`¿Eliminar la dieta "${diet.name}"?`)) return;
       N().diets = N().diets.filter(d => d !== diet);
       if (N().activeDietId === diet.id) N().activeDietId = N().diets[0] ? N().diets[0].id : null;
       save(); location.replace('#/nutricion/dietas');
@@ -8079,13 +8091,11 @@ $app.addEventListener('click', async e => {
     case 'share-workout':
       shareWorkout(el, el.dataset.id);
       break;
-    case 'del-session': {
-      const before = [...db.workouts];
+    case 'del-session':
+      if (!await ask('¿Eliminar este entrenamiento del historial?')) return;
       db.workouts = db.workouts.filter(w => w.id !== id);
       save(); goBack();
-      undoDel('Entrenamiento eliminado', () => { db.workouts = before; }, 450);
       break;
-    }
 
     // Compartir rutinas
     case 'share-routine':
