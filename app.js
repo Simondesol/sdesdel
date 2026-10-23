@@ -1310,9 +1310,9 @@ function prefillSets(prev, rir, goalSets = 0, dropset = false) {
 }
 // Lo que vale de una serie: lo escrito o, si está vacío, lo de la vez pasada
 const effSet = s => ({ w: s.w !== '' && s.w != null ? s.w : s.pw ?? '', r: s.r !== '' && s.r != null ? s.r : s.pr ?? '', rir: s.rir !== '' && s.rir != null ? s.rir : s.prir ?? '' });
-// Peso corporal (dominadas, fondos…): el lastre vacío es 0, no el de la vez pasada
+// Peso corporal (dominadas, fondos…): el lastre vacío es el de la vez pasada, como en todos; si no hay vez pasada, 0 (sin lastre)
 const lastreEx = ex => ex.unit !== 'placas' && isBwEx(ex);
-const bwEff = (s, bw) => { const e = effSet(s); return bw && (s.w === '' || s.w == null) ? { ...e, w: '0' } : e; };
+const bwEff = (s, bw) => { const e = effSet(s); return bw && e.w === '' ? { ...e, w: '0' } : e; };
 const typedSet = s => (s.w !== '' && s.w != null) || (s.r !== '' && s.r != null);
 // La serie se guarda si tiene algo: lo que escribiste o, si no, lo de la vez pasada (para borrar una serie que no hiciste: el basurero)
 const setCounts = s => { const e = effSet(s); return e.w !== '' || e.r !== ''; };
@@ -1750,7 +1750,7 @@ function viewWorkout() {
         <span></span>
         <button class="set-del" data-action="del-drop" data-i="${i}" data-j="${j}" data-k="${k}" aria-label="Quitar bajada">${TRASH_ICON}</button>
       </div>`).join('');
-    const wPh = lastreEx(ex) ? '0' : s.pw || (ex.unit === 'placas' ? 'placas' : 'peso');
+    const wPh = s.pw || (lastreEx(ex) ? '0' : ex.unit === 'placas' ? 'placas' : 'peso');
     return `
       <div class="set ${ex.rir ? 'has-rir' : ''}">
         <span class="n">${label}</span>
