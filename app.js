@@ -1506,9 +1506,10 @@ const infoBtn = k => `<button class="info-btn ${infoOpen.has(k) ? 'on' : ''}" da
 const infoBox = k => (infoOpen.has(k) ? `<p class="info-box">${INFO[k]}</p>` : '');
 let routineSort = false;
 // Miniatura del video de técnica en Editar rutina: tocarla lo reproduce ahí mismo (sin video: un recuadro vacío)
+const thumbOf = g => g.video.replace('videos/', 'videos/thumbs/').replace(/\.mp4$/, '.jpg');
 const exThumb = ex => { const g = guideFor(ex.name, ex.guide);
   return g && g.video
-    ? `<button type="button" class="ex-thumb" data-action="thumb-play" aria-label="Ver el video de ${esc(g.name)}"><video src="${esc(g.video)}" muted loop playsinline preload="metadata"></video><span class="ex-thumb-play" aria-hidden="true"></span></button>`
+    ? `<button type="button" class="ex-thumb" data-action="thumb-play" aria-label="Ver el video de ${esc(g.name)}"><video src="${esc(g.video)}" poster="${esc(thumbOf(g))}" muted loop playsinline preload="none"></video><span class="ex-thumb-play" aria-hidden="true"></span></button>`
     : '<span class="ex-thumb none" aria-hidden="true">Sin video</span>'; };   // Rutinas: modo para cambiar el orden (flechas en vez de Editar / Empezar)
 
 // "4 × 8-10 · RIR 2 · Dropset · Rest 1:30"
@@ -1587,13 +1588,7 @@ function viewRoutine() {
     </section>
     <h2>Ejercicios</h2>
     <ul class="list ex-edit">${items || '<p class="empty">Agrega los ejercicios de esta rutina.</p>'}</ul>
-    <form class="add-row" data-form="new-ex">
-      <input name="title" data-bind="ex-title" placeholder="Nombre del ejercicio" autocomplete="off" required>
-      ${unitSelect()}
-      <button class="btn">Agregar</button>
-    </form>
-    <div class="ex-sugg"></div>
-    <button class="btn block explore-btn" data-action="explore-list">Ver ejercicios por músculo</button>
+    <button type="button" class="add-ex-field" data-action="explore-list">+ Agregar ejercicio</button>
     ${shareBox(r.id, 'Tu amigo toca el link y la rutina se le agrega sola (o ingresa el código en Rutinas → "Importar rutina con código"). Solo se comparten los ejercicios, el Rest y los objetivos, no tus pesos ni tu historial.')
       || '<button class="btn block" data-action="share-routine" style="margin-top:32px">Compartir rutina</button>'}
     <button class="btn block" data-action="dup-routine">Duplicar rutina</button>
@@ -2510,7 +2505,7 @@ const VIEW_EXIT = ['social', 'gymbro', 'perfil', 'privacidad', 'cuenta', 'alumno
 const VIEW_SAFE = new Set(['back', 'view-exit', 'vid-toggle', 'info', 'toggle-sec', 'range', 'toggle-history', 'hist-month', 'hist-day', 'skin-view', 'measure-view',
   'prog-open', 'prog-close', 'prog-filter', 'prog-retry', 'week-sum', 'week-day', 'guide-view', 'guide-close', 'explore-zone', 'explore-open', 'explore-back', 'explore-close', 'go-ex', 'prev-ex', 'next-ex', 'prog-rid', 'thumb-play']);
 const VIEW_ROUTINE = new Set(['reps-by', 'toggle-drop', 'toggle-bw', 'toggle-ss', 'toggle-rir', 'toggle-unit', 'move', 'ex-open', 'ex-close', 'del-ex', 'dup-routine', 'del-routine',
-  'guide-pick', 'guide-change', 'guide-set', 'guide-pick-close', 'explore-list', 'explore-add', 'sugg-ex']);
+  'guide-pick', 'guide-change', 'guide-set', 'guide-pick-close', 'explore-list', 'explore-add', 'explore-add-custom']);
 const VIEW_PROGRAM = new Set(['myprog-new', 'myprog-weeks', 'myprog-stop', 'myprog-use', 'myprog-del', 'prog-level', 'prog-days', 'prog-add', 'prog-add-one']);
 const VIEW_NUTRI = new Set(['diet-new', 'nutri-use', 'diet-link', 'diet-done', 'diet-del', 'meal-add', 'meal-dup', 'meal-del', 'item-del', 'item-mode', 'add-mode', 'pick-food', 'pace-dir', 'set-activity']);
 const CHAT_BLOCK = new Set(['attach', 'attach-pick', 'attach-send', 'msg-add', 'gymbro-del']);   // usan tus datos: no mientras ves a un alumno
@@ -6598,13 +6593,21 @@ const guideBody = g => `${g.video
 
 // ---------- Ver ejercicios por músculo (al editar una rutina): técnica y video antes de añadirlo ----------
 let exploreOpen = false, exploreQ = '', exploreZone = '', exploreView = null, exploreScroll = 0, exploreChips = 0;   // lista abierta, búsqueda, grupo, ejercicio abierto
-const exploreItem = g => `<button type="button" class="food-pick" data-action="explore-open" data-g="${g.id}">
-    <span class="grow"><strong>${esc(g.name)}</strong><span class="muted small">${esc(g.musc)}</span></span><span class="chev">›</span></button>`;
+// Cada ejercicio: video chico (play ahí mismo), nombre (abre su técnica) y Agregar
+const inRoutine = g => { const r = curRoutine(); return !!r && r.exercises.some(e => sameName(e.name, g.name) || (guideFor(e.name, e.guide) || {}).id === g.id); };
+const exploreItem = g => `<div class="explore-item">
+    ${exThumb({ name: g.name, guide: g.id })}
+    <button type="button" class="explore-name" data-action="explore-open" data-g="${g.id}"><strong>${esc(g.name)}</strong><span class="muted small">${esc(g.musc)}</span></button>
+    ${inRoutine(g) ? '<button type="button" class="btn small-btn added" data-action="explore-add" data-g="' + g.id + '">Agregado ✓</button>'
+      : `<button type="button" class="btn small-btn primary" data-action="explore-add" data-g="${g.id}">Agregar</button>`}</div>`;
+// Lo escrito no es ninguno de la lista: se puede agregar como ejercicio propio
+const customAddHtml = q => (q.trim() && !GUIDES.some(g => normText(g.name) === normText(q.trim()))
+  ? `<button type="button" class="food-pick custom-add" data-action="explore-add-custom"><span class="grow"><strong>+ Agregar "${esc(q.trim())}"</strong><span class="muted small">Como ejercicio propio (sin video)</span></span></button>` : '');
 function exploreListHtml() {
   if (exploreQ.trim()) {   // busca dentro del músculo elegido (o en todos)
     const res = searchGuides(exploreQ, 999).filter(g => !exploreZone || g.zone === exploreZone).slice(0, 60);
-    return res.length ? res.map(exploreItem).join('')
-      : `<p class="muted small">No hay ejercicios${exploreZone ? ` de ${GUIDE_ZONES[exploreZone]}` : ''} con ese nombre todavía.</p>`;
+    return (res.length ? res.map(exploreItem).join('')
+      : `<p class="muted small">No hay ejercicios${exploreZone ? ` de ${GUIDE_ZONES[exploreZone]}` : ''} con ese nombre todavía.</p>`) + customAddHtml(exploreQ);
   }
   return Object.entries(GUIDE_ZONES).filter(([z]) => !exploreZone || z === exploreZone)
     .map(([z, name]) => `<h3 class="guide-zone">${name}</h3>${guidesOf(z).map(exploreItem).join('')}`).join('');
@@ -6616,15 +6619,15 @@ function exploreSheetHtml() {
     ? `<div class="guide-head"><button class="icon small" data-action="explore-back" aria-label="Volver a la lista">‹</button><h2 class="grow">${esc(g.name)}</h2><button class="icon small" data-action="explore-close" aria-label="Cerrar">✕</button></div>
        <span class="muted small">Trabaja: ${esc(g.musc)}</span>
        ${guideBody(g)}
-       <button class="btn primary block" data-action="explore-add">Añadir a esta rutina</button>
+       ${inRoutine(g) ? '<button class="btn block added" data-action="explore-add">Agregado a la rutina ✓</button>' : '<button class="btn primary block" data-action="explore-add">Agregar a esta rutina</button>'}
        <button class="btn block" data-action="explore-back">Volver a la lista</button>`
     : `<div class="picker-top">
-         <div class="guide-head"><h2>Ejercicios</h2><button class="icon small" data-action="explore-close" aria-label="Cerrar">✕</button></div>
-         <input type="search" data-bind="explore-q" placeholder="Buscar ejercicio" value="${esc(exploreQ)}" autocomplete="off" aria-label="Buscar ejercicio">
+         <div class="guide-head"><h2>Agregar ejercicio</h2><button class="icon small" data-action="explore-close" aria-label="Cerrar">✕</button></div>
+         <input type="search" data-bind="explore-q" placeholder="Busca o escribe el nombre" value="${esc(exploreQ)}" autocomplete="off" aria-label="Buscar ejercicio">
          <div class="explore-zones">${[['', 'Todos'], ...Object.entries(GUIDE_ZONES)]
            .map(([z, n]) => `<button type="button" class="chip toggle ${z === exploreZone ? 'on' : ''}" data-action="explore-zone" data-z="${z}">${n}</button>`).join('')}</div>
        </div>
-       <p class="muted small" style="margin:0">Toca un ejercicio para ver su técnica y video.</p>
+       <p class="muted small" style="margin:0">Toca el nombre para ver su técnica, o Agregar para sumarlo a la rutina.</p>
        <div class="guide-list explore-list">${exploreListHtml()}</div>`;
   return `<div class="modal-wrap">
     <div class="modal-back" data-action="explore-close"></div>
@@ -7659,10 +7662,11 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       $app.querySelectorAll('.explore-zones .chip').forEach(b => b.classList.toggle('on', b.dataset.z === exploreZone));
       $app.querySelector('.explore-list').innerHTML = exploreListHtml();
       break;
-    case 'explore-list':   // abrir la lista desde el editor de rutina
-      exploreOpen = true; exploreView = null;
+    case 'explore-list':   // abrir la lista desde el editor de rutina (lista para escribir)
+      exploreOpen = true; exploreView = null; exploreQ = '';
       render();
       syncModalHistory();
+      $app.querySelector('[data-bind="explore-q"]')?.focus();
       break;
     case 'explore-open': {   // ver la técnica de uno (se recuerda dónde ibas en la lista)
       exploreScroll = $app.querySelector('.explore-sheet')?.scrollTop || 0;
@@ -7684,18 +7688,18 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       render();
       syncModalHistory();
       break;
-    case 'explore-add': {   // añadir el ejercicio abierto a esta rutina (con su guía)
-      const g = GUIDE_BY_ID.get(exploreView), f = $app.querySelector('[data-form="new-ex"]');
-      if (!g || !curRoutine()) return;
-      if (f) lastUnit = f.elements.unit.value;
-      exploreOpen = false; exploreView = null;
-      if (!(await okRepeatedEx(g.name, g.id))) { syncModalHistory(); return; }
-      { const id = await exIdForAdd(g.name, curRoutine(), g.id); curRoutine().exercises.push({ id, name: g.name, unit: lastUnit, rest: 0, guide: g.id }); }
-      openEx = curRoutine().exercises.length - 1;   // queda abierto para poner series y repeticiones
-      exploreQ = '';   // la próxima vez la lista parte sin búsqueda
+    case 'explore-add':   // agregar a la rutina (desde la lista o desde su técnica); la lista sigue abierta para agregar más
+    case 'explore-add-custom': {
+      const r = curRoutine(), g = action === 'explore-add' ? GUIDE_BY_ID.get(el.dataset.g || exploreView) : null;
+      const name = g ? g.name : exploreQ.trim();
+      if (!r || !name) return;
+      const top = $app.querySelector('.explore-sheet')?.scrollTop || 0;
+      if (!(await okRepeatedEx(name, g ? g.id : null))) { openEx = null; render(); return; }
+      const id = await exIdForAdd(name, r, g ? g.id : null);
+      r.exercises.push({ id, name, unit: lastUnit, rest: 0, ...(g ? { guide: g.id } : {}) });
       save(); render();
-      syncModalHistory();
-      showNote(`${g.name} se añadió a la rutina`);
+      const sh = $app.querySelector('.explore-sheet'); if (sh) sh.scrollTop = top;
+      showNote(`${name}: agregado a la rutina`);
       break;
     }
     case 'guide-pick-close':
@@ -7738,16 +7742,6 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       if (!a) break;
       if (!a.own) Object.assign(a, planOf(rex), { own: true });
       await swapExercise(a, true);   // queda elegida en el entreno y se abre para editarla
-      break;
-    }
-    case 'sugg-ex': {   // sugerencia elegida al agregar un ejercicio: se agrega con su guía
-      const g = GUIDE_BY_ID.get(el.dataset.g), f = $app.querySelector('[data-form="new-ex"]');
-      if (!g || !f) return;
-      lastUnit = f.elements.unit.value;
-      if (!(await okRepeatedEx(g.name, g.id))) return;
-      { const id = await exIdForAdd(g.name, curRoutine(), g.id); curRoutine().exercises.push({ id, name: g.name, unit: lastUnit, rest: 0, guide: g.id }); }
-      openEx = curRoutine().exercises.length - 1;
-      save(); render();
       break;
     }
     case 'quiz-ans':
@@ -8250,12 +8244,6 @@ $app.addEventListener('input', e => {
     if (box) box.innerHTML = freeSuggHtml(freeQ);
     return;
   }
-  if (bind === 'ex-title') {
-    const box = $app.querySelector('.ex-sugg'), res = searchGuides(el.value, 5);
-    if (box) box.innerHTML = res.length ? `<span class="muted small">Con guía de técnica:</span>${res.map(g => `<button type="button" class="food-pick" data-action="sugg-ex" data-g="${g.id}">
-      <span class="grow"><strong>${esc(g.name)}</strong><span class="muted small">${esc(g.musc)}</span></span><span class="chev">+</span></button>`).join('')}` : '';
-    return;
-  }
   if (bind === 'explore-q') {
     exploreQ = el.value;
     const list = $app.querySelector('.explore-list');
@@ -8435,7 +8423,7 @@ $app.addEventListener('keydown', e => {
 $app.addEventListener('submit', async e => {
   e.preventDefault();
   const f = e.target;
-  if (viewing && !['new-ex', 'new-routine', 'coach-comment', 'add-item', 'chat-send'].includes(f.dataset.form)) { notice(viewOnlyMsg()); return; }
+  if (viewing && !['new-routine', 'coach-comment', 'add-item', 'chat-send'].includes(f.dataset.form)) { notice(viewOnlyMsg()); return; }
   switch (f.dataset.form) {
     case 'coach-code': linkCoachForm(f); return;
     case 'coach-comment': saveCoachComment(f); return;
@@ -8505,14 +8493,6 @@ $app.addEventListener('submit', async e => {
     db.routines.push(r);
     save();
     go('#/rutina/' + r.id);
-  } else if (f.dataset.form === 'new-ex') {
-    lastUnit = f.elements.unit.value;
-    if (!(await okRepeatedEx(title))) return;
-    const r = curRoutine(), id = await exIdForAdd(title, r);   // antes de agregarlo: si ya está en esta rutina, va aparte
-    r.exercises.push({ id, name: title, unit: lastUnit, rest: 0 });
-    openEx = curRoutine().exercises.length - 1;   // el nuevo queda abierto para configurarlo
-    save(); render();
-    $app.querySelector('[data-form="new-ex"] input').focus();
   } else if (f.dataset.form === 'extra-ex') {
     lastUnit = f.elements.unit.value;
     addExtraExercise(title, lastUnit);
@@ -8585,7 +8565,7 @@ async function saveVideos() {
   if (!('caches' in window) || !navigator.onLine) return;
   try {
     const cache = await caches.open(VIDEO_CACHE);
-    const want = [...new Set(GUIDES.filter(g => g.video).map(g => new URL(g.video, location.href).href))];
+    const want = [...new Set(GUIDES.filter(g => g.video).flatMap(g => [g.video, thumbOf(g)]).map(u => new URL(u, location.href).href))];
     const have = await cache.keys();
     for (const r of have) if (!want.includes(r.url)) await cache.delete(r);
     const saved = new Set(have.map(r => r.url));
