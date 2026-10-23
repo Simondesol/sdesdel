@@ -973,7 +973,7 @@ export const GUIDES = [
     musc: 'Hombro anterior',
     cues: ['De pie, con el disco tomado por los lados con las dos manos', 'Brazos casi estirados', 'Sube el disco al frente hasta la altura de los ojos', 'Baja lento sin balancear el cuerpo'],
     errs: ['Balancear la espalda para subirlo', 'Subirlo más arriba de la cabeza'] },
-  { id: 'sissy-squat', zone: 'cuadriceps', name: 'Sissy squat', alias: ['sentadilla sissy', 'sissy', 'sissy squat sin peso', 'bodyweight sissy squat'], video: 'videos/sissy-squat.mp4',
+  { id: 'sissy-squat', zone: 'cuadriceps', name: 'Sentadilla sissy', alias: ['sissy squat', 'sissy', 'sissy squat sin peso', 'bodyweight sissy squat'], video: 'videos/sissy-squat.mp4',
     musc: 'Cuádriceps (sobre todo el recto femoral)',
     cues: ['De pie, tomado de un soporte con una mano', 'Sube a la punta de los pies y lleva las rodillas hacia adelante', 'Baja inclinando el cuerpo hacia atrás, en línea recta de las rodillas a los hombros', 'Sube empujando con los cuádriceps'],
     errs: ['Doblar la cadera: se vuelve una sentadilla normal', 'Bajar más de lo que toleran tus rodillas'] },

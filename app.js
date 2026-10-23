@@ -6105,7 +6105,7 @@ function unifyExerciseIds() {
 const OLD_GUIDE_NAMES = { 'press declinado': 'press-declinado', 'escaladores': 'escaladores', 'curl bayesiano en polea': 'curl-bayesiano',
   'sentadilla bulgara': 'sentadilla-bulgara', 'zancada hacia atras': 'zancada-inversa', 'zancada estatica (split squat)': 'split-squat',
   'zancadas': 'zancadas', 'jalon a una mano en polea': 'jalon-unilateral', 'press frances': 'press-frances',
-  'curl invertido': 'curl-invertido', 'extension de triceps sobre la cabeza con barra': 'triceps-sobre-cabeza-barra', 'peso muerto desde soportes': 'rack-pull' };
+  'curl invertido': 'curl-invertido', 'extension de triceps sobre la cabeza con barra': 'triceps-sobre-cabeza-barra', 'peso muerto desde soportes': 'rack-pull', 'sissy squat': 'sissy-squat' };
 function renameOldGuideNames() {
   let changed = false;
   const fix = e => {
