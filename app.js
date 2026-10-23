@@ -136,7 +136,7 @@ function bestSets(exerciseId, before = db.workouts.length, unit = null, rid = nu
 // Compara lo que se está escribiendo con la mejor marca (null si no hay nada que comparar)
 function liveCmp(s, ex, best) {
   if (!best) return null;
-  // ▲ = ▼ recién cuando escribes el peso y las repeticiones (con peso corporal basta con las repeticiones)
+  // Los íconos de progreso recién cuando escribes el peso y las repeticiones (con peso corporal basta con las repeticiones)
   const has = v => v !== '' && v != null;
   if (!has(s.r) || !(has(s.w) || isBwEx(ex))) return null;
   s = { ...s, ...bwEff(s, lastreEx(ex)) };
@@ -145,8 +145,14 @@ function liveCmp(s, ex, best) {
   return cmpSet({ w, r, rir: num(s.rir), unit: ex.unit, bw: bwFor(ex, new Date().toISOString()) }, best);
 }
 
-const markSpan = c => (c == null ? '' :
-  `<span class="mark ${c > 0 ? 'up' : c < 0 ? 'down' : 'eq'}">${c > 0 ? '▲' : c < 0 ? '▼' : '='}</span>`);
+// Gráfico chico: sube (superaste), plano (igualaste), baja (bajo tu récord)
+const TREND_ICON = {
+  up: '<svg class="trend-ic" viewBox="0 0 24 24" aria-label="Superaste" role="img"><path d="M4 4v16h16"/><path d="M7.5 15.5l3.5-4 3 2.5 5-6.5"/><path d="M15.5 7.5H19V11"/></svg>',
+  eq: '<svg class="trend-ic" viewBox="0 0 24 24" aria-label="Igualaste" role="img"><path d="M4 4v16h16"/><path d="M7.5 12.5h11"/><path d="M15.5 9.5l3 3-3 3"/></svg>',
+  down: '<svg class="trend-ic" viewBox="0 0 24 24" aria-label="Bajo tu récord" role="img"><path d="M4 4v16h16"/><path d="M7.5 8l3.5 4 3-2.5 5 6.5"/><path d="M19 12.5V16h-3.5"/></svg>',
+};
+const markKind = c => (c > 0 ? 'up' : c < 0 ? 'down' : 'eq');
+const markSpan = c => (c == null ? '' : `<span class="mark ${markKind(c)}">${TREND_ICON[markKind(c)]}</span>`);
 
 function header(title, { back = false, home = false, sub = '', right = '', href = '', avatar = '' } = {}) {
   const titles = `${avatar}<div class="titles-text"><h1>${esc(title)}</h1>${sub ? `<div class="sub">${esc(sub)}</div>` : ''}</div>`;
@@ -1791,14 +1797,16 @@ function viewWorkout() {
     ? `<button class="btn ghost" data-action="rest" data-i="${i}" data-rest="${i}" data-pre="${pre}">Rest ${pre}${fmtRest(d.exercises[i].rest)}</button>` : '');
   const dropBadge = ex => (ex.dropset ? '<span class="badge on">Dropset</span>' : '');
   const techBtn = i => `<button class="btn small-btn tech-btn" data-action="guide-view" data-i="${i}">Técnica</button>`;
-  // Nombre con el músculo debajo (sale de la guía de técnica; sin guía no aparece)
-  const exTitle = (ex, label) => { const z = zoneOf(ex);
-    return `<div class="ex-title"><strong>${label}</strong>${z ? `<span class="ex-muscle">${z}</span>` : ''}</div>`; };
+  const exTitle = (ex, label) => `<div class="ex-title"><strong>${label}</strong></div>`;
+  // El músculo va en una pestaña que sale del borde de arriba de la tarjeta (sale de la guía de técnica; sin guía no aparece)
+  const muscleTab = list => { const z = [...new Set(list.map(zoneOf).filter(Boolean))].join(' · ');
+    return z ? `<span class="ex-tab">${z}</span>` : ''; };
   const swapBtn = i => (editing ? '' : `<button class="btn small-btn swap-btn" data-action="swap-open" data-i="${i}">Cambiar</button>`);
 
   const exerciseBlock = (ex, i) => {
     const open = openHistory.has(ex.exerciseId);
-    return `<section class="card" data-ex="${i}">
+    const tab = muscleTab([ex]);
+    return `<section class="card${tab ? ' has-tab' : ''}" data-ex="${i}">${tab}
       <div class="ex-head">${exTitle(ex, esc(ex.name))}${dropBadge(ex)}${swapBtn(i)}${techBtn(i)}</div>
       ${exInfo(ex, i)}
       <div class="sets">${ex.sets.map((st, j) => setRow(ex, i, st, j, j + 1)).join('')}</div>
@@ -1823,7 +1831,8 @@ function viewWorkout() {
       }).join('')}</div>`;
     }
     const open = idx.some(k => openHistory.has(d.exercises[k].exerciseId));
-    return `<section class="card superset" data-ex="${idx[0]}">
+    const tab = muscleTab(idx.map(k => d.exercises[k]));
+    return `<section class="card superset${tab ? ' has-tab' : ''}" data-ex="${idx[0]}">${tab}
       <div class="ss-tag">🔗 Superset · alterna una serie de cada uno</div>
       ${idx.map((k, n) => `<div class="ss-ex">
         <div class="ex-head">${exTitle(d.exercises[k], `${letterOf(n)} · ${esc(d.exercises[k].name)}`)}${dropBadge(d.exercises[k])}${swapBtn(k)}${techBtn(k)}</div>
@@ -2402,9 +2411,7 @@ function viewSession(id) {
       return `<span>${setText(s, ex.unit)} ${markSpan(c)}</span>`;
     }).join('');
     const tally = !best.length ? '<span class="muted">Primera vez</span>'
-      : [count.up && `<span class="mark up">${count.up} ▲</span>`,
-         count.eq && `<span class="mark eq">${count.eq} =</span>`,
-         count.down && `<span class="mark down">${count.down} ▼</span>`].filter(Boolean).join(' ')
+      : ['up', 'eq', 'down'].filter(k => count[k]).map(k => `<span class="mark ${k}">${count[k]} ${TREND_ICON[k]}</span>`).join(' ')
         || '<span class="muted">Sin series para comparar</span>';
     return `<section class="card">
       <div class="ex-link">
@@ -2419,7 +2426,7 @@ function viewSession(id) {
     <section class="card summary">
       ${justFinished === id ? '<strong class="saved">¡Entrenamiento guardado!</strong>' : ''}
       ${w.durationSec ? `<div>Duración total: <strong>${fmtDuration(w.durationSec)}</strong></div>` : ''}
-      <div class="legend-line muted small"><span class="mark up">▲</span> superaste · <span class="mark eq">=</span> igualaste · <span class="mark down">▼</span> bajo tu récord</div>
+      <div class="legend-line muted small"><span class="mark up">${TREND_ICON.up}</span> superaste · <span class="mark eq">${TREND_ICON.eq}</span> igualaste · <span class="mark down">${TREND_ICON.down}</span> bajo tu récord</div>
     </section>`;
 
   // Entreno libre: se puede guardar como rutina (justo al terminar se ofrece; después, un botón chico)
@@ -2437,7 +2444,7 @@ function viewSession(id) {
     ${coachCommentHtml(w)}
     ${asRoutine}
     ${(prs => (prs.length ? `<section class="card pr-card"><strong>🔥 ${prs.length === 1 ? 'Nuevo récord' : `${prs.length} récords nuevos`}</strong>
-      ${prs.map(pr => `<span>${esc(pr.text)}</span>`).join('')}
+      ${prs.map(pr => `<span>${esc(pr.text + (pr.was || ''))}</span>`).join('')}
       <span class="muted small">Récord = superar tu mejor 1ª serie (en cualquier rutina), o tu mejor 2ª, 3ª… serie en esta rutina.${prsSent && prsSent.id === w.id ? ' Se lo avisamos a tus gymbros.' : ''}</span></section>` : ''))(newPRs(w))}
     ${viewing ? '' : `<button class="btn primary block" data-action="share-workout" data-id="${w.id}" style="margin:0 0 10px">📤 Compartir entrenamiento</button>`}
     ${blocks}
@@ -2900,7 +2907,6 @@ const POV = n => [
   [/^Mis programas$/i, `Programas de ${n}`], [/^Mis dietas$/, 'Dietas'], [/^Mis alimentos$/, 'Alimentos'],
   [/^Es el que estás usando: lo que cambies aquí se aplica a tu semana\.$/, `Es el que ${n} está usando: lo que cambies aquí se aplica a su semana.`],
   [/^Para enviárselo a un alumno.*$/, ''],
-  [/^▲ superaste · = igualaste · ▼ bajo tu récord$/, '▲ superó · = igualó · ▼ bajo su récord'],
   [/^Tu dieta tiene/, 'Su dieta tiene'], [/que tu objetivo/, 'que su objetivo'], [/^Tus kcal objetivo$/, `Kcal objetivo de ${n}`],
   [/^Referencia para armar tu dieta$/, 'Referencia para armar su dieta'], [/^Para mantener tu peso$/, 'Para mantener su peso'],
   [/^¿Qué quieres\?$/i, `¿Qué quiere ${n}?`], [/^Horas que dormiste cada noche$/, 'Horas que durmió cada noche'], [/^Te faltan/, 'Le faltan'],
@@ -3742,7 +3748,7 @@ const E1RM_GUIDES = new Set(['sentadilla', 'sentadilla-frontal', 'peso-muerto', 
   'press-militar', 'press-militar-sentado', 'dominadas', 'dominadas-supinas', 'fondos']);
 const showsE1rm = ex => { const g = guideFor(ex.name, (db.routines.flatMap(r => r.exercises).find(e => e.id === ex.exerciseId) || {}).guide); return !!g && E1RM_GUIDES.has(g.id); };
 // PRs del entrenamiento: 1RM estimado de la 1ª serie mayor que el mejor anterior (en cualquier rutina),
-// y desde la 2ª serie, superar a tu mejor serie de esa misma posición en esa rutina (lo que marca ▲)
+// y desde la 2ª serie, superar a tu mejor serie de esa misma posición en esa rutina (lo que marca el gráfico que sube)
 function newPRs(w) {
   const firstE1rm = (ex, date) => {
     const s = ex.sets.find(x => x.w != null);
@@ -3770,7 +3776,7 @@ function newPRs(w) {
       if (j <= first || x.w == null || !best[j]) return;
       const c = { w: x.w, r: x.r, rir: x.rir, unit: ex.unit, bw: bwFor(ex, w.date) };
       if (cmpSet(c, best[j]) > 0) {
-        prs.push({ id: ex.exerciseId, name: ex.name, text: `${ex.name} · serie ${j + 1}: ${setText(x, ex.unit)} (antes ${fmtNum(best[j].w)} ${best[j].unit} × ${fmtNum(best[j].r)})` });
+        prs.push({ id: ex.exerciseId, name: ex.name, text: `${ex.name} · serie ${j + 1}: ${setText(x, ex.unit)}`, was: ` (antes ${fmtNum(best[j].w)} ${best[j].unit} × ${fmtNum(best[j].r)})` });
       }
     });
   }
@@ -5209,7 +5215,7 @@ function closeTour() { tourOpen = false; setTourSeen(); render(); }
 // Consejo la primera vez que entras a una sección (se cierra con ✕ y no vuelve a salir)
 const TIPS = {
   rutinas: 'Toca una rutina para editarla y Empezar para entrenarla. Si tienes un programa activo, la que te toca hoy aparece marcada.',
-  entrenar: 'En gris está el peso de la vez anterior y tu objetivo de repeticiones. Si dejas una casilla vacía, se guarda lo que hiciste la vez anterior; si cambia, escribe lo nuevo. Un ejercicio en el que no anotas nada no se guarda. Si no hiciste una serie, bórrala con el basurero. ▲ superaste tu mejor serie, = igualaste, ▼ quedaste bajo.',
+  entrenar: 'En gris está el peso de la vez anterior y tu objetivo de repeticiones. Si dejas una casilla vacía, se guarda lo que hiciste la vez anterior; si cambia, escribe lo nuevo. Un ejercicio en el que no anotas nada no se guarda. Si no hiciste una serie, bórrala con el basurero. Al lado de cada serie, un gráfico chico: sube si superaste tu mejor serie, plano si la igualaste, baja si quedaste bajo.',
   programas: 'Los programas listos traen la semana armada según tus días y nivel. El programa activo es el que te dice qué rutina te toca cada día.',
   historial: 'Toca un día del calendario para ver lo que entrenaste. Desde cada entreno lo puedes editar o compartir.',
   progreso: 'Toca un ejercicio para ver su gráfico y tus récords.',
