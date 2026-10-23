@@ -121,12 +121,12 @@ const bwFor = (ex, dateIso) => (ex.unit !== 'placas' && isBwEx(ex) ? bwOn(dateIs
 // unit: solo compara con sesiones de la misma clase (placas con placas; kg y lb entre sí)
 // rid: solo los entrenos de esa rutina (en cada rutina rindes distinto según el orden y el cansancio); null = todos
 function bestSets(exerciseId, before = db.workouts.length, unit = null, rid = null) {
-  const best = [];
+  const best = [], today = new Date().toISOString();
   for (let k = 0; k < before; k++) {
     if (rid && db.workouts[k].routineId !== rid) continue;
     const ex = db.workouts[k].exercises.find(e => e.exerciseId === exerciseId);
     if (!ex || (unit && unitKind(ex.unit) !== unitKind(unit))) continue;
-    const bw = bwFor(ex, db.workouts[k].date);
+    const bw = bwFor(ex, today);   // con peso corporal, todas con tu peso de hoy (el orden de los entrenos no cambia cuál es la mejor)
     ex.sets.forEach((s, j) => {
       const c = { w: s.w, r: s.r, rir: s.rir, unit: ex.unit, bw };
       if (!best[j] || cmpSet(c, best[j]) > 0) best[j] = c;
@@ -138,9 +138,9 @@ function bestSets(exerciseId, before = db.workouts.length, unit = null, rid = nu
 // Compara lo que se está escribiendo con la mejor marca (null si no hay nada que comparar)
 function liveCmp(s, ex, best) {
   if (!best) return null;
-  // Los íconos de progreso recién cuando escribes el peso y las repeticiones (con peso corporal basta con las repeticiones)
+  // Los íconos de progreso recién cuando escribes el peso (o lastre) y las repeticiones
   const has = v => v !== '' && v != null;
-  if (!has(s.r) || !(has(s.w) || isBwEx(ex))) return null;
+  if (!has(s.r) || !has(s.w)) return null;
   s = { ...s, ...bwEff(s, lastreEx(ex)) };
   const w = num(s.w), r = num(s.r);
   if (w == null && r == null) return null;
