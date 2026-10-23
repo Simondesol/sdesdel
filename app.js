@@ -108,8 +108,10 @@ function fmtDuration(sec) {
 // Las libras se pasan a kg para poder comparar ejercicios que cambiaron de unidad.
 const toKg = (w, unit) => (w == null ? 0 : unit === 'lb' ? w * 0.45359237 : w);
 const setStrength = x => epley((x.bw || 0) + toKg(x.w || 0, x.unit), x.r || 1, x.rir);
+// Con peso corporal, las dos series se comparan con el mismo peso tuyo (el de `a`): si bajaste de peso,
+// 40 kg × 6 de lastre sigue siendo igual a 40 kg × 6
 function cmpSet(a, b) {
-  const diff = setStrength(a) - setStrength(b);
+  const diff = setStrength(a) - setStrength({ ...b, bw: a.bw });
   return Math.abs(diff) < 0.05 ? 0 : diff > 0 ? 1 : -1;
 }
 // Tu peso de ese día, solo en ejercicios con peso corporal
