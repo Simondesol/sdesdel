@@ -4020,15 +4020,6 @@ function restoreRoutine(rid) {
   }
   return r;
 }
-function planUses(routineId) {
-  const p = db.plan;
-  if (!p) return [];
-  const join = list => (list.length > 1 ? `${list.slice(0, -1).join(', ')} y ${list[list.length - 1]}` : list[0]);
-  return p.days.slice(0, p.weeks).map((wk, w) => {
-    const days = DAY_NAMES.filter((_, d) => wk.r[d] === routineId).map(n => n.toLowerCase());
-    return days.length ? `${p.weeks > 1 ? `semana ${w + 1}: ` : ''}${join(days)}` : null;
-  }).filter(Boolean);
-}
 
 
 // ---------- Perfil de gymbro ----------
@@ -5720,6 +5711,11 @@ function showUndo(text, fn) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(hideToast, 5000);
 }
+// Borrar al tiro con "Deshacer": restore() lo deja como estaba. wait: si la pantalla cambia al borrar, el aviso sale después
+function undoDel(text, restore, wait = 0) {
+  const f = () => showUndo(text, () => { restore(); save(); render(); });
+  if (wait) setTimeout(f, wait); else f();
+}
 // Aviso corto sin "Deshacer"
 function showNote(text) {
   undoFn = null;
@@ -7355,11 +7351,14 @@ $app.addEventListener('click', async e => {
       el.remove();
       break;
     }
-    case 'goal-del':
+    case 'goal-del': {
+      const goal = db.body.goal;
       delete db.body.goal;
       goalEditing = false;
       save(); render();
+      if (goal) undoDel('Meta borrada', () => { db.body.goal = goal; });
       break;
+    }
     case 'prog-rid':
       progressRid.r = el.dataset.r;
       render();
@@ -7435,17 +7434,19 @@ $app.addEventListener('click', async e => {
       const r = curRoutine();
       if (altEdit) {
         const ex = r.exercises[i], a = (ex.alts || []).find(x => x.id === altEdit);
-        if (!a || !await ask(`¿Quitar "${a.name}" de tus alternativas? Su historial se mantiene.`)) return;
+        if (!a) return;
+        const prevAlts = ex.alts.slice();
         ex.alts = ex.alts.filter(x => x !== a);
         if (!ex.alts.length) delete ex.alts;
         altEdit = null;
         save(); render();
+        undoDel(`"${a.name}" quitado de tus alternativas`, () => { ex.alts = prevAlts; });
         break;
       }
-      if (!await ask(`¿Quitar "${r.exercises[i].name}" de la rutina? Su historial se mantiene.`)) return;
-      r.exercises.splice(i, 1);
+      const [removed] = r.exercises.splice(i, 1);
       openEx = null;
       save(); render();
+      undoDel(`"${removed.name}" quitado de la rutina`, () => { r.exercises.splice(Math.min(i, r.exercises.length), 0, removed); });
       break;
     }
     case 'move-routine': {
@@ -7468,11 +7469,7 @@ $app.addEventListener('click', async e => {
       break;
     }
     case 'del-routine': {
-      const r = curRoutine(), uses = planUses(r.id);
-      const warn = uses.length ? `
-
-Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
-      if (!await ask(`¿Eliminar la rutina "${r.name}"? Tu historial se mantiene.${warn}`)) return;
+      const r = curRoutine();
       const before = { routines: [...db.routines], plan: db.plan ? clone(db.plan) : null, programs: clone(db.programs) };
       db.routines = db.routines.filter(x => x !== r);
       if (db.plan) for (const wk of db.plan.days) wk.r = wk.r.map(id => (id === r.id ? null : id));
@@ -7501,9 +7498,16 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
     }
     case 'del-extra': {
       const d = cur(), ex = d.exercises[i];
-      if (!ex || !await ask(`¿Quitar "${ex.name}" de este entrenamiento?`)) return;
+      if (!ex) return;
+      const prevDone = (d.done || []).slice(), prevPos = d.pos;
       d.exercises.splice(i, 1);
       d.done = (d.done || []).filter(x => x !== ex.exerciseId);
+      undoDel(`"${ex.name}" quitado del entrenamiento`, () => {
+        if (cur() !== d) return;               // ya no estás en ese entrenamiento
+        d.exercises.splice(Math.min(i, d.exercises.length), 0, ex);
+        d.done = prevDone; d.pos = prevPos;
+        if (d.timer && d.timer.i >= i) d.timer.i++;
+      });
       d.pos = Math.max(0, Math.min(i, d.exercises.length - 1));
       // el descanso en curso sigue apuntando a su ejercicio
       if (d.timer) { if (d.timer.i === i) d.timer = null; else if (d.timer.i > i) d.timer.i--; }
@@ -7552,10 +7556,14 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       break;
     }
     case 'del-drop': {
-      const st = cur().exercises[i].sets[j];
-      st.drops.splice(+el.dataset.k, 1);
+      const d = cur(), st = d.exercises[i].sets[j], k = +el.dataset.k;
+      const [removed] = st.drops.splice(k, 1);
       if (!st.drops.length) delete st.drops;
       save(); render();
+      undoDel('Bajada borrada', () => {
+        if (cur() !== d) return;
+        (st.drops ||= []).splice(Math.min(k, st.drops.length), 0, removed);
+      });
       break;
     }
     case 'edit-note': {
@@ -7600,7 +7608,9 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
     }
     case 'myprog-del': {
       const p = db.programs.find(x => x.id === routeParts()[1]);
-      if (!p || !await ask(`¿Eliminar el programa "${p.name || '(sin nombre)'}"? Tus rutinas y tu plan no se borran.`)) return;
+      if (!p) return;
+      const before = { programs: [...db.programs], plan: db.plan ? clone(db.plan) : null };
+      undoDel(`Programa "${p.name || '(sin nombre)'}" eliminado`, () => { Object.assign(db, before); }, 450);
       db.programs = db.programs.filter(x => x !== p);
       if (db.plan && db.plan.prog === p.id) delete db.plan.prog;   // tu plan sigue igual, pero ya no es de un programa
       save();
@@ -7733,10 +7743,12 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
     }
     case 'swap-alt-del': {
       const d = db.draft, rex = routineExOf(d, d.exercises[swapPick.i]), a = rex && (rex.alts || []).find(x => x.id === el.dataset.id);
-      if (!a || !await ask(`¿Quitar "${a.name}" de tus alternativas? Su historial se mantiene.`)) return;
+      if (!a) return;
+      const prevAlts = rex.alts.slice();
       rex.alts = rex.alts.filter(x => x !== a);
       if (!rex.alts.length) delete rex.alts;
       save(); render();
+      undoDel(`"${a.name}" quitado de tus alternativas`, () => { rex.alts = prevAlts; });
       break;
     }
     case 'swap-alt-edit': {
@@ -7932,10 +7944,8 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
     }
     case 'food-del': {
       const food = foodById(routeParts()[1]);
-      const uses = N().diets.filter(d => d.meals.some(m => m.items.some(it => it.foodId === food.id)));
-      if (!await ask(uses.length
-        ? `"${food.name}" está en ${plural(uses.length, 'dieta')} (${uses.map(d => d.name).join(', ')}). Si lo eliminas, se quitará de ellas. ¿Eliminar?`
-        : `¿Eliminar "${food.name}"?`)) return;
+      const before = { diets: clone(N().diets), foods: [...N().foods] };
+      undoDel(`"${food.name}" eliminado`, () => { Object.assign(N(), before); }, 450);
       for (const d of N().diets) for (const m of d.meals) m.items = m.items.filter(it => it.foodId !== food.id);
       N().foods = N().foods.filter(f => f !== food);
       save(); goBack();
@@ -7989,22 +7999,25 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       break;
     }
     case 'meal-del': {
-      const diet = dietById(routeParts()[1]), meal = diet.meals[+el.dataset.m];
-      if (meal.items.length && !await ask(`¿Eliminar "${meal.name}" con sus alimentos?`)) return;
-      diet.meals.splice(+el.dataset.m, 1);
+      const diet = dietById(routeParts()[1]), m = +el.dataset.m, [meal] = diet.meals.splice(m, 1);
       save(); render();
+      undoDel(`"${meal.name}" eliminada`, () => { diet.meals.splice(Math.min(m, diet.meals.length), 0, meal); });
       break;
     }
-    case 'item-del':
-      dietById(routeParts()[1]).meals[+el.dataset.m].items.splice(i, 1);
+    case 'item-del': {
+      const meal = dietById(routeParts()[1]).meals[+el.dataset.m], [removed] = meal.items.splice(i, 1);
       save(); render();
+      const fd = foodById(removed.foodId);
+      undoDel(`${fd ? `"${fd.name}"` : 'Alimento'} quitado`, () => { meal.items.splice(Math.min(i, meal.items.length), 0, removed); });
       break;
+    }
     case 'diet-done':
       location.replace('#/nutricion/dietas');
       break;
     case 'diet-del': {
       const diet = dietById(routeParts()[1]);
-      if (!await ask(`¿Eliminar la dieta "${diet.name}"?`)) return;
+      const before = { diets: [...N().diets], activeDietId: N().activeDietId };
+      undoDel(`Dieta "${diet.name}" eliminada`, () => { Object.assign(N(), before); }, 450);
       N().diets = N().diets.filter(d => d !== diet);
       if (N().activeDietId === diet.id) N().activeDietId = N().diets[0] ? N().diets[0].id : null;
       save(); location.replace('#/nutricion/dietas');
@@ -8048,8 +8061,9 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
     case 'wq-del': {
       const quick = ensureQuick();
       if (quick.length <= 1) return;
-      quick.splice(Number(el.dataset.k), 1);
+      const k = Number(el.dataset.k), [removed] = quick.splice(k, 1);
       save(); render();
+      undoDel(`Botón ${removed.name ? `${removed.name} ` : ''}(${removed.ml} ml) quitado`, () => { const q = ensureQuick(); q.splice(Math.min(k, q.length), 0, removed); });
       break;
     }
     case 'water-auto':
@@ -8059,11 +8073,13 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
     case 'share-workout':
       shareWorkout(el, el.dataset.id);
       break;
-    case 'del-session':
-      if (!await ask('¿Eliminar este entrenamiento del historial?')) return;
+    case 'del-session': {
+      const before = [...db.workouts];
       db.workouts = db.workouts.filter(w => w.id !== id);
       save(); goBack();
+      undoDel('Entrenamiento eliminado', () => { db.workouts = before; }, 450);
       break;
+    }
 
     // Compartir rutinas
     case 'share-routine':
