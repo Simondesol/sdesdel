@@ -669,14 +669,14 @@ function viewDietEditor(id) {
         ${food && food.unitG
           ? `<button type="button" class="chip mode-chip" data-action="item-mode" data-m="${mi}" data-i="${ii}" title="${portionHint(food)}" aria-label="Cambiar entre gramos y unidades">${byPortion(food, it) ? 'u' : 'g'}</button>`
           : `<span class="unit-label">${isUnit(food) ? 'u' : 'g'}</span>`}
-        <button class="icon small danger" data-action="item-del" data-m="${mi}" data-i="${ii}" aria-label="Quitar">✕</button>
+        <button class="icon small danger" data-action="item-del" data-m="${mi}" data-i="${ii}" aria-label="Quitar">${TRASH_ICON}</button>
       </div>`;
     }).join('');
     return `<section class="card meal-edit">
       <div class="meal-title">
         <input class="grow" data-bind="meal-name" data-m="${mi}" value="${esc(meal.name)}" aria-label="Nombre de la comida">
         <button class="icon small" data-action="meal-dup" data-m="${mi}" aria-label="Duplicar comida" title="Duplicar comida">⧉</button>
-        <button class="icon small danger" data-action="meal-del" data-m="${mi}" aria-label="Eliminar comida">✕</button>
+        <button class="icon small danger" data-action="meal-del" data-m="${mi}" aria-label="Eliminar comida">${TRASH_ICON}</button>
       </div>
       ${items || '<p class="muted small" style="margin:6px 0">Agrega alimentos a esta comida.</p>'}
       <form class="add-item" data-form="add-item" data-m="${mi}" novalidate>
@@ -908,7 +908,7 @@ function extrasSection() {
     return `<div class="prog-row">
       <span class="grow">${extraText(x)}</span>
       <span class="bw-right">${fmtKcal(m.kcal)} kcal
-        <button class="icon small danger" data-action="extra-del" data-id="${x.id}" aria-label="Quitar extra">✕</button></span>
+        <button class="icon small danger" data-action="extra-del" data-id="${x.id}" aria-label="Quitar extra">${TRASH_ICON}</button></span>
     </div>`;
   }).join('');
   const form = extraMode === 'food'
@@ -968,6 +968,7 @@ function pickFoodIn(form, id) {
 // Busca primero en tus alimentos (por su código) y si no en Open Food Facts, una base abierta con valores por 100 g.
 // Lo revisas, se guarda en tus alimentos con su código y queda elegido donde lo escaneaste.
 const ZXING_URL = 'https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js';
+const TRASH_ICON = '<svg class="trash" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M5.5 7l1 12a2 2 0 0 0 2 2h7a2 2 0 0 0 2-2l1-12M9 7V4.5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1V7"/></svg>';
 const BARCODE_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V4h3M18 4h3v3M21 17v3h-3M6 20H3v-3M7 8v8M10 8v8M13 8v8M15.5 8v8M18 8v8"/></svg>';
 const $scan = document.createElement('div');
 $scan.hidden = true;
@@ -1192,7 +1193,7 @@ function viewWater() {
         <span class="muted">${hhmmOf(e.at)}</span>
         <span class="bw-right">${e.ml} ml
           <button class="icon small" data-action="water-edit" data-k="${k}" aria-label="Corregir">✏️</button>
-          <button class="icon small danger" data-action="water-del" data-k="${k}" aria-label="Borrar">✕</button>
+          <button class="icon small danger" data-action="water-del" data-k="${k}" aria-label="Borrar">${TRASH_ICON}</button>
         </span>
       </div>`)).reverse().join('');
 
@@ -1240,7 +1241,7 @@ function viewWater() {
         <span class="grow muted">Botón ${k + 1}</span>
         <input class="grams" data-bind="wq-ml" data-k="${k}" inputmode="numeric" value="${q.ml}" autocomplete="off" aria-label="Cantidad en ml del botón ${k + 1}">
         <span class="unit-label">ml</span>
-        <button class="icon small danger" data-action="wq-del" data-k="${k}" ${quick.length <= 1 ? 'disabled' : ''} aria-label="Quitar botón">✕</button>
+        <button class="icon small danger" data-action="wq-del" data-k="${k}" ${quick.length <= 1 ? 'disabled' : ''} aria-label="Quitar botón">${TRASH_ICON}</button>
       </div>`).join('')}
       ${quick.length < 4 ? '<button class="btn ghost" data-action="wq-add">+ Agregar botón</button>' : ''}
     </section>
@@ -1305,7 +1306,7 @@ const effSet = s => ({ w: s.w !== '' && s.w != null ? s.w : s.pw ?? '', r: s.r !
 const lastreEx = ex => ex.unit !== 'placas' && isBwEx(ex);
 const bwEff = (s, bw) => { const e = effSet(s); return bw && (s.w === '' || s.w == null) ? { ...e, w: '0' } : e; };
 const typedSet = s => (s.w !== '' && s.w != null) || (s.r !== '' && s.r != null);
-// La serie se guarda si tiene algo: lo que escribiste o, si no, lo de la vez pasada (para borrar una serie que no hiciste: ✕)
+// La serie se guarda si tiene algo: lo que escribiste o, si no, lo de la vez pasada (para borrar una serie que no hiciste: el basurero)
 const setCounts = s => { const e = effSet(s); return e.w !== '' || e.r !== ''; };
 // Siguiente serie: trae de referencia la anterior
 const nextSet = (sets, rir) => { const last = sets[sets.length - 1], e = last ? effSet(last) : null;
@@ -1542,7 +1543,7 @@ function viewRoutine() {
       <button class="chip" data-action="toggle-unit" data-i="${i}" aria-label="Cambiar unidad">${ex.unit}</button>
       ${alt ? '<span class="grow"></span>' : `<button class="icon" data-action="move" data-i="${i}" data-d="-1" ${blockOf(i) === 0 ? 'disabled' : ''} aria-label="Subir">↑</button>
       <button class="icon" data-action="move" data-i="${i}" data-d="1" ${blockOf(i) === blocks.length - 1 ? 'disabled' : ''} aria-label="Bajar">↓</button>`}
-      <button class="icon danger" data-action="del-ex" data-i="${i}" aria-label="${alt ? 'Quitar alternativa' : 'Quitar'}">✕</button>
+      <button class="icon danger" data-action="del-ex" data-i="${i}" aria-label="${alt ? 'Quitar alternativa' : 'Quitar'}">${TRASH_ICON}</button>
       <div class="ex-goals" aria-label="Objetivo (opcional)">
         <label>Series<input data-bind="ex-goal-sets" data-i="${i}" inputmode="numeric" value="${ex.goalSets || ''}" placeholder="–" autocomplete="off" aria-label="Series objetivo"></label>
         <div class="reps-cell" data-i="${i}">${repsCell(ex, i)}</div>
@@ -1739,7 +1740,7 @@ function viewWorkout() {
         <input inputmode="numeric" data-bind="dr" data-i="${i}" data-j="${j}" data-k="${k}" value="${esc(x.r)}" placeholder="${esc(x.pr || 'reps')}" aria-label="Repeticiones bajada ${k + 1} de la serie ${label}">
         ${ex.rir ? '<span></span>' : ''}
         <span></span>
-        <button class="set-del" data-action="del-drop" data-i="${i}" data-j="${j}" data-k="${k}" aria-label="Quitar bajada">✕</button>
+        <button class="set-del" data-action="del-drop" data-i="${i}" data-j="${j}" data-k="${k}" aria-label="Quitar bajada">${TRASH_ICON}</button>
       </div>`).join('');
     const wPh = lastreEx(ex) ? '0' : s.pw || (ex.unit === 'placas' ? 'placas' : 'peso');
     return `
@@ -1751,7 +1752,7 @@ function viewWorkout() {
         <input inputmode="numeric" data-bind="r" data-i="${i}" data-j="${j}" value="${esc(s.r)}" placeholder="${esc(repsFor(ex, j) || s.pr || 'reps')}" aria-label="Repeticiones serie ${label}">
         ${ex.rir ? `<input class="rir" inputmode="numeric" data-bind="rir" data-i="${i}" data-j="${j}" value="${esc(s.rir ?? '')}" placeholder="${esc(rirFor(ex, j) || s.prir || 'RIR')}" aria-label="RIR serie ${label}">` : ''}
         <span class="mark-cell" data-mark="${i}-${j}">${markSpan(liveCmp(s, ex, best[j]))}</span>
-        <button class="set-del" data-action="del-set" data-i="${i}" data-j="${j}" aria-label="Borrar serie">✕</button>
+        <button class="set-del" data-action="del-set" data-i="${i}" data-j="${j}" aria-label="Borrar serie">${TRASH_ICON}</button>
       </div>
       ${drops}
       <div class="set-ref"><span>${best[j] ? `Mejor: ${fmtNum(best[j].w)} ${best[j].unit} × ${fmtNum(best[j].r)}` : ''}</span>
@@ -4804,7 +4805,7 @@ function viewSkinfolds() {
     <div class="prog-row">
       <span class="muted">${bwDate(e.date)}</span>
       <span class="bw-right"><strong>${fmtNum(e.bf)} %</strong> <span class="muted small">${sites.map(([k]) => fmtNum(e.s[k] ?? 0)).join(' · ')} mm</span>
-        <button class="icon small danger" data-action="del-skin" data-date="${e.date}" aria-label="Borrar medición">✕</button></span>
+        <button class="icon small danger" data-action="del-skin" data-date="${e.date}" aria-label="Borrar medición">${TRASH_ICON}</button></span>
     </div>`).join('');
 
   return `${header('Pliegues', { back: true, sub: `Jackson-Pollock 3 pliegues · ${sites.map(([, n]) => n.toLowerCase()).join(', ')}` })}
@@ -4926,7 +4927,7 @@ function viewMeasures() {
     <div class="prog-row">
       <span class="muted">${bwDate(e.date)}</span>
       <span class="bw-right"><span class="muted small measure-sum">${MEASURE_SITES.filter(([k]) => e.m[k] != null).map(([k, n]) => `${n} ${fmtNum(e.m[k])}`).join(' · ')}</span>
-        <button class="icon small danger" data-action="del-measure" data-date="${e.date}" aria-label="Borrar medición">✕</button></span>
+        <button class="icon small danger" data-action="del-measure" data-date="${e.date}" aria-label="Borrar medición">${TRASH_ICON}</button></span>
     </div>`).join('');
 
   return `${header('Cuerpo', {})}${bodyTabs('medidas')}
@@ -5217,7 +5218,7 @@ function closeTour() { tourOpen = false; setTourSeen(); render(); }
 // Consejo la primera vez que entras a una sección (se cierra con ✕ y no vuelve a salir)
 const TIPS = {
   rutinas: 'Toca una rutina para editarla y Empezar para entrenarla. Si tienes un programa activo, la que te toca hoy aparece marcada.',
-  entrenar: 'En gris está el peso de la vez anterior y tu objetivo de repeticiones. Si dejas una casilla vacía, se guarda lo que hiciste la vez anterior; si cambia, escribe lo nuevo. Un ejercicio en el que no anotas nada no se guarda. Si no hiciste una serie, bórrala con ✕. ▲ superaste tu mejor serie, = igualaste, ▼ quedaste bajo.',
+  entrenar: 'En gris está el peso de la vez anterior y tu objetivo de repeticiones. Si dejas una casilla vacía, se guarda lo que hiciste la vez anterior; si cambia, escribe lo nuevo. Un ejercicio en el que no anotas nada no se guarda. Si no hiciste una serie, bórrala con el basurero. ▲ superaste tu mejor serie, = igualaste, ▼ quedaste bajo.',
   programas: 'Los programas listos traen la semana armada según tus días y nivel. El programa activo es el que te dice qué rutina te toca cada día.',
   historial: 'Toca un día del calendario para ver lo que entrenaste. Desde cada entreno lo puedes editar o compartir.',
   progreso: 'Toca un ejercicio para ver su gráfico y tus récords.',
@@ -5344,7 +5345,7 @@ function viewSleep() {
     <div class="prog-row">
       <span class="muted">${bwDate(e.date)}</span>
       <span class="bw-right">${fmtH(e.h)}
-        <button class="icon small danger" data-action="del-sleep" data-date="${e.date}" aria-label="Borrar registro">✕</button>
+        <button class="icon small danger" data-action="del-sleep" data-date="${e.date}" aria-label="Borrar registro">${TRASH_ICON}</button>
       </span>
     </div>`).join('');
 
@@ -6450,7 +6451,7 @@ function swapSheetHtml() {
       <button type="button" class="food-pick" data-action="swap-to" data-id="${a.id}">
         <span class="grow"><strong>${a.orig ? 'Volver a ' : ''}${esc(a.name)}</strong><span class="muted small">${lastTxt(a)}</span></span><span class="chev">›</span></button>
       ${a.orig ? '' : `<button class="btn small-btn" data-action="swap-alt-edit" data-id="${a.id}" aria-label="Editar ${esc(a.name)}">Editar</button>
-        <button class="icon small danger" data-action="swap-alt-del" data-id="${a.id}" aria-label="Quitar ${esc(a.name)} de tus alternativas">✕</button>`}</div>`;
+        <button class="icon small danger" data-action="swap-alt-del" data-id="${a.id}" aria-label="Quitar ${esc(a.name)} de tus alternativas">${TRASH_ICON}</button>`}</div>`;
   const always = !!(rex && swapPick.always);
   return `<div class="modal-wrap">
     <div class="modal-back" data-action="swap-close"></div>

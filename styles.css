@@ -934,6 +934,9 @@ section.active-prog strong { color: var(--accent); }
 .set.has-rir { grid-template-columns: 18px 1fr 20px 10px 1fr 44px 20px 26px; }
 .set-del { background: none; border: 0; color: var(--muted); font: inherit; font-size: 15px; cursor: pointer; padding: 0; height: 44px; opacity: .7; }
 .set-del:hover { color: var(--danger, #e5534b); opacity: 1; }
+.set-del:has(.trash) { color: var(--danger); opacity: .8; width: 28px; display: grid; place-items: center; }
+svg.trash { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; display: block; margin: auto; }
+.icon.small svg.trash { width: 18px; height: 18px; }
 .set input::placeholder { color: #7b8396; }
 
 /* Inicio: botones de Entreno */
