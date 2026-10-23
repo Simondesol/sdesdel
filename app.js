@@ -108,10 +108,9 @@ function fmtDuration(sec) {
 // Las libras se pasan a kg para poder comparar ejercicios que cambiaron de unidad.
 const toKg = (w, unit) => (w == null ? 0 : unit === 'lb' ? w * 0.45359237 : w);
 const setStrength = x => epley((x.bw || 0) + toKg(x.w || 0, x.unit), x.r || 1, x.rir);
-// Con peso corporal: tu serie contra la mejor se compara con el mismo peso tuyo (el de `a`), así 40 kg × 6 de lastre
-// sigue siendo igual a 40 kg × 6 aunque bajaste de peso. ownBw: cada una con lo que pesabas ese día (para elegir la mejor)
-function cmpSet(a, b, ownBw = false) {
-  const diff = setStrength(a) - setStrength(ownBw ? b : { ...b, bw: a.bw });
+// Con peso corporal, cada serie cuenta con lo que pesabas ese día (más peso tuyo con el mismo lastre = moviste más)
+function cmpSet(a, b) {
+  const diff = setStrength(a) - setStrength(b);
   return Math.abs(diff) < 0.05 ? 0 : diff > 0 ? 1 : -1;
 }
 // Tu peso de ese día, solo en ejercicios con peso corporal
@@ -129,7 +128,7 @@ function bestSets(exerciseId, before = db.workouts.length, unit = null, rid = nu
     const bw = bwFor(ex, db.workouts[k].date);   // con peso corporal, cada serie con lo que pesabas ese día
     ex.sets.forEach((s, j) => {
       const c = { w: s.w, r: s.r, rir: s.rir, unit: ex.unit, bw };
-      if (!best[j] || cmpSet(c, best[j], true) > 0) best[j] = c;
+      if (!best[j] || cmpSet(c, best[j]) > 0) best[j] = c;
     });
   }
   return best;
