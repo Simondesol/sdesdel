@@ -1026,6 +1026,20 @@ p.reps-by { display: block; }
 .student-main { flex: 1; display: flex; align-items: center; gap: 8px; padding: 12px 6px 12px 14px; background: none; border: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .student-main .grow { display: grid; gap: 3px; }
 .student-alert { color: var(--danger); font-size: 13px; font-weight: 600; }
+.student.locked { opacity: .55; }
+.lock-tag { flex: none; font-size: 12px; font-weight: 700; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 3px 9px; }
+.plan-bar { display: flex; align-items: center; gap: 10px; }
+.plan-bar .grow { display: grid; gap: 2px; }
+.plan-bar .small-btn { flex: none; display: inline-flex; align-items: center; padding: 0 14px; }
+.plan-bar.warn { border-color: var(--accent); }
+.tier-card { display: grid; gap: 6px; }
+.tier-card.on { border-color: var(--accent); }
+.tier-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 18px; }
+.tier-price { font-size: 26px; font-weight: 800; margin: 2px 0 6px; }
+.tier-price .small { font-weight: 500; }
+.pay-msg { display: grid; gap: 2px; }
+.pay-msg.ok { border-color: var(--accent); }
+.pay-msg.bad { border-color: var(--danger); }
 .view-bar { position: sticky; top: 0; z-index: 7; display: flex; align-items: center; gap: 10px; margin: 0 -16px; padding: 8px 16px;
   background: var(--surface); color: var(--text); border-bottom: 2px solid var(--accent); }
 .view-bar strong { font-size: 18px; }

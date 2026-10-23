@@ -3,11 +3,22 @@ rules_version = '2';
 // Copia de las reglas publicadas en la consola de Firebase → Firestore → Reglas.
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Coach de este alumno: el alumno creó coachLinks/{uid} con el código de ese coach
+    // Coach de este alumno: el alumno creó coachLinks/{uid} con el código de ese coach,
+    // y el alumno cabe en su plan (el servidor le da un puesto: 1, 2, 3… por orden de llegada)
     function isCoachOf(uid) {
       return request.auth != null
         && exists(/databases/$(database)/documents/coachLinks/$(uid))
-        && get(/databases/$(database)/documents/coachLinks/$(uid)).data.coachUid == request.auth.uid;
+        && get(/databases/$(database)/documents/coachLinks/$(uid)).data.coachUid == request.auth.uid
+        && slotAllowed(get(/databases/$(database)/documents/coachLinks/$(uid)).data);
+    }
+    // Gratis: los 5 primeros. Con plan vigente: hasta su máximo (max 0 = sin límite)
+    function slotAllowed(link) {
+      return ('slot' in link) && (link.slot <= 5 || planCovers(link.slot));
+    }
+    function planCovers(slot) {
+      let plan = /databases/$(database)/documents/plans/$(request.auth.uid);
+      return exists(plan) && get(plan).data.until > request.time
+        && (get(plan).data.max == 0 || slot <= get(plan).data.max);
     }
 
     // Cada usuario lee y escribe sus propios datos. Su coach (si tiene) solo puede leerlos.
@@ -96,6 +107,11 @@ service cloud.firestore {
           && (!('note' in request.resource.data) || request.resource.data.note.size() <= 1500);
         allow delete: if request.auth != null && request.auth.uid == studentUid;
       }
+    }
+
+    // Plan de coach: solo el servidor lo escribe (pagos de Mercado Pago); el coach lee el suyo
+    match /plans/{uid} {
+      allow get: if request.auth != null && request.auth.uid == uid;
     }
 
     // Chats 1 a 1: solo los dos gymbros los ven. Se crean usando el código de gymbro (o de coach) del otro.

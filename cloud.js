@@ -13,6 +13,7 @@
 //   coachLinks/{uid}/edits/{id} → cambio del coach (rutina, programa, plan, dieta, objetivo); la app del alumno lo aplica y lo borra
 //   coachLinks/{uid}/comments/{idEntreno} → comentario del coach sobre un entreno { text, at, by }
 //   coachLinks/{uid}/checkins/{fecha}     → check-in semanal del alumno
+//   plans/{uidCoach}            → plan del coach { tier, max, until, trial } (lo escribe solo el servidor, al pagar)
 import { firebaseConfig } from './firebase-config.js';
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.8.0/firebase-app.js';
 import {
@@ -24,11 +25,13 @@ import {
   getFirestore, doc, collection, getDoc, getDocs, setDoc, deleteDoc, onSnapshot, serverTimestamp,
   query, where, orderBy, limitToLast, updateDoc, writeBatch, Timestamp,
 } from 'https://www.gstatic.com/firebasejs/12.8.0/firebase-firestore.js';
+import { getFunctions, httpsCallable } from 'https://www.gstatic.com/firebasejs/12.8.0/firebase-functions.js';
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);            // la sesión queda guardada en el teléfono hasta cerrar sesión
 auth.languageCode = 'es';             // correos de recuperación en español
 const fs = getFirestore(app);
+const fns = getFunctions(app, 'us-central1');   // programa de Desdel en el servidor (Servidor/functions)
 
 const mainRef = uid => doc(fs, 'users', uid, 'data', 'main');
 const workoutsRef = uid => collection(fs, 'users', uid, 'workouts');
@@ -231,6 +234,17 @@ export function listenStudents(uid, cb, onError = () => {}) {
   return onSnapshot(query(collection(fs, 'coachLinks'), where('coachUid', '==', uid)),
     snap => cb(snap.docs.map(d => d.data())), onError);
 }
+// Plan del coach (prueba gratis, Coach, Coach Pro). until en milisegundos
+export function listenPlan(uid, cb, onError = () => {}) {
+  return onSnapshot(doc(fs, 'plans', uid), snap => {
+    const p = snap.exists() ? snap.data() : null;
+    cb(p && { tier: p.tier, max: p.max, trial: !!p.trial, until: p.until && p.until.toMillis ? p.until.toMillis() : p.until });
+  }, onError);
+}
+// El servidor crea la prueba gratis (la primera vez) y le da a cada alumno su puesto (1, 2, 3… por orden de llegada)
+export const coachSync = () => httpsCallable(fns, 'coachSync')().then(r => r.data);
+// Link de pago de Mercado Pago para un plan ('coach' | 'pro') y período ('mes' | 'anual')
+export const mpCheckout = (plan, period) => httpsCallable(fns, 'mpCheckout')({ plan, period }).then(r => r.data);
 export const putCoachEdit = (uid, id, data) => setDoc(doc(editsRef(uid), id), data);
 export const deleteCoachEdit = (uid, id) => deleteDoc(doc(editsRef(uid), id));
 export async function listCoachEdits(uid) {

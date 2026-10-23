@@ -2496,6 +2496,31 @@ async function shareWorkout(btn, id) {
 let myCoach = null;                 // tu vínculo como alumno (null = sin coach)
 let stopMyCoach = () => {}, stopCoachEdits = () => {};
 let students = [], studentsLoaded = false, stopStudents = () => {};
+// Plan del coach: gratis ve a sus 5 primeros alumnos; Coach hasta 20; Coach Pro sin límite.
+// El servidor le da a cada alumno su puesto (slot: 1, 2, 3… por orden de llegada) y las reglas de Firestore lo hacen cumplir.
+let coachPlan = null, coachPlanLoaded = false, stopPlan = () => {}, slotSyncBusy = false, slotSyncAt = 0, slotSyncTimer = null;
+let planPeriod = 'mes', planBusy = null, payResult = null;
+const FREE_STUDENTS = 5;
+const PLAN_INFO = {
+  coach: { name: 'Coach', max: 20, mes: 4990, anual: 49990 },
+  pro: { name: 'Coach Pro', max: 0, mes: 9990, anual: 99990 },
+};
+const fmtCLP = n => `$${Math.round(n).toLocaleString('es-CL')}`;
+const planActive = () => !!coachPlan && coachPlan.until > Date.now();
+const studentLimit = () => (planActive() ? coachPlan.max || Infinity : FREE_STUDENTS);
+// Sin puesto todavía (recién vinculado): se muestra normal hasta que el servidor se lo dé
+const canSeeStudent = l => !l.slot || l.slot <= FREE_STUDENTS || (planActive() && (!coachPlan.max || l.slot <= coachPlan.max));
+const planDaysLeft = () => (coachPlan ? Math.ceil((coachPlan.until - Date.now()) / 864e5) : 0);
+// Puestos 1, 2, 3… sin huecos; si falta alguno (alumno nuevo o uno que se fue), el servidor los ordena
+const slotsOk = list => list.map(l => l.slot || 0).sort((x, y) => x - y).every((v, k) => v === k + 1);
+// Como máximo una vez cada 10 segundos; si toca antes, queda programada (así un alumno nuevo siempre recibe su puesto)
+function syncSlots(force = false) {
+  if (slotSyncBusy || slotSyncTimer || viewing || !cloud.coachSync) return;
+  const wait = force ? 0 : slotSyncAt + 10000 - Date.now();
+  if (wait > 0) { slotSyncTimer = setTimeout(() => { slotSyncTimer = null; if (!slotsOk(students)) syncSlots(true); }, wait); return; }
+  slotSyncBusy = true; slotSyncAt = Date.now();
+  cloud.coachSync().catch(e => console.warn('coachSync', e)).finally(() => { slotSyncBusy = false; });
+}
 let myCoachLoaded = false;
 let coachComments = {}, stopComments = () => {};   // alumno: comentarios de tu coach por entreno
 let viewing = null;                 // alumno que estás viendo: { uid, name, own (tus datos), base (sus rutinas), queued }
@@ -2552,14 +2577,23 @@ function startStudents(uid) {
   studentsLoaded = false;
   stopStudents = cloud.listenStudents(uid, list => {
     students = list; studentsLoaded = true;
-    if (['social', 'alumnos'].includes(routeParts()[0])) refresh();
+    if (!slotsOk(list)) syncSlots();
+    if (['social', 'alumnos', 'planes', 'asignar'].includes(routeParts()[0])) refresh();
   }, () => { studentsLoaded = true; });
+  stopPlan();
+  coachPlanLoaded = false;
+  stopPlan = cloud.listenPlan ? cloud.listenPlan(uid, p => {
+    coachPlan = p; coachPlanLoaded = true;
+    if (['social', 'alumnos', 'planes', 'asignar'].includes(routeParts()[0])) refresh();
+  }, () => { coachPlanLoaded = true; }) : () => {};
+  syncSlots(true);   // la primera vez crea la prueba gratis de 1 mes
 }
 function stopCoach() {
   stopMyCoach(); stopMyCoach = () => {};
   stopCoachEdits(); stopCoachEdits = () => {};
   stopComments(); stopComments = () => {}; coachComments = {};
   stopStudents(); stopStudents = () => {};
+  stopPlan(); stopPlan = () => {}; coachPlan = null; coachPlanLoaded = false;
   myCoach = null; myCoachLoaded = false; students = []; studentsLoaded = false;
   if (viewing) { viewing = null; document.body.classList.remove('viewing'); }
 }
@@ -2567,7 +2601,7 @@ function setCoachMode(on) {
   db.body.coach = on || undefined;
   if (!on) delete db.body.coach;
   save();
-  if (on) startStudents(user.uid); else { stopStudents(); stopStudents = () => {}; students = []; }
+  if (on) startStudents(user.uid); else { stopStudents(); stopStudents = () => {}; students = []; stopPlan(); stopPlan = () => {}; coachPlan = null; }
   if (on && routeParts()[0] !== 'alumnos') go('#/alumnos'); else render();
 }
 
@@ -3047,7 +3081,7 @@ function viewAssign() {
     ${assignSel && assignSel.kind === 'p' ? `<label class="card toggle-row"><input type="checkbox" data-action="assign-act" ${assignActivate ? 'checked' : ''}>
       <span class="grow">Dejarlo como su programa activo<br><span class="muted small">En su Inicio verá qué le toca cada día.</span></span></label>` : ''}
     <h2>A quién</h2>
-    ${students.length ? `<section class="card profile-fields">${students.map(x => `<label class="toggle-row small-toggle">
+    ${students.length ? `<section class="card profile-fields">${students.filter(canSeeStudent).map(x => `<label class="toggle-row small-toggle">
       <input type="checkbox" data-action="assign-to" data-uid="${esc(x.studentUid)}" ${assignTo.has(x.studentUid) ? 'checked' : ''}>
       <span class="grow">${esc(x.studentName || 'Alumno')}</span></label>`).join('')}</section>` : '<p class="muted card">Todavía no tienes alumnos.</p>'}
     <button class="btn primary block" data-action="assign-go" ${ready ? '' : 'disabled'} style="margin-top:14px">Asignar${assignTo.size ? ` a ${plural(assignTo.size, 'alumno')}` : ''}</button>
@@ -3251,14 +3285,27 @@ function viewStudents() {
           <li>Comenta sus entrenos y recibe su check-in semanal.</li>
           <li>Ve de un vistazo quién entrenó esta semana y quién no.</li>
           <li>Tus alumnos se vinculan con tu código de coach y pueden desvincularse cuando quieran.</li>
+          <li>Gratis hasta 5 alumnos. Para más, planes desde ${fmtCLP(PLAN_INFO.coach.mes)} al mes. Al activarlo tienes 1 mes de prueba con alumnos sin límite.</li>
         </ul>
         <span class="muted small">Puedes seguir usando Desdel para tus propios entrenamientos.</span>
         <button class="btn primary block" data-action="coach-on">Activar modo coach</button>
       </section>`;
   }
   const code = me().body.coachCode;
-  const sorted = students.slice().sort((a, b) => ((b.summary || {}).last?.date || '').localeCompare((a.summary || {}).last?.date || ''));
+  // Los que caben en tu plan primero (por último entreno); los bloqueados al final
+  const sorted = students.slice().sort((a, b) => canSeeStudent(b) - canSeeStudent(a)
+    || ((b.summary || {}).last?.date || '').localeCompare((a.summary || {}).last?.date || ''));
   const list = sorted.map(l => {
+    if (!canSeeStudent(l)) {
+      return `<section class="card student locked">
+      <button class="student-main" data-action="student-locked">
+        ${avatarHtml(l.studentName || 'Alumno', null)}
+        <span class="grow"><strong>${esc(l.studentName || 'Alumno')}</strong>
+          <span class="muted small">No cabe en tu plan. Pasa a ${l.slot > PLAN_INFO.coach.max ? 'Coach Pro' : 'Coach'} para verlo.</span></span>
+        <span class="lock-tag">Bloqueado</span>
+      </button>
+    </section>`;
+    }
     const sm = l.summary || {}, last = sm.last, idle = last ? daysSince(last.date) : null;
     loadProfile(l.studentUid);   // su foto de perfil (si tiene)
     return `<section class="card student">
@@ -3290,11 +3337,73 @@ function viewStudents() {
       <button class="btn primary small-btn" data-action="coach-send">+ Invitar alumno</button>
     </section>` : codeBox;
   return `${header('Mis alumnos', { back: true, sub: 'Modo coach' })}
+    ${planBarHtml()}
     ${students.length ? '' : codeBox}
     ${students.length ? '<a class="btn block center" href="#/asignar" style="margin:0 0 12px">Asignar rutina o programa</a>' : ''}
     ${!studentsLoaded ? '<p class="empty">Cargando…</p>' : list || '<p class="empty">Todavía no tienes alumnos. Mándales tu código: en Desdel van a Social → Tengo coach.</p>'}
     ${students.length ? invite : ''}
     <p class="muted small" style="margin-top:20px">Para dejar de usar el modo coach, ve a Cuenta.</p>`;
+}
+
+// Tu plan, arriba de Mis alumnos: cuántos ves, hasta cuándo, y renovar si está por vencer
+function planBarHtml() {
+  if (!coachPlanLoaded) return '';
+  const n = students.length, seen = students.filter(canSeeStudent).length, left = planDaysLeft();
+  const until = coachPlan ? fmtDMY(new Date(coachPlan.until).toISOString().slice(0, 10)) : '';
+  let title, sub, btn = 'Ver planes', warn = false;
+  if (planActive()) {
+    const p = PLAN_INFO[coachPlan.tier] || PLAN_INFO.pro;
+    title = coachPlan.trial ? `Prueba gratis de ${p.name}` : `Plan ${p.name}`;
+    sub = `${p.max ? `${n} de ${p.max} alumnos` : 'Alumnos sin límite'} · hasta el ${until}`;
+    if (left <= 5) { warn = true; sub = `Vence ${left <= 1 ? 'mañana' : `en ${left} días`} (${until}). Después ves solo a tus ${FREE_STUDENTS} primeros alumnos.`; btn = coachPlan.trial ? 'Ver planes' : 'Renovar'; }
+  } else {
+    title = coachPlan && !coachPlan.trial ? 'Tu plan venció' : 'Plan gratis';
+    warn = n > seen;
+    sub = n > seen ? `Ves ${seen} de ${n} alumnos. Pasa a Coach para verlos a todos.` : `${n} de ${FREE_STUDENTS} alumnos gratis`;
+    if (coachPlan && !coachPlan.trial) btn = 'Renovar';
+  }
+  return `<section class="card plan-bar${warn ? ' warn' : ''}">
+    <span class="grow"><strong>${title}</strong><span class="muted small">${sub}</span></span>
+    <a class="btn small-btn${warn ? ' primary' : ''}" href="#/planes">${btn}</a>
+  </section>`;
+}
+
+// Planes del modo coach: gratis hasta 5 alumnos, Coach hasta 20, Coach Pro sin límite. Se paga en Mercado Pago (1 mes o 1 año)
+function viewPlans() {
+  if (!coachOn()) { location.replace('#/alumnos'); return ''; }
+  const n = students.length, cur = planActive() ? coachPlan.tier : 'free';
+  const result = payResult === 'ok' ? '<section class="card pay-msg ok"><strong>¡Pago recibido!</strong><span class="muted small">Tu plan se activa en unos segundos.</span></section>'
+    : payResult === 'pendiente' ? '<section class="card pay-msg"><strong>Tu pago está pendiente</strong><span class="muted small">Cuando Mercado Pago lo apruebe, tu plan se activa solo.</span></section>'
+    : payResult === 'no' ? '<section class="card pay-msg bad"><strong>El pago no se completó</strong><span class="muted small">No se te cobró. Puedes intentarlo de nuevo.</span></section>' : '';
+  const card = (key, name, who, price) => {
+    const on = cur === key, paid = key !== 'free';
+    const busy = planBusy === key;
+    return `<section class="card tier-card${on ? ' on' : ''}">
+      <div class="tier-head"><strong>${name}</strong>${on ? `<span class="badge on">${coachPlan && coachPlan.trial && paid ? 'Prueba' : 'Tu plan'}</span>` : ''}</div>
+      <span class="muted small">${who}</span>
+      <div class="tier-price">${price}</div>
+      ${paid ? `<button class="btn ${on ? '' : 'primary'} block" data-action="plan-pay" data-plan="${key}" ${planBusy ? 'disabled' : ''}>${busy ? 'Abriendo Mercado Pago…' : on && !coachPlan.trial ? 'Renovar con Mercado Pago' : 'Pagar con Mercado Pago'}</button>` : ''}
+    </section>`;
+  };
+  const per = planPeriod === 'mes' ? 'al mes' : 'al año';
+  const status = planActive()
+    ? `${coachPlan.trial ? 'Prueba gratis' : `Plan ${(PLAN_INFO[coachPlan.tier] || PLAN_INFO.pro).name}`} hasta el ${fmtDMY(new Date(coachPlan.until).toISOString().slice(0, 10))}. Si pagas ahora, el tiempo que te queda se suma.`
+    : `Hoy tienes ${plural(n, 'alumno')}. Gratis ves a los ${FREE_STUDENTS} primeros.`;
+  return `${header('Planes', { back: true, sub: 'Modo coach' })}
+    ${result}
+    <p class="muted small" style="margin:0 0 12px">${status}</p>
+    <div class="range" role="tablist">
+      <button class="${planPeriod === 'mes' ? 'on' : ''}" data-action="plan-period" data-v="mes" role="tab" aria-selected="${planPeriod === 'mes'}">Mensual</button>
+      <button class="${planPeriod === 'anual' ? 'on' : ''}" data-action="plan-period" data-v="anual" role="tab" aria-selected="${planPeriod === 'anual'}">Anual · 2 meses gratis</button>
+    </div>
+    ${card('free', 'Gratis', `Hasta ${FREE_STUDENTS} alumnos`, '$0')}
+    ${card('coach', PLAN_INFO.coach.name, `Hasta ${PLAN_INFO.coach.max} alumnos`, `${fmtCLP(PLAN_INFO.coach[planPeriod])} <span class="muted small">${per}</span>`)}
+    ${card('pro', PLAN_INFO.pro.name, 'Alumnos sin límite', `${fmtCLP(PLAN_INFO.pro[planPeriod])} <span class="muted small">${per}</span>`)}
+    <ul class="guide-ul muted small">
+      <li>Pagas en Mercado Pago con tarjeta o saldo. No se renueva solo: te avisamos antes de que venza.</li>
+      <li>Si no renuevas, tus alumnos siguen vinculados y sus datos no se pierden; ves solo a los ${FREE_STUDENTS} primeros que se unieron.</li>
+      <li>Todo lo demás de Desdel sigue gratis.</li>
+    </ul>`;
 }
 
 function viewMyCoach() {
@@ -5522,6 +5631,7 @@ function render() {
     case 'alumnos': html = viewStudents(); break;
     case 'coach': html = viewMyCoach(); break;
     case 'asignar': html = viewAssign(); break;
+    case 'planes': html = viewPlans(); break;
     case 'checkin': html = viewCheckin(); break;
     case 'gymbro': html = viewAddGymbro(); break;
     case 'chat': html = viewChat(arg); break;
@@ -5574,7 +5684,7 @@ function render() {
     historial: 'entreno', sesion: 'entreno', progreso: 'entreno', ejercicio: 'entreno',
     nutricion: 'nutricion', alimento: 'nutricion', dieta: 'nutricion', objetivo: 'nutricion',
     peso: 'cuerpo', grasa: 'cuerpo', pliegues: 'cuerpo', medidas: 'cuerpo', fotos: 'cuerpo',
-    social: 'social', gymbro: 'social', perfil: 'social', privacidad: 'social', alumnos: 'social', coach: 'social', asignar: 'social',
+    social: 'social', gymbro: 'social', perfil: 'social', privacidad: 'social', alumnos: 'social', coach: 'social', asignar: 'social', planes: 'social',
   };
   tab = ['entrenar', 'editar', 'chat'].includes(screen) ? null : NAV[screen] || 'inicio';
   $tabs.hidden = !tab;
@@ -7142,6 +7252,29 @@ $app.addEventListener('click', async e => {
       coachCodeError = false;
       render();
       break;
+    case 'student-locked':
+      go('#/planes');
+      break;
+    case 'plan-period':
+      planPeriod = el.dataset.v === 'anual' ? 'anual' : 'mes';
+      render();
+      break;
+    case 'plan-pay': {
+      if (planBusy) return;
+      planBusy = el.dataset.plan; payResult = null;
+      render();
+      try {
+        const out = await withTimeout(cloud.mpCheckout(planBusy, planPeriod));
+        location.href = out.url;   // Mercado Pago; al terminar vuelve con ?pago=ok | pendiente | no
+        return;
+      } catch (e) {
+        console.warn('mpCheckout', e);
+        notice('No se pudo abrir Mercado Pago. Revisa tu internet e intenta de nuevo.');
+      }
+      planBusy = null;
+      render();
+      break;
+    }
     case 'student-view': {
       const link = students.find(x => x.studentUid === el.dataset.uid);
       if (link) viewStudent(link, el);
@@ -8550,6 +8683,12 @@ if (inAppName && !isInstalled && sessionStorage.getItem('desdel-inapp-ok') !== '
   const u = new URL(location.href);
   u.searchParams.delete('ig'); u.hash = '';
   inApp = { app: inAppName, url: u.href, android: /Android/i.test(navigator.userAgent) || (isLocal && linkParams.has('android')) };
+}
+if (linkParams.has('pago')) {
+  payResult = ['ok', 'pendiente', 'no'].includes(linkParams.get('pago')) ? linkParams.get('pago') : null;
+  for (const k of ['pago', 'collection_id', 'collection_status', 'payment_id', 'status', 'external_reference', 'payment_type', 'merchant_order_id', 'preference_id', 'site_id', 'processing_mode', 'merchant_account_id']) linkParams.delete(k);
+  const qs = linkParams.toString();
+  history.replaceState(null, '', `${location.pathname}${qs ? `?${qs}` : ''}#/planes`);
 }
 const linkCode = linkParams.get('r') || linkParams.get('g') || linkParams.get('k');   // r = rutina o dieta, g = gymbro, k = coach
 if (linkCode) {
