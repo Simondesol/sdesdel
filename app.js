@@ -3285,7 +3285,7 @@ function viewStudents() {
           <li>Comenta sus entrenos y recibe su check-in semanal.</li>
           <li>Ve de un vistazo quién entrenó esta semana y quién no.</li>
           <li>Tus alumnos se vinculan con tu código de coach y pueden desvincularse cuando quieran.</li>
-          <li>Gratis hasta 5 alumnos. Para más, planes desde ${fmtCLP(PLAN_INFO.coach.mes)} al mes. Al activarlo tienes 1 mes de prueba con alumnos sin límite.</li>
+          <li>Gratis hasta 5 alumnos. Para más, planes desde ${fmtCLP(PLAN_INFO.coach.mes)} al mes. Cuando llegues a tu 6.º alumno tienes 1 mes de prueba gratis con alumnos sin límite.</li>
         </ul>
         <span class="muted small">Puedes seguir usando Desdel para tus propios entrenamientos.</span>
         <button class="btn primary block" data-action="coach-on">Activar modo coach</button>
@@ -3359,7 +3359,8 @@ function planBarHtml() {
   } else {
     title = coachPlan && !coachPlan.trial ? 'Tu plan venció' : 'Plan gratis';
     warn = n > seen;
-    sub = n > seen ? `Ves ${seen} de ${n} alumnos. Pasa a Coach para verlos a todos.` : `${n} de ${FREE_STUDENTS} alumnos gratis`;
+    sub = n > seen ? `Ves ${seen} de ${n} alumnos. Pasa a Coach para verlos a todos.`
+      : `${n} de ${FREE_STUDENTS} alumnos gratis${coachPlan ? '' : ' · con tu 6.º alumno tienes 1 mes de prueba con alumnos sin límite'}`;
     if (coachPlan && !coachPlan.trial) btn = 'Renovar';
   }
   return `<section class="card plan-bar${warn ? ' warn' : ''}">
@@ -3388,7 +3389,7 @@ function viewPlans() {
   const per = planPeriod === 'mes' ? 'al mes' : 'al año';
   const status = planActive()
     ? `${coachPlan.trial ? 'Prueba gratis' : `Plan ${(PLAN_INFO[coachPlan.tier] || PLAN_INFO.pro).name}`} hasta el ${fmtDMY(new Date(coachPlan.until).toISOString().slice(0, 10))}. Si pagas ahora, el tiempo que te queda se suma.`
-    : `Hoy tienes ${plural(n, 'alumno')}. Gratis ves a los ${FREE_STUDENTS} primeros.`;
+    : `Hoy tienes ${plural(n, 'alumno')}. Gratis ves a los ${FREE_STUDENTS} primeros.${coachPlan ? '' : ' Con tu 6.º alumno tienes 1 mes de prueba de Coach Pro gratis.'}`;
   return `${header('Planes', { back: true, sub: 'Modo coach' })}
     ${result}
     <p class="muted small" style="margin:0 0 12px">${status}</p>
