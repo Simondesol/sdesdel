@@ -2508,8 +2508,8 @@ const PLAN_INFO = {
 const fmtCLP = n => `$${Math.round(n).toLocaleString('es-CL')}`;
 const planActive = () => !!coachPlan && coachPlan.until > Date.now();
 const studentLimit = () => (planActive() ? coachPlan.max || Infinity : FREE_STUDENTS);
-// Sin puesto todavía (recién vinculado): se muestra normal hasta que el servidor se lo dé
-const canSeeStudent = l => !l.slot || l.slot <= FREE_STUDENTS || (planActive() && (!coachPlan.max || l.slot <= coachPlan.max));
+// Sin puesto todavía (recién vinculado) o sin poder leer el plan: se muestra normal (las reglas deciden igual)
+const canSeeStudent = l => !coachPlanLoaded || !l.slot || l.slot <= FREE_STUDENTS || (planActive() && (!coachPlan.max || l.slot <= coachPlan.max));
 const planDaysLeft = () => (coachPlan ? Math.ceil((coachPlan.until - Date.now()) / 864e5) : 0);
 // Puestos 1, 2, 3… sin huecos; si falta alguno (alumno nuevo o uno que se fue), el servidor los ordena
 const slotsOk = list => list.map(l => l.slot || 0).sort((x, y) => x - y).every((v, k) => v === k + 1);
@@ -2585,7 +2585,7 @@ function startStudents(uid) {
   stopPlan = cloud.listenPlan ? cloud.listenPlan(uid, p => {
     coachPlan = p; coachPlanLoaded = true;
     if (['social', 'alumnos', 'planes', 'asignar'].includes(routeParts()[0])) refresh();
-  }, () => { coachPlanLoaded = true; }) : () => {};
+  }, e => console.warn('plan', e)) : () => {};   // sin poder leerlo, no se muestra la barra ni se bloquea a nadie
   syncSlots(true);   // la primera vez crea la prueba gratis de 1 mes
 }
 function stopCoach() {
