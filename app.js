@@ -6167,12 +6167,18 @@ const nextProgramName = () => { let n = db.programs.length + 1; while (db.progra
 // Una alternativa elegida de la lista (se llama igual que la guía) que quedó separada de tu ejercicio con esa misma
 // técnica ("Prensa de piernas" nuevo, cuando ya tenías "Prensa"): pasa a ser tu ejercicio y sus series se juntan con su historial
 function splitSwapClashes() {
-  const main = new Map();   // id de un ejercicio de tus rutinas → su técnica
-  for (const r of db.routines) for (const e of r.exercises) { const g = guideFor(e.name, e.guide); if (g) main.set(e.id, g.id); }
+  // Técnica de cada ejercicio en cada rutina: la misma identidad puede estar en otra rutina con otra técnica
+  const mainOf = new Map();   // id de rutina → (id de ejercicio → técnica)
+  for (const r of db.routines) {
+    const m = new Map(); mainOf.set(r.id, m);
+    for (const e of r.exercises) { const g = guideFor(e.name, e.guide); if (g) m.set(e.id, g.id); }
+  }
   const moved = new Map();  // "id|técnica" → id nuevo
   const target = (id, gid) => { const k = `${id}|${gid}`; if (!moved.has(k)) moved.set(k, uid()); return moved.get(k); };
   let changed = false;
-  const fixList = list => {
+  const fixList = (list, rid) => {
+    const main = mainOf.get(rid);
+    if (!main) return;
     const n = new Map();
     for (const e of list) n.set(e.exerciseId, (n.get(e.exerciseId) || 0) + 1);
     for (const e of list) {
@@ -6181,14 +6187,36 @@ function splitSwapClashes() {
       e.exerciseId = target(e.exerciseId, e.guide); e.name = g.name; delete e.swapOf; changed = true;
     }
   };
-  for (const w of db.workouts) fixList(w.exercises);
-  if (db.draft) fixList(db.draft.exercises);
+  for (const w of db.workouts) fixList(w.exercises, w.routineId);
+  if (db.draft) fixList(db.draft.exercises, db.draft.routineId);
   for (const r of db.routines) for (const e of r.exercises) for (const a of e.alts || []) {
-    const gid = main.get(a.id), g = a.guide && GUIDE_BY_ID.get(a.guide);
+    const gid = mainOf.get(r.id).get(a.id), g = a.guide && GUIDE_BY_ID.get(a.guide);
     if (!gid || !g || a.guide === gid || a.id === e.id) continue;
     a.id = target(a.id, a.guide); a.name = g.name; changed = true;
   }
   return changed;
+}
+function fixJalonGironda() {
+  const J = 'mun8no7a8ffyj', JN = 'mvpdhl72zvyu6';
+  const w24 = db.workouts.find(w => w.exercises.some(e => e.exerciseId === JN && e.guide === 'jalon-unilateral')
+    && w.exercises.some(e => e.exerciseId === J && e.guide === 'remo-polea'));
+  if (!w24) return false;
+  // Ids fijos: si la reparación corre en dos teléfonos, queda igual en los dos
+  const G = 'mvpdgironda01', jal = GUIDE_BY_ID.get('jalon-unilateral').name, gir = GUIDE_BY_ID.get('remo-polea').name;
+  for (const e of w24.exercises) {
+    if (e.exerciseId === J && e.guide === 'remo-polea') Object.assign(e, { exerciseId: G, name: gir });   // el cambio de ese día
+    else if (e.exerciseId === JN) Object.assign(e, { exerciseId: J, name: jal });
+  }
+  for (const w of db.workouts) for (const e of w.exercises) {
+    if (e.exerciseId === JN) Object.assign(e, { exerciseId: J, name: jal });
+    else if (e.exerciseId === J) Object.assign(e, { name: jal, guide: 'jalon-unilateral' });   // tu historial de jalón
+  }
+  for (const r of db.routines) for (const e of r.exercises) {
+    for (const a of e.alts || []) if (a.id === J && a.guide === 'remo-polea') Object.assign(a, { id: G, name: gir });
+    if (e.id === J && e.guide === 'remo-polea') e.id = G;                          // "Remo gironda" de otra rutina: el mismo gironda
+    else if (e.id === J && e.guide && e.guide !== 'jalon-unilateral') e.id = `mvpd${e.guide.replace(/-/g, '').slice(0, 9)}`;   // otro ejercicio (sin historial)
+  }
+  return true;
 }
 function relinkGuideAlts() {
   let changed = false;
@@ -7156,7 +7184,7 @@ async function handleUser(u) {
   status = 'ready';
   planSeen = stable(db.plan || null);
   migrateLoosePlan();
-  if ([splitSwapClashes(), renameOldGuideNames(), relinkGuideAlts(), unifyExerciseIds(), backfillWorkoutGuides(), syncHistoryNames()].some(Boolean)) save();
+  if ([fixJalonGironda(), splitSwapClashes(), renameOldGuideNames(), relinkGuideAlts(), unifyExerciseIds(), backfillWorkoutGuides(), syncHistoryNames()].some(Boolean)) save();
   // Si el teléfono cerró la app en medio del entrenamiento, al abrirla vuelves a él (no al inicio)
   if (firstOpen && db.draft && routeParts()[0] === '') location.replace('#/entrenar');
   firstOpen = false;
