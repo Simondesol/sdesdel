@@ -1540,7 +1540,7 @@ function exSummary(ex) {
   else if (ex.goalSets || ex.goalReps) parts.push('Al fallo');
   if (ex.dropset) parts.push('Dropset');
   if (ex.bw) parts.push('Peso corporal');
-  if (ex.side) parts.push('Por lado');
+  if (ex.side) parts.push('Unilateral');
   if (ex.rest) parts.push(`Rest ${fmtRest(ex.rest)}`);
   if (ex.unit !== 'kg') parts.push(ex.unit);
   return parts.join(' · ') || 'Toca para configurar';
@@ -1573,7 +1573,7 @@ function viewRoutine() {
         <button class="chip toggle ${ex.rir ? 'on' : ''}" data-action="toggle-rir" data-i="${i}" aria-pressed="${!!ex.rir}">RIR</button>
         <button class="chip toggle ${ex.dropset ? 'on' : ''}" data-action="toggle-drop" data-i="${i}" aria-pressed="${!!ex.dropset}">Dropset</button>
         <button class="chip toggle ${ex.bw ? 'on' : ''}" data-action="toggle-bw" data-i="${i}" aria-pressed="${!!ex.bw}" title="Dominadas, dips…: lo que anotas es el lastre">Peso corporal</button>
-        <button class="chip toggle ${ex.side ? 'on' : ''}" data-action="toggle-side" data-i="${i}" aria-pressed="${!!ex.side}" title="Búlgara, remo a una mano…: repeticiones de cada lado">Por lado</button>
+        <button class="chip toggle ${ex.side ? 'on' : ''}" data-action="toggle-side" data-i="${i}" aria-pressed="${!!ex.side}" title="Búlgara, remo a una mano…: repeticiones de cada lado">Unilateral</button>
       </div>
       <button class="link small" data-action="info" data-k="opts" style="justify-self:start">${infoOpen.has('opts') ? 'Ocultar' : '¿Qué hace cada opción?'}</button>
       ${infoBox('opts')}
@@ -7616,7 +7616,7 @@ $app.addEventListener('click', async e => {
       save(); render();
       if (ex[key] && action === 'toggle-drop') showNote('Dropset activado: cuando entrenes, la última serie trae una fila para anotar la bajada de peso.');
       if (ex[key] && action === 'toggle-bw') showNote('Peso corporal activado: cuando entrenes, anota solo el lastre (0 si no usas).');
-      if (ex[key] && action === 'toggle-side') showNote('Por lado activado: en cada serie anotas un peso y las repeticiones de la izquierda y de la derecha.');
+      if (ex[key] && action === 'toggle-side') showNote('Unilateral activado: en cada serie anotas un peso y las repeticiones de la izquierda y de la derecha.');
       break;
     }
     case 'toggle-rir': {
