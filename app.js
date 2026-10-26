@@ -977,6 +977,7 @@ function pickFoodIn(form, id) {
 // Lo revisas, se guarda en tus alimentos con su código y queda elegido donde lo escaneaste.
 const ZXING_URL = 'https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js';
 const TRASH_ICON = '<svg class="trash" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M5.5 7l1 12a2 2 0 0 0 2 2h7a2 2 0 0 0 2-2l1-12M9 7V4.5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1V7"/></svg>';
+const VIDEO_ICON = '<svg class="video-ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4.5" width="18" height="13" rx="2.5"/><path class="fill" d="M10.2 8.4v5.2l4.4-2.6z"/><path d="M8.5 20.5h7"/></svg>';
 const BARCODE_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V4h3M18 4h3v3M21 17v3h-3M6 20H3v-3M7 8v8M10 8v8M13 8v8M15.5 8v8M18 8v8"/></svg>';
 const $scan = document.createElement('div');
 $scan.hidden = true;
@@ -1796,7 +1797,8 @@ function viewWorkout() {
   const restBtn = (i, pre = '') => (!editing && d.exercises[i].rest
     ? `<button class="btn ghost" data-action="rest" data-i="${i}" data-rest="${i}" data-pre="${pre}">Rest ${pre}${fmtRest(d.exercises[i].rest)}</button>` : '');
   const dropBadge = ex => (ex.dropset ? '<span class="badge on">Dropset</span>' : '');
-  const techBtn = i => `<button class="btn small-btn tech-btn" data-action="guide-view" data-i="${i}">Técnica</button>`;
+  // Técnica: ícono de video (deja más espacio para el nombre del ejercicio)
+  const techBtn = i => `<button class="btn small-btn tech-btn" data-action="guide-view" data-i="${i}" aria-label="Ver técnica" title="Técnica">${VIDEO_ICON}</button>`;
   const exTitle = (ex, label) => `<div class="ex-title"><strong>${label}</strong></div>`;
   // El músculo va en una pestaña que sale del borde de arriba de la tarjeta (sale de la guía de técnica; sin guía no aparece)
   const muscleTab = list => { const z = [...new Set(list.map(zoneOf).filter(Boolean))].join(' · ');
