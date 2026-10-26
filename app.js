@@ -1314,8 +1314,6 @@ const effSet = s => ({ w: s.w !== '' && s.w != null ? s.w : s.pw ?? '', r: s.r !
 const lastreEx = ex => ex.unit !== 'placas' && isBwEx(ex);
 const bwEff = (s, bw) => { const e = effSet(s); return bw && e.w === '' ? { ...e, w: '0' } : e; };
 const typedSet = s => (s.w !== '' && s.w != null) || (s.r !== '' && s.r != null);
-// La serie se guarda si tiene algo: lo que escribiste o, si no, lo de la vez pasada (para borrar una serie que no hiciste: el basurero)
-const setCounts = s => { const e = effSet(s); return e.w !== '' || e.r !== ''; };
 // Siguiente serie: trae de referencia la anterior
 const nextSet = (sets, rir) => { const last = sets[sets.length - 1], e = last ? effSet(last) : null;
   return { w: '', r: '', ...(rir ? { rir: '' } : {}), ...(e && e.w !== '' ? { pw: e.w } : {}), ...(e && e.r !== '' ? { pr: e.r } : {}) }; };
@@ -1774,8 +1772,6 @@ function viewWorkout() {
 
   // Objetivo de la rutina (si tiene), aviso para subir el peso, nota y "Primera vez"
   const exInfo = (ex, i) => {
-    // Sin RIR activado y con objetivo, se va al fallo
-    const toFail = !ex.rir && (ex.goalSets || ex.goalReps || hasRepsBy(ex));
     let hint = '';
     if (!editing && (ex.goalReps || hasRepsBy(ex))) {
       const prev = lastFor(ex.exerciseId, before, ridOf(ex));
@@ -1787,8 +1783,7 @@ function viewWorkout() {
           : `<p class="goal-hint">💡 La última vez llegaste a ${rangeTop(ex.goalReps)} repeticiones en todas las series: prueba subir el peso.</p>`;
       }
     }
-    return `${toFail ? '<div class="goal-line"><span class="fail-tag">Al fallo</span></div>' : ''}
-      ${hint}
+    return `${hint}
       ${noteHtml(ex.exerciseId, i)}
       ${bests.get(i).length ? '' : '<p class="prev">Primera vez</p>'}`;
   };
@@ -5348,7 +5343,7 @@ function closeTour() { tourOpen = false; setTourSeen(); render(); }
 // Consejo la primera vez que entras a una sección (se cierra con ✕ y no vuelve a salir)
 const TIPS = {
   rutinas: 'Toca una rutina para editarla y Empezar para entrenarla. Si tienes un programa activo, la que te toca hoy aparece marcada.',
-  entrenar: 'En gris está el peso de la vez anterior y tu objetivo de repeticiones. Si dejas una casilla vacía, se guarda lo que hiciste la vez anterior; si cambia, escribe lo nuevo. Un ejercicio en el que no anotas nada no se guarda. Si no hiciste una serie, bórrala con el basurero. Al lado de cada serie, un gráfico chico: sube si superaste tu mejor serie, plano si la igualaste, baja si quedaste bajo.',
+  entrenar: 'En gris está el peso de la vez anterior y tu objetivo de repeticiones. Si anotas solo el peso o solo las repeticiones, lo otro se completa con lo de la vez anterior. Una serie en la que no anotas nada no se guarda, como si no la hubieras hecho. Al lado de cada serie, un gráfico chico: sube si superaste tu mejor serie, plano si la igualaste, baja si quedaste bajo.',
   programas: 'Los programas listos traen la semana armada según tus días y nivel. El programa activo es el que te dice qué rutina te toca cada día.',
   historial: 'Toca un día del calendario para ver lo que entrenaste. Desde cada entreno lo puedes editar o compartir.',
   progreso: 'Toca un ejercicio para ver su gráfico y tus récords.',
@@ -5944,8 +5939,9 @@ const cleanExercises = d => d.exercises
     ...(ex.rir ? { rir: true } : {}),
     ...(ex.bw ? { bw: true } : {}),
     ...(ex.guide && ex.guide !== 'none' ? { guide: ex.guide } : {}),   // su técnica: así se reconoce aunque lo saques de la rutina
+    // Serie sin peso ni repeticiones anotados = no la hiciste (no se guarda). Si anotaste uno, el otro sale de la vez pasada
     sets: ex.sets
-      .filter(s => { const e = bwEff(s, lastreEx(ex)); return lastreEx(ex) ? e.r !== '' : e.w !== '' || e.r !== ''; })
+      .filter(s => typedSet(s) && (!lastreEx(ex) || bwEff(s, true).r !== ''))
       .map(s => {
         const e = bwEff(s, lastreEx(ex));
         const set = { w: num(e.w), r: num(e.r) }; const rir = num(e.rir); if (ex.rir && rir != null) set.rir = rir;
