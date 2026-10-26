@@ -1516,6 +1516,11 @@ const infoBox = k => (infoOpen.has(k) ? `<p class="info-box">${INFO[k]}</p>` : '
 let routineSort = false;
 // Miniatura del video de técnica en Editar rutina: tocarla lo reproduce ahí mismo (sin video: un recuadro vacío)
 const thumbOf = g => g.video.replace('videos/', 'videos/thumbs/').replace(/\.mp4$/, '.jpg');
+// attrs: lo que hace al tocar el nombre (data-action…); right: botones a la derecha (sin nada, una flecha)
+const pickRow = (ex, attrs, title, sub, right = '<span class="chev">›</span>') => `<div class="explore-item pick-item">
+    ${exThumb(ex)}
+    <button type="button" class="explore-name" ${attrs}><strong>${title}</strong><span class="muted small">${sub}</span></button>
+    ${right}</div>`;
 const exThumb = ex => { const g = guideFor(ex.name, ex.guide);
   return g && g.video
     ? `<button type="button" class="ex-thumb" data-action="thumb-play" aria-label="Ver el video de ${esc(g.name)}"><video src="${esc(g.video)}" poster="${esc(thumbOf(g))}" muted loop playsinline preload="none"></video><span class="ex-thumb-play" aria-hidden="true"></span></button>`
@@ -1647,8 +1652,8 @@ function ownExercises() {
   for (const r of db.routines) for (const ex of r.exercises) add(ex.name);
   return out;
 }
-const freePickBtn = (name, sub, g = '') => `<button type="button" class="food-pick" data-action="free-pick" data-name="${esc(name)}" data-g="${g}">
-    <span class="grow"><strong>${esc(name)}</strong><span class="muted small">${esc(sub)}</span></span><span class="chev">+</span></button>`;
+const freePickBtn = (name, sub, g = '') => pickRow({ name, guide: g || undefined }, `data-action="free-pick" data-name="${esc(name)}" data-g="${g}"`,
+  esc(name), esc(sub), '<span class="chev">+</span>');
 function freeSuggHtml(q) {
   const own = ownExercises(), text = q.trim();
   if (!text) {
@@ -6624,11 +6629,9 @@ function swapSheetHtml() {
   const lastTxt = a => lastSetText(a.id);
   const alts = [...(rex && dx.swapOf ? [{ ...altOf(rex), orig: true }] : []), ...(rex ? rex.alts || [] : [])].filter(a => a.id !== dx.exerciseId);
   const others = swapOthers(dx, alts, rex, g, swapPick.q);
-  const altRow = a => `<div class="swap-alt">
-      <button type="button" class="food-pick" data-action="swap-to" data-id="${a.id}">
-        <span class="grow"><strong>${a.orig ? 'Volver a ' : ''}${esc(a.name)}</strong><span class="muted small">${lastTxt(a)}</span></span><span class="chev">›</span></button>
-      ${a.orig ? '' : `<button class="btn small-btn" data-action="swap-alt-edit" data-id="${a.id}" aria-label="Editar ${esc(a.name)}">Editar</button>
-        <button class="icon small danger" data-action="swap-alt-del" data-id="${a.id}" aria-label="Quitar ${esc(a.name)} de tus alternativas">${TRASH_ICON}</button>`}</div>`;
+  const altRow = a => pickRow(a, `data-action="swap-to" data-id="${a.id}"`, `${a.orig ? 'Volver a ' : ''}${esc(a.name)}`, lastTxt(a),
+    a.orig ? '<span class="chev">›</span>' : `<button class="btn small-btn" data-action="swap-alt-edit" data-id="${a.id}" aria-label="Editar ${esc(a.name)}">Editar</button>
+        <button class="icon small danger" data-action="swap-alt-del" data-id="${a.id}" aria-label="Quitar ${esc(a.name)} de tus alternativas">${TRASH_ICON}</button>`);
   const always = !!(rex && swapPick.always);
   return `<div class="modal-wrap">
     <div class="modal-back" data-action="swap-close"></div>
@@ -6680,8 +6683,8 @@ function swapOthers(dx, alts, rex, g, q) {
     || (g && x.id === g.id) || (mine(x.id) && taken.has(mine(x.id).id));
   return (q && q.trim() ? searchGuides(q, 40) : g ? guidesOf(g.zone) : []).filter(x => !skip(x)).map(x => ({ ...x, mine: mine(x.id) }));
 }
-const swapOthersHtml = (list, q) => (list.length ? list.map(o => `<button type="button" class="food-pick" data-action="swap-to" data-g="${o.id}">
-    <span class="grow"><strong>${esc(o.mine ? o.mine.name : o.name)}</strong><span class="muted small">${o.mine ? `Tu ejercicio · ${lastSetText(o.mine.id)}` : esc(o.musc)}</span></span><span class="chev">›</span></button>`).join('')
+const swapOthersHtml = (list, q) => (list.length ? list.map(o => pickRow({ name: o.name, guide: o.id }, `data-action="swap-to" data-g="${o.id}"`,
+    esc(o.mine ? o.mine.name : o.name), o.mine ? `Tu ejercicio · ${lastSetText(o.mine.id)}` : esc(o.musc))).join('')
   : `<p class="muted small" style="margin:0">${q && q.trim() ? 'No hay ejercicios con ese nombre. Puedes crearlo arriba como alternativa.' : 'Busca un ejercicio por su nombre.'}</p>`);
 // edit: después de cambiarlo se abre su editor (botón Editar de una alternativa)
 async function swapExercise(alt, edit = false) {
@@ -6739,8 +6742,7 @@ function setGuide(ctx, id) {
   if (dx) dx.guide = id;
   save();
 }
-const guideItem = g => `<button type="button" class="food-pick" data-action="guide-set" data-g="${g.id}">
-    <span class="grow"><strong>${esc(g.name)}</strong><span class="muted small">${esc(g.musc)}</span></span><span class="chev">›</span></button>`;
+const guideItem = g => pickRow({ name: g.name, guide: g.id }, `data-action="guide-set" data-g="${g.id}"`, esc(g.name), esc(g.musc));
 function guideListHtml(q) {
   if (q && q.trim()) {
     const res = searchGuides(q, 30);

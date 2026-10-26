@@ -1184,5 +1184,9 @@ button.wk-day { font-family: inherit; border: 0; cursor: pointer; padding: 0; }
 .explore-name strong { line-height: 1.25; }
 .explore-name .small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .explore-item .small-btn { flex: none; min-height: 34px; padding: 0 12px; font-size: 13px; }
+.pick-item .explore-name .small { white-space: normal; }
+.pick-item .chev { flex: none; color: var(--muted); padding: 0 4px; }
+.pick-item .icon.small { flex: none; }
+.ex-sugg .pick-item + .pick-item { margin-top: 6px; }
 .btn.added { color: var(--accent); border-color: var(--accent); background: transparent; }
 .custom-add strong { color: var(--accent); }
