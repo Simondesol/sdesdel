@@ -148,7 +148,7 @@ export const GUIDES = [
     musc: 'Dorsal, espalda media y bíceps',
     cues: ['Apoya mano y rodilla en el banco, espalda recta', 'Tira la mancuerna hacia la cadera, no hacia el hombro', 'Codo cerca del cuerpo', 'Baja hasta estirar el brazo y sentir el dorsal'],
     errs: ['Girar el torso para subir más peso', 'Tirar con el bíceps en vez de la espalda'] },
-  { id: 'remo-polea', zone: 'espalda', name: 'Remo en polea baja', alias: ['remo sentado', 'remo en polea', 'seated row', 'remo gironda', 'remo polea baja', 'remo con triangulo'], video: 'videos/remo-polea.mp4',
+  { id: 'remo-polea', zone: 'espalda', name: 'Remo gironda', alias: ['remo en polea baja', 'remo sentado', 'remo en polea', 'seated row', 'seated cable row', 'remo polea baja', 'remo con triangulo'], video: 'videos/remo-polea.mp4',
     musc: 'Espalda media, dorsal y bíceps',
     cues: ['Rodillas levemente flexionadas y pecho arriba', 'Tira hacia el abdomen juntando las escápulas', 'Codos cerca del cuerpo', 'Al volver, deja que los brazos se estiren y la escápula se adelante un poco'],
     errs: ['Mecerse adelante y atrás con todo el torso', 'Encoger los hombros'] },
@@ -977,4 +977,13 @@ export const GUIDES = [
     musc: 'Cuádriceps (sobre todo el recto femoral)',
     cues: ['De pie, tomado de un soporte con una mano', 'Sube a la punta de los pies y lleva las rodillas hacia adelante', 'Baja inclinando el cuerpo hacia atrás, en línea recta de las rodillas a los hombros', 'Sube empujando con los cuádriceps'],
     errs: ['Doblar la cadera: se vuelve una sentadilla normal', 'Bajar más de lo que toleran tus rodillas'] },
+  // ---------- 26 oct ----------
+  { id: 'remo-abierto-polea', zone: 'espalda', name: 'Remo abierto en polea baja', alias: ['remo agarre amplio', 'remo agarre abierto', 'remo abierto', 'remo en polea baja con barra', 'remo polea baja agarre ancho', 'wide grip seated cable row', 'wide grip cable row'], video: 'videos/remo-abierto-polea.mp4', sq: true,
+    musc: 'Espalda alta (romboides y trapecio medio), deltoide posterior y dorsal',
+    cues: ['Sentado en la polea baja con una barra larga, agarre más ancho que los hombros', 'Pecho arriba y rodillas levemente flexionadas', 'Tira la barra hacia la parte baja del pecho con los codos abiertos', 'Junta las escápulas atrás y vuelve lento estirando los brazos'],
+    errs: ['Echar el torso atrás para mover más peso', 'Encoger los hombros hacia las orejas'] },
+  { id: 'remo-sentado-maquina', zone: 'espalda', name: 'Remo sentado en máquina', alias: ['machine seated row', 'seated row machine', 'remo sentado maquina', 'remo en maquina de placas', 'remo maquina con pin', 'remo en maquina con agarre vertical'], video: 'videos/remo-sentado-maquina.mp4', sq: true,
+    musc: 'Espalda media, dorsal y bíceps',
+    cues: ['Ajusta el asiento para que las manillas queden a la altura de la parte baja del pecho', 'Pecho apoyado en el respaldo y espalda recta', 'Tira llevando los codos atrás, cerca del cuerpo', 'Aprieta las escápulas un segundo y vuelve lento hasta estirar'],
+    errs: ['Despegar el pecho del apoyo', 'Tirar con impulso del torso', 'Recorrido corto'] },
 ];
