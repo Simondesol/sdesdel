@@ -1774,10 +1774,8 @@ function viewWorkout() {
 
   // Objetivo de la rutina (si tiene), aviso para subir el peso, nota y "Primera vez"
   const exInfo = (ex, i) => {
-    // Sin RIR activado se va al fallo (se muestra junto al resto del objetivo)
-    const goals = [['Series', ex.goalSets], ['Repeticiones', hasRepsBy(ex) ? 'Por serie' : ex.goalReps]].filter(([, v]) => v);
-    if (ex.rir && (hasRirBy(ex) || ex.goalRir)) goals.push(['RIR', hasRirBy(ex) ? 'Por serie' : ex.goalRir]);
-    else if (!ex.rir && goals.length) goals.push(['Hasta', 'Fallo']);
+    // Sin RIR activado y con objetivo, se va al fallo
+    const toFail = !ex.rir && (ex.goalSets || ex.goalReps || hasRepsBy(ex));
     let hint = '';
     if (!editing && (ex.goalReps || hasRepsBy(ex))) {
       const prev = lastFor(ex.exerciseId, before, ridOf(ex));
@@ -1789,7 +1787,7 @@ function viewWorkout() {
           : `<p class="goal-hint">💡 La última vez llegaste a ${rangeTop(ex.goalReps)} repeticiones en todas las series: prueba subir el peso.</p>`;
       }
     }
-    return `${goals.length ? `<div class="goal-chips">${goals.map(([k, v]) => `<span class="goal-chip"><small>${k}</small>${esc(String(v))}</span>`).join('')}${ex.rir ? infoBtn('rir') : ''}</div>${ex.rir ? infoBox('rir') : ''}` : ''}
+    return `${toFail ? '<div class="goal-line"><span class="fail-tag">Al fallo</span></div>' : ''}
       ${hint}
       ${noteHtml(ex.exerciseId, i)}
       ${bests.get(i).length ? '' : '<p class="prev">Primera vez</p>'}`;
@@ -1810,13 +1808,21 @@ function viewWorkout() {
     return z ? `<span class="ex-tab">${z}</span>` : ''; };
   const swapBtn = i => (editing ? '' : `<button class="btn small-btn swap-btn" data-action="swap-open" data-i="${i}">Cambiar</button>`);
 
+  // En un superset con y sin RIR las columnas no calzan: ahí van sin títulos
+  const setHead = list => {
+    const rir = !!list[0].rir;
+    if (list.some(x => !!x.rir !== rir)) return '';
+    const ex = list[0], w = list.length > 1 ? 'Peso' : ex.unit === 'placas' ? 'Placas' : isBwEx(ex) ? 'Lastre' : 'Peso';
+    return `<div class="set set-head${rir ? ' has-rir' : ''}"><span></span><span>${w}</span><span></span><span></span><span>${rir ? 'Reps' : 'Repeticiones'}</span>
+      ${rir ? `<span class="rir-h">RIR${infoBtn('rir')}</span>` : ''}<span></span><span></span></div>${rir ? infoBox('rir') : ''}`;
+  };
   const exerciseBlock = (ex, i) => {
     const open = openHistory.has(ex.exerciseId);
     const tab = muscleTab([ex]);
     return `<section class="card${tab ? ' has-tab' : ''}" data-ex="${i}">${tab}
       <div class="ex-head">${exTitle(ex, esc(ex.name))}${dropBadge(ex)}${swapBtn(i)}${techBtn(i)}</div>
       ${exInfo(ex, i)}
-      <div class="sets">${ex.sets.map((st, j) => setRow(ex, i, st, j, j + 1)).join('')}</div>
+      <div class="sets">${setHead([ex])}${ex.sets.map((st, j) => setRow(ex, i, st, j, j + 1)).join('')}</div>
       <div class="ex-actions">
         <button class="btn ghost" data-action="add-set" data-i="${i}">+ serie</button>
         ${restBtn(i)}
@@ -1845,7 +1851,7 @@ function viewWorkout() {
         <div class="ex-head">${exTitle(d.exercises[k], `${letterOf(n)} · ${esc(d.exercises[k].name)}`)}${dropBadge(d.exercises[k])}${swapBtn(k)}${techBtn(k)}</div>
         ${exInfo(d.exercises[k], k)}
       </div>`).join('')}
-      <div class="sets">${rows}</div>
+      <div class="sets">${setHead(idx.map(k => d.exercises[k]))}${rows}</div>
       <div class="ex-actions">
         <button class="btn ghost" data-action="add-round" data-i="${idx[0]}">+ vuelta</button>
         ${(k => (k == null ? '' : restBtn(k)))(idx.slice().reverse().find(k => d.exercises[k].rest))}

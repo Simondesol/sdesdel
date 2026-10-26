@@ -141,6 +141,12 @@ select { width: auto; }
   gap: 6px; align-items: center;
   margin-bottom: 6px;
 }
+.set-head { margin: 10px 0 2px; }
+.set-head > span { min-width: 0; font-size: 12px; font-weight: 600; color: var(--muted); text-align: center; white-space: nowrap; }   /* min-width 0: el título no ensancha su columna (queda alineado con las casillas) */
+.set-head .rir-h { display: inline-flex; align-items: center; justify-content: center; gap: 2px; }
+.set-head .info-btn { font-size: 13px; min-height: 0; padding: 0; width: 18px; height: 18px; }
+.goal-line { margin: 8px 0 0; }
+.fail-tag { display: inline-block; font-size: 12px; font-weight: 700; color: var(--accent); border: 1px solid var(--accent); border-radius: 999px; padding: 2px 10px; }
 .set-ref { margin: -2px 0 8px 24px; font-size: 12px; color: var(--muted); display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 
 /* ▲ = ▼ comparado con la mejor marca */
