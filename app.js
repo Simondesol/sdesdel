@@ -6166,6 +6166,30 @@ const nextProgramName = () => { let n = db.programs.length + 1; while (db.progra
 // Quien ya tenía su plan armado (antes de existir los programas): se guarda solo como programa activo
 // Una alternativa elegida de la lista (se llama igual que la guía) que quedó separada de tu ejercicio con esa misma
 // técnica ("Prensa de piernas" nuevo, cuando ya tenías "Prensa"): pasa a ser tu ejercicio y sus series se juntan con su historial
+function splitSwapClashes() {
+  const main = new Map();   // id de un ejercicio de tus rutinas → su técnica
+  for (const r of db.routines) for (const e of r.exercises) { const g = guideFor(e.name, e.guide); if (g) main.set(e.id, g.id); }
+  const moved = new Map();  // "id|técnica" → id nuevo
+  const target = (id, gid) => { const k = `${id}|${gid}`; if (!moved.has(k)) moved.set(k, uid()); return moved.get(k); };
+  let changed = false;
+  const fixList = list => {
+    const n = new Map();
+    for (const e of list) n.set(e.exerciseId, (n.get(e.exerciseId) || 0) + 1);
+    for (const e of list) {
+      const gid = main.get(e.exerciseId), g = e.guide && GUIDE_BY_ID.get(e.guide);
+      if (n.get(e.exerciseId) < 2 || !gid || !g || e.guide === gid) continue;
+      e.exerciseId = target(e.exerciseId, e.guide); e.name = g.name; delete e.swapOf; changed = true;
+    }
+  };
+  for (const w of db.workouts) fixList(w.exercises);
+  if (db.draft) fixList(db.draft.exercises);
+  for (const r of db.routines) for (const e of r.exercises) for (const a of e.alts || []) {
+    const gid = main.get(a.id), g = a.guide && GUIDE_BY_ID.get(a.guide);
+    if (!gid || !g || a.guide === gid || a.id === e.id) continue;
+    a.id = target(a.id, a.guide); a.name = g.name; changed = true;
+  }
+  return changed;
+}
 function relinkGuideAlts() {
   let changed = false;
   for (const r of db.routines) for (const ex of r.exercises) for (const a of ex.alts || []) {
@@ -6622,9 +6646,11 @@ const lastSetText = id => { const pv = lastFor(id); const st = pv && pv.ex.sets[
 // Otros ejercicios: los del mismo músculo, o al buscar, cualquiera por su nombre (con tu nombre si ya lo tienes)
 function swapOthers(dx, alts, rex, g, q) {
   const map = myGuideMap(), taken = new Set([dx.exerciseId, ...(rex ? [rex.id] : []), ...alts.map(a => a.id)]);
+  const busy = new Set(((db.draft || {}).exercises || []).filter(e => e !== dx).map(e => e.exerciseId));   // ya en este entreno
+  const mine = gid => { const m = mineFor(map, gid); return m && !busy.has(m.id) ? m : null; };
   const skip = x => sameName(x.name, dx.name) || alts.some(a => sameName(a.name, x.name)) || (rex && sameName(rex.name, x.name))
-    || (g && x.id === g.id) || (mineFor(map, x.id) && taken.has(mineFor(map, x.id).id));
-  return (q && q.trim() ? searchGuides(q, 40) : g ? guidesOf(g.zone) : []).filter(x => !skip(x)).map(x => ({ ...x, mine: mineFor(map, x.id) }));
+    || (g && x.id === g.id) || (mine(x.id) && taken.has(mine(x.id).id));
+  return (q && q.trim() ? searchGuides(q, 40) : g ? guidesOf(g.zone) : []).filter(x => !skip(x)).map(x => ({ ...x, mine: mine(x.id) }));
 }
 const swapOthersHtml = (list, q) => (list.length ? list.map(o => `<button type="button" class="food-pick" data-action="swap-to" data-g="${o.id}">
     <span class="grow"><strong>${esc(o.mine ? o.mine.name : o.name)}</strong><span class="muted small">${o.mine ? `Tu ejercicio · ${lastSetText(o.mine.id)}` : esc(o.musc)}</span></span><span class="chev">›</span></button>`).join('')
@@ -7130,7 +7156,7 @@ async function handleUser(u) {
   status = 'ready';
   planSeen = stable(db.plan || null);
   migrateLoosePlan();
-  if ([renameOldGuideNames(), relinkGuideAlts(), unifyExerciseIds(), backfillWorkoutGuides(), syncHistoryNames()].some(Boolean)) save();
+  if ([splitSwapClashes(), renameOldGuideNames(), relinkGuideAlts(), unifyExerciseIds(), backfillWorkoutGuides(), syncHistoryNames()].some(Boolean)) save();
   // Si el teléfono cerró la app en medio del entrenamiento, al abrirla vuelves a él (no al inicio)
   if (firstOpen && db.draft && routeParts()[0] === '') location.replace('#/entrenar');
   firstOpen = false;
@@ -7889,7 +7915,10 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       const d = db.draft, dx = d.exercises[swapPick.i], rex = routineExOf(d, dx);
       let alt;
       if (el.dataset.g) {   // otro ejercicio del mismo músculo (con su guía)
-        const g = GUIDE_BY_ID.get(el.dataset.g), found = findExercise(g.name) || mineFor(myGuideMap(), g.id);
+        // Tu ejercicio con ese nombre o esa técnica (con su historial), salvo que ya esté en este entreno: ahí sería otro
+        const g = GUIDE_BY_ID.get(el.dataset.g), busy = new Set(d.exercises.filter(e => e !== dx).map(e => e.exerciseId));
+        const free = x => (x && !busy.has(x.id) ? x : null);
+        const found = free(findExercise(g.name)) || free(mineFor(myGuideMap(), g.id));
         alt = { id: found ? found.id : uid(), name: found ? found.name : g.name, unit: found ? found.unit : dx.unit === 'lb' ? 'lb' : 'kg', guide: g.id };
       } else alt = [...(rex ? [altOf(rex), ...(rex.alts || [])] : [])].find(a => a.id === el.dataset.id);
       if (alt) await swapExercise(alt);
