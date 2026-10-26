@@ -108,7 +108,10 @@ function fmtDuration(sec) {
 // 110 × 1 no es mejor que 100 × 20. Con peso corporal se suma tu peso de ese día (bw).
 // Las libras se pasan a kg para poder comparar ejercicios que cambiaron de unidad.
 const toKg = (w, unit) => (w == null ? 0 : unit === 'lb' ? w * 0.45359237 : w);
-const setStrength = x => epley((x.bw || 0) + toKg(x.w || 0, x.unit), x.r || 1, x.rir);
+// Ejercicio por lado (búlgara, remo a una mano…): r = izquierda, r2 = derecha. Cuenta el lado más débil
+const repsMin = s => (s.r2 != null && s.r2 !== '' ? (s.r != null && s.r !== '' ? Math.min(+s.r, +s.r2) : +s.r2) : s.r);
+const repsText = s => `${fmtNum(s.r)}${s.r2 != null ? ` / ${fmtNum(s.r2)}` : ''}`;
+const setStrength = x => epley((x.bw || 0) + toKg(x.w || 0, x.unit), repsMin(x) || 1, x.rir);
 // Con peso corporal, cada serie cuenta con lo que pesabas ese día (más peso tuyo con el mismo lastre = moviste más)
 function cmpSet(a, b) {
   const diff = setStrength(a) - setStrength(b);
@@ -128,7 +131,7 @@ function bestSets(exerciseId, before = db.workouts.length, unit = null, rid = nu
     if (!ex || (unit && unitKind(ex.unit) !== unitKind(unit))) continue;
     const bw = bwFor(ex, db.workouts[k].date);   // con peso corporal, cada serie con lo que pesabas ese día
     ex.sets.forEach((s, j) => {
-      const c = { w: s.w, r: s.r, rir: s.rir, unit: ex.unit, bw };
+      const c = { w: s.w, r: s.r, ...(s.r2 != null ? { r2: s.r2 } : {}), rir: s.rir, unit: ex.unit, bw };
       if (!best[j] || cmpSet(c, best[j]) > 0) best[j] = c;
     });
   }
@@ -140,11 +143,11 @@ function liveCmp(s, ex, best) {
   if (!best) return null;
   // Los íconos de progreso recién cuando escribes el peso (o lastre) y las repeticiones
   const has = v => v !== '' && v != null;
-  if (!has(s.r) || !has(s.w)) return null;
+  if (!(has(s.r) || (ex.side && has(s.r2))) || !has(s.w)) return null;
   s = { ...s, ...bwEff(s, lastreEx(ex)) };
-  const w = num(s.w), r = num(s.r);
+  const w = num(s.w), r = num(s.r), r2 = ex.side ? num(s.r2) : null;
   if (w == null && r == null) return null;
-  return cmpSet({ w, r, rir: num(s.rir), unit: ex.unit, bw: bwFor(ex, new Date().toISOString()) }, best);
+  return cmpSet({ w, r, ...(r2 != null ? { r2 } : {}), rir: num(s.rir), unit: ex.unit, bw: bwFor(ex, new Date().toISOString()) }, best);
 }
 
 // Gráfico chico: sube (superaste), plano (igualaste), baja (bajo tu récord)
@@ -1295,14 +1298,14 @@ function historyFor(exerciseId, skipId = null) {
 // Al guardar, lo que dejaste vacío se completa con lo de la vez pasada; un ejercicio sin nada anotado no se guarda.
 // Si el objetivo pide más series que la última vez, las nuevas traen de referencia la última serie.
 function prefillSets(prev, rir, goalSets = 0, dropset = false) {
-  const ph = s => ({ w: '', r: '', ...(rir ? { rir: '' } : {}), pw: toField(s.w), pr: toField(s.r), ...(rir && s.rir != null ? { prir: toField(s.rir) } : {}) });
+  const ph = s => ({ w: '', r: '', ...(rir ? { rir: '' } : {}), pw: toField(s.w), pr: toField(s.r), ...(s.r2 != null ? { pr2: toField(s.r2) } : {}), ...(rir && s.rir != null ? { prir: toField(s.rir) } : {}) });
   const sets = prev ? prev.ex.sets.map(s => ({
     ...ph(s),
     ...(s.drops && s.drops.length ? { drops: s.drops.map(x => ({ w: '', r: '', pw: toField(x.w), pr: toField(x.r) })) } : {}),
   })) : [];
   while (sets.length < Math.max(1, goalSets || 0)) {
     const last = sets[sets.length - 1];
-    sets.push(last ? { w: '', r: '', ...(rir ? { rir: '' } : {}), pw: last.pw, pr: last.pr } : { w: '', r: '', ...(rir ? { rir: '' } : {}) });
+    sets.push(last ? { w: '', r: '', ...(rir ? { rir: '' } : {}), pw: last.pw, pr: last.pr, ...(last.pr2 != null ? { pr2: last.pr2 } : {}) } : { w: '', r: '', ...(rir ? { rir: '' } : {}) });
   }
   // Dropset: la última serie trae lista una fila para la primera bajada
   const lastSet = sets[sets.length - 1];
@@ -1310,14 +1313,15 @@ function prefillSets(prev, rir, goalSets = 0, dropset = false) {
   return sets;
 }
 // Lo que vale de una serie: lo escrito o, si está vacío, lo de la vez pasada
-const effSet = s => ({ w: s.w !== '' && s.w != null ? s.w : s.pw ?? '', r: s.r !== '' && s.r != null ? s.r : s.pr ?? '', rir: s.rir !== '' && s.rir != null ? s.rir : s.prir ?? '' });
+const effSet = s => ({ w: s.w !== '' && s.w != null ? s.w : s.pw ?? '', r: s.r !== '' && s.r != null ? s.r : s.pr ?? '', rir: s.rir !== '' && s.rir != null ? s.rir : s.prir ?? '',
+  ...(s.r2 != null || s.pr2 != null ? { r2: s.r2 !== '' && s.r2 != null ? s.r2 : s.pr2 ?? s.pr ?? '' } : {}) });
 // Peso corporal (dominadas, fondos…): el lastre vacío es el de la vez pasada, como en todos; si no hay vez pasada, 0 (sin lastre)
 const lastreEx = ex => ex.unit !== 'placas' && isBwEx(ex);
 const bwEff = (s, bw) => { const e = effSet(s); return bw && e.w === '' ? { ...e, w: '0' } : e; };
-const typedSet = s => (s.w !== '' && s.w != null) || (s.r !== '' && s.r != null);
+const typedSet = s => (s.w !== '' && s.w != null) || (s.r !== '' && s.r != null) || (s.r2 !== '' && s.r2 != null);
 // Siguiente serie: trae de referencia la anterior
 const nextSet = (sets, rir) => { const last = sets[sets.length - 1], e = last ? effSet(last) : null;
-  return { w: '', r: '', ...(rir ? { rir: '' } : {}), ...(e && e.w !== '' ? { pw: e.w } : {}), ...(e && e.r !== '' ? { pr: e.r } : {}) }; };
+  return { w: '', r: '', ...(rir ? { rir: '' } : {}), ...(e && e.w !== '' ? { pw: e.w } : {}), ...(e && e.r !== '' ? { pr: e.r } : {}), ...(e && e.r2 != null && e.r2 !== '' ? { pr2: e.r2 } : {}) }; };
 
 // Objetivo opcional por ejercicio: series, rango de reps ("8-10") y RIR objetivo ("2" o "1-2")
 function parseRange(text, maxV) {
@@ -1329,7 +1333,7 @@ function parseRange(text, maxV) {
 }
 const rangeTop = t => +String(t).split('-').pop();
 // Plan del ejercicio en la rutina: objetivo, dropset y superset con el siguiente
-const planFields = ex => ({ ...goalFields(ex), ...(ex.dropset ? { dropset: true } : {}), ...(ex.ssNext ? { ssNext: true } : {}), ...(ex.bw ? { bw: true } : {}), ...(ex.guide ? { guide: ex.guide } : {}) });
+const planFields = ex => ({ ...goalFields(ex), ...(ex.dropset ? { dropset: true } : {}), ...(ex.ssNext ? { ssNext: true } : {}), ...(ex.bw ? { bw: true } : {}), ...(ex.side ? { side: true } : {}), ...(ex.guide ? { guide: ex.guide } : {}) });
 // Repeticiones distintas por serie: ex.goalRepsBy[j] (vacío = el rango general de Reps)
 const hasRepsBy = ex => (ex.goalSets || 0) >= 2 && Array.isArray(ex.goalRepsBy) && ex.goalRepsBy.slice(0, ex.goalSets).some(Boolean);
 const repsFor = (ex, j) => (hasRepsBy(ex) ? ex.goalRepsBy[j] || '' : ex.goalReps || '');
@@ -1347,7 +1351,7 @@ const goalFields = ex => ({
 
 // Texto de una serie guardada: "40 kg × 10" o "40 kg × 10 · RIR 2"
 const dropsText = s => (s.drops && s.drops.length ? s.drops.map(x => ` ↓ ${fmtNum(x.w)}×${fmtNum(x.r)}`).join('') : '');
-const setText = (s, unit) => `${fmtNum(s.w)} ${unit} × ${fmtNum(s.r)}${s.rir != null ? ` · RIR ${fmtNum(s.rir)}` : ''}${dropsText(s)}`;
+const setText = (s, unit) => `${fmtNum(s.w)} ${unit} × ${repsText(s)}${s.rir != null ? ` · RIR ${fmtNum(s.rir)}` : ''}${dropsText(s)}`;
 const setsChips = ex => `<div class="sets-list">${ex.sets.map(s => `<span>${setText(s, ex.unit)}</span>`).join('')}</div>`;
 
 const unitSelect = () => `<select name="unit" aria-label="Unidad">
@@ -1536,6 +1540,7 @@ function exSummary(ex) {
   else if (ex.goalSets || ex.goalReps) parts.push('Al fallo');
   if (ex.dropset) parts.push('Dropset');
   if (ex.bw) parts.push('Peso corporal');
+  if (ex.side) parts.push('Por lado');
   if (ex.rest) parts.push(`Rest ${fmtRest(ex.rest)}`);
   if (ex.unit !== 'kg') parts.push(ex.unit);
   return parts.join(' · ') || 'Toca para configurar';
@@ -1568,6 +1573,7 @@ function viewRoutine() {
         <button class="chip toggle ${ex.rir ? 'on' : ''}" data-action="toggle-rir" data-i="${i}" aria-pressed="${!!ex.rir}">RIR</button>
         <button class="chip toggle ${ex.dropset ? 'on' : ''}" data-action="toggle-drop" data-i="${i}" aria-pressed="${!!ex.dropset}">Dropset</button>
         <button class="chip toggle ${ex.bw ? 'on' : ''}" data-action="toggle-bw" data-i="${i}" aria-pressed="${!!ex.bw}" title="Dominadas, dips…: lo que anotas es el lastre">Peso corporal</button>
+        <button class="chip toggle ${ex.side ? 'on' : ''}" data-action="toggle-side" data-i="${i}" aria-pressed="${!!ex.side}" title="Búlgara, remo a una mano…: repeticiones de cada lado">Por lado</button>
       </div>
       <button class="link small" data-action="info" data-k="opts" style="justify-self:start">${infoOpen.has('opts') ? 'Ocultar' : '¿Qué hace cada opción?'}</button>
       ${infoBox('opts')}
@@ -1755,6 +1761,20 @@ function viewWorkout() {
         <button class="set-del" data-action="del-drop" data-i="${i}" data-j="${j}" data-k="${k}" aria-label="Quitar bajada">${TRASH_ICON}</button>
       </div>`).join('');
     const wPh = s.pw || (lastreEx(ex) ? '0' : ex.unit === 'placas' ? 'placas' : 'peso');
+    const rPh = (pr, side) => repsFor(ex, j) || pr || side;
+    if (ex.side) return `
+      <div class="set side ${ex.rir ? 'has-rir' : ''}">
+        <span class="n">${label}</span>
+        <input inputmode="decimal" data-bind="w" data-i="${i}" data-j="${j}" value="${esc(s.w)}" placeholder="${esc(wPh)}" aria-label="${ex.unit === 'placas' ? 'Placas' : isBwEx(ex) ? 'Lastre' : 'Peso'} serie ${label}">
+        <input inputmode="numeric" data-bind="r" data-i="${i}" data-j="${j}" value="${esc(s.r)}" placeholder="${esc(rPh(s.pr, 'izq'))}" aria-label="Repeticiones izquierda serie ${label}">
+        <input inputmode="numeric" data-bind="r2" data-i="${i}" data-j="${j}" value="${esc(s.r2 ?? '')}" placeholder="${esc(rPh(s.pr2 ?? s.pr, 'der'))}" aria-label="Repeticiones derecha serie ${label}">
+        ${ex.rir ? `<input class="rir" inputmode="numeric" data-bind="rir" data-i="${i}" data-j="${j}" value="${esc(s.rir ?? '')}" placeholder="${esc(rirFor(ex, j) || s.prir || 'RIR')}" aria-label="RIR serie ${label}">` : ''}
+        <span class="mark-cell" data-mark="${i}-${j}">${markSpan(liveCmp(s, ex, best[j]))}</span>
+        <button class="set-del" data-action="del-set" data-i="${i}" data-j="${j}" aria-label="Borrar serie">${TRASH_ICON}</button>
+      </div>
+      ${drops}
+      <div class="set-ref"><span>${best[j] ? `Mejor: ${fmtNum(best[j].w)} ${best[j].unit} × ${repsText(best[j])}` : ''}</span>
+        ${canDrop(ex) ? `<button class="drop-add" data-action="add-drop" data-i="${i}" data-j="${j}">↓ drop</button>` : ''}</div>`;
     return `
       <div class="set ${ex.rir ? 'has-rir' : ''}">
         <span class="n">${label}</span>
@@ -1767,7 +1787,7 @@ function viewWorkout() {
         <button class="set-del" data-action="del-set" data-i="${i}" data-j="${j}" aria-label="Borrar serie">${TRASH_ICON}</button>
       </div>
       ${drops}
-      <div class="set-ref"><span>${best[j] ? `Mejor: ${fmtNum(best[j].w)} ${best[j].unit} × ${fmtNum(best[j].r)}` : ''}</span>
+      <div class="set-ref"><span>${best[j] ? `Mejor: ${fmtNum(best[j].w)} ${best[j].unit} × ${repsText(best[j])}` : ''}</span>
         ${canDrop(ex) ? `<button class="drop-add" data-action="add-drop" data-i="${i}" data-j="${j}">↓ drop</button>` : ''}</div>`;
   };
 
@@ -1778,7 +1798,7 @@ function viewWorkout() {
       const prev = lastFor(ex.exerciseId, before, ridOf(ex));
       const done = prev ? prev.ex.sets.filter(x => x.w != null) : [];
       const topOf = j => (repsFor(ex, j) ? rangeTop(repsFor(ex, j)) : Infinity);
-      if (done.length && done.length >= (ex.goalSets || 1) && done.every((x, j) => (x.r || 0) >= topOf(j))) {
+      if (done.length && done.length >= (ex.goalSets || 1) && done.every((x, j) => (repsMin(x) || 0) >= topOf(j))) {
         hint = hasRepsBy(ex)
           ? '<p class="goal-hint">💡 La última vez llegaste al tope del rango en todas las series: prueba subir el peso.</p>'
           : `<p class="goal-hint">💡 La última vez llegaste a ${rangeTop(ex.goalReps)} repeticiones en todas las series: prueba subir el peso.</p>`;
@@ -1807,9 +1827,11 @@ function viewWorkout() {
 
   // En un superset con y sin RIR las columnas no calzan: ahí van sin títulos
   const setHead = list => {
-    const rir = !!list[0].rir;
-    if (list.some(x => !!x.rir !== rir)) return '';
+    const rir = !!list[0].rir, side = !!list[0].side;
+    if (list.some(x => !!x.rir !== rir || !!x.side !== side)) return '';
     const ex = list[0], w = list.length > 1 ? 'Peso' : ex.unit === 'placas' ? 'Placas' : isBwEx(ex) ? 'Lastre' : 'Peso';
+    if (side) return `<div class="set set-head side${rir ? ' has-rir' : ''}"><span></span><span>${w}${ex.unit === 'placas' ? '' : ` ${unitShort(ex.unit)}`}</span><span>Izq</span><span>Der</span>
+      ${rir ? `<span class="rir-h">RIR${infoBtn('rir')}</span>` : ''}<span></span><span></span></div>${rir ? infoBox('rir') : ''}`;
     return `<div class="set set-head${rir ? ' has-rir' : ''}"><span></span><span>${w}</span><span></span><span></span><span>${rir ? 'Reps' : 'Repeticiones'}</span>
       ${rir ? `<span class="rir-h">RIR${infoBtn('rir')}</span>` : ''}<span></span><span></span></div>${rir ? infoBox('rir') : ''}`;
   };
@@ -2472,7 +2494,7 @@ function workoutShareText(w, forChat = false) {
       const c = best[j] ? cmpSet({ ...s, unit: ex.unit, bw: bwFor(ex, w.date) }, best[j]) : null;
       if (c > 0) ups++;
       const mark = c == null ? '' : c > 0 ? ' ▲' : c < 0 ? ' ▼' : ' =';
-      return `${fmtNum(s.w)}×${fmtNum(s.r)}${dropsText(s)}${mark}`;
+      return `${fmtNum(s.w)}×${repsText(s).replace(' / ', '/')}${dropsText(s)}${mark}`;
     });
     return `• ${ex.name} (${ex.unit}): ${sets.join(' · ')}`;
   });
@@ -3888,7 +3910,7 @@ function newPRs(w) {
       const s = ex.sets.find(x => x.w != null);
       const bw = isBwEx(ex);
       const est = showsE1rm(ex) ? ` → ${bw ? 'lastre máx.' : '1RM'} ≈ ${bw ? '+' : ''}${fmtNum(round1(e1rmEx(ex, s, w.date)))} ${ex.unit}` : '';
-      prs.push({ id: ex.exerciseId, name: ex.name, text: `${ex.name}: ${fmtNum(s.w)} ${ex.unit} × ${fmtNum(s.r || 1)}${s.rir != null ? ` · RIR ${fmtNum(s.rir)}` : ''}${bw ? ' + peso corporal' : ''}${est}` });
+      prs.push({ id: ex.exerciseId, name: ex.name, text: `${ex.name}: ${fmtNum(s.w)} ${ex.unit} × ${s.r2 != null ? repsText(s) : fmtNum(s.r || 1)}${s.rir != null ? ` · RIR ${fmtNum(s.rir)}` : ''}${bw ? ' + peso corporal' : ''}${est}` });
     }
     const best = bestSets(ex.exerciseId, idx < 0 ? db.workouts.length : idx, ex.unit, ex.extra ? null : w.routineId);
     const first = ex.sets.findIndex(x => x.w != null);
@@ -4381,7 +4403,7 @@ const round1 = n => Math.round(n * 10) / 10;
 // Récord estimado (1RM) con Epley + RIR: peso × (1 + (reps + RIR) / 30). Las reps en reserva cuentan como reps que
 // podrías haber hecho; sin RIR anotado se toma como al fallo (RIR 0). Con 1 rep al fallo es el mismo peso.
 const epley = (w, r, rir = 0) => { const n = (r || 1) + (rir || 0); return n > 1 ? w * (1 + n / 30) : w; };
-const e1rmOf = s => epley(s.w, s.r || 1, s.rir);
+const e1rmOf = s => epley(s.w, repsMin(s) || 1, s.rir);
 
 // Ejercicios con peso corporal (dominadas, dips…): lo que anotas es el lastre.
 // Se marca en la rutina; vale también para tu historial de ese ejercicio.
@@ -4399,7 +4421,7 @@ function e1rmEx(ex, s, dateIso) {
     let bw = bwOn(dateIso);
     if (bw != null) {
       if (ex.unit === 'lb') bw /= 0.45359237;
-      return epley(bw + (s.w || 0), s.r || 1, s.rir) - bw;
+      return epley(bw + (s.w || 0), repsMin(s) || 1, s.rir) - bw;
     }
   }
   return e1rmOf(s);
@@ -5941,12 +5963,14 @@ const cleanExercises = d => d.exercises
     ...(ex.rir ? { rir: true } : {}),
     ...(ex.bw ? { bw: true } : {}),
     ...(ex.guide && ex.guide !== 'none' ? { guide: ex.guide } : {}),   // su técnica: así se reconoce aunque lo saques de la rutina
+    ...(ex.side ? { side: true } : {}),
     // Serie sin peso ni repeticiones anotados = no la hiciste (no se guarda). Si anotaste uno, el otro sale de la vez pasada
     sets: ex.sets
       .filter(s => typedSet(s) && (!lastreEx(ex) || bwEff(s, true).r !== ''))
       .map(s => {
         const e = bwEff(s, lastreEx(ex));
         const set = { w: num(e.w), r: num(e.r) }; const rir = num(e.rir); if (ex.rir && rir != null) set.rir = rir;
+        if (ex.side) { const r2 = num(e.r2 != null && e.r2 !== '' ? e.r2 : e.r); if (r2 != null) set.r2 = r2; }   // derecha (r = izquierda); sin anotar ni vez pasada, igual que la izquierda
         const drops = (s.drops || []).map(effSet).map(x => ({ w: num(x.w), r: num(x.r) })).filter(x => x.w != null || x.r != null);
         if (drops.length) set.drops = drops;   // bajadas del dropset
         return set;
@@ -6007,9 +6031,9 @@ function makeEditBuf(id) {
     start: w.date,
     exercises: w.exercises.map(ex => ({
       exerciseId: ex.exerciseId, name: ex.name, unit: ex.unit, rest: 0,
-      rir: !!ex.rir, ...(ex.bw ? { bw: true } : {}), ...(ex.guide ? { guide: ex.guide } : {}),
+      rir: !!ex.rir, ...(ex.bw ? { bw: true } : {}), ...(ex.side ? { side: true } : {}), ...(ex.guide ? { guide: ex.guide } : {}),
       sets: ex.sets.map(s => ({
-        w: toField(s.w), r: toField(s.r), ...(ex.rir ? { rir: toField(s.rir) } : {}),
+        w: toField(s.w), r: toField(s.r), ...(s.r2 != null ? { r2: toField(s.r2) } : {}), ...(ex.rir ? { rir: toField(s.rir) } : {}),
         ...(s.drops ? { drops: s.drops.map(x => ({ w: toField(x.w), r: toField(x.r) })) } : {}),
       })),
     })),
@@ -6620,7 +6644,7 @@ const zoneOf = ex => { const g = guideFor(ex.name, ex.guide); return g ? GUIDE_Z
 let swapPick = null;   // { i, always } ejercicio del entreno que vas a cambiar
 const routineExOf = (d, dx) => { const r = d.routineId && !dx.extra && db.routines.find(x => x.id === d.routineId);
   return r ? r.exercises.find(e => e.id === (dx.swapOf || dx.exerciseId)) || null : null; };
-const PLAN_KEYS = ['rest', 'rir', 'goalSets', 'goalReps', 'goalRepsBy', 'goalRir', 'goalRirBy', 'dropset', 'bw'];
+const PLAN_KEYS = ['rest', 'rir', 'goalSets', 'goalReps', 'goalRepsBy', 'goalRir', 'goalRirBy', 'dropset', 'bw', 'side'];
 const planOf = x => Object.fromEntries(PLAN_KEYS.filter(k => x[k] != null && x[k] !== false).map(k => [k, Array.isArray(x[k]) ? [...x[k]] : x[k]]));
 const altOf = x => ({ id: x.id, name: x.name, unit: x.unit, ...(x.guide && x.guide !== 'none' ? { guide: x.guide } : {}), ...planOf(x), own: true });
 // Configuración con la que se entrena una alternativa: la suya, o (alternativas antiguas) la del ejercicio de la rutina
@@ -6677,7 +6701,7 @@ function myGuideMap() {
 }
 const mineFor = (map, gid) => { const l = map.get(gid) || []; return l.find(c => c.hist) || l[0] || null; };
 const lastSetText = id => { const pv = lastFor(id); const st = pv && pv.ex.sets[0];
-  return st ? `Última vez ${fmtNum(st.w)} ${pv.ex.unit} × ${fmtNum(st.r)}` : 'Sin historial todavía'; };
+  return st ? `Última vez ${fmtNum(st.w)} ${pv.ex.unit} × ${repsText(st)}` : 'Sin historial todavía'; };
 // Otros ejercicios: los del mismo músculo, o al buscar, cualquiera por su nombre (con tu nombre si ya lo tienes)
 function swapOthers(dx, alts, rex, g, q) {
   const map = myGuideMap(), taken = new Set([dx.exerciseId, ...(rex ? [rex.id] : []), ...alts.map(a => a.id)]);
@@ -7585,12 +7609,14 @@ $app.addEventListener('click', async e => {
       break;
     case 'toggle-drop':
     case 'toggle-bw':
+    case 'toggle-side':
     case 'toggle-ss': {
-      const ex = edEx(i), key = { 'toggle-drop': 'dropset', 'toggle-bw': 'bw', 'toggle-ss': 'ssNext' }[action];
+      const ex = edEx(i), key = { 'toggle-drop': 'dropset', 'toggle-bw': 'bw', 'toggle-side': 'side', 'toggle-ss': 'ssNext' }[action];
       if (ex[key]) delete ex[key]; else ex[key] = true;
       save(); render();
       if (ex[key] && action === 'toggle-drop') showNote('Dropset activado: cuando entrenes, la última serie trae una fila para anotar la bajada de peso.');
       if (ex[key] && action === 'toggle-bw') showNote('Peso corporal activado: cuando entrenes, anota solo el lastre (0 si no usas).');
+      if (ex[key] && action === 'toggle-side') showNote('Por lado activado: en cada serie anotas un peso y las repeticiones de la izquierda y de la derecha.');
       break;
     }
     case 'toggle-rir': {
@@ -8591,7 +8617,7 @@ $app.addEventListener('input', e => {
     }
     else { const v = parseRange(text, key === 'goalReps' ? 100 : 10); if (v) ex[key] = v; }
   }
-  else if (bind === 'w' || bind === 'r' || bind === 'rir') {
+  else if (bind === 'w' || bind === 'r' || bind === 'r2' || bind === 'rir') {
     const d = cur(), ex = d.exercises[i];
     ex.sets[j][bind] = el.value;
     const cell = $app.querySelector(`[data-mark="${i}-${j}"]`);
@@ -8603,7 +8629,7 @@ $app.addEventListener('input', e => {
     if (text) db.notes[exId] = text; else delete db.notes[exId];
   }
   // Anotaste series en este ejercicio: al saltar a otro, queda con ✓
-  if (['w', 'r', 'rir', 'dw', 'dr'].includes(bind)) { const d = cur(); (d.touched ||= {})[d.exercises[i].exerciseId] = true; }
+  if (['w', 'r', 'r2', 'rir', 'dw', 'dr'].includes(bind)) { const d = cur(); (d.touched ||= {})[d.exercises[i].exerciseId] = true; }
   save();
 });
 

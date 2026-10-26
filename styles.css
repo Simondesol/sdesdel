@@ -1196,3 +1196,7 @@ button.wk-day { font-family: inherit; border: 0; cursor: pointer; padding: 0; }
 .ex-sugg .pick-item + .pick-item { margin-top: 6px; }
 .btn.added { color: var(--accent); border-color: var(--accent); background: transparent; }
 .custom-add strong { color: var(--accent); }
+
+/* Ejercicio por lado: Peso · Izq · Der (· RIR), sin la columna de unidad ni el × */
+.set.side { grid-template-columns: 18px 1fr 1fr 1fr 20px 26px; }
+.set.side.has-rir { grid-template-columns: 18px 1fr 1fr 1fr 44px 20px 26px; }
