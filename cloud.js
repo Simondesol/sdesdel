@@ -9,10 +9,10 @@
 //   chats/{uidA_uidB}           → chat entre dos gymbros { members, names, via, last, createdAt }
 //   chats/{id}/messages/{id}    → mensaje { from, at, type, text | diet | routine }
 //   coachCodes/{código}         → código de coach { ownerUid, ownerName, createdAt }
-//   coachLinks/{uidAlumno}      → alumno vinculado a su coach { studentUid, studentName, coachUid, coachName, via, since, summary }
-//   coachLinks/{uid}/edits/{id} → cambio del coach (rutina, programa, plan, dieta, objetivo); la app del alumno lo aplica y lo borra
+//   coachLinks/{uidAlumno}      → atleta vinculado a su coach { studentUid, studentName, coachUid, coachName, via, since, summary }
+//   coachLinks/{uid}/edits/{id} → cambio del coach (rutina, programa, plan, dieta, objetivo); la app del atleta lo aplica y lo borra
 //   coachLinks/{uid}/comments/{idEntreno} → comentario del coach sobre un entreno { text, at, by }
-//   coachLinks/{uid}/checkins/{fecha}     → check-in semanal del alumno
+//   coachLinks/{uid}/checkins/{fecha}     → check-in semanal del atleta
 //   plans/{uidCoach}            → plan del coach { tier, max, until, trial } (lo escribe solo el servidor, al pagar)
 import { firebaseConfig } from './firebase-config.js';
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.8.0/firebase-app.js';
@@ -213,8 +213,8 @@ export function deleteProgress(uid, id) {
 }
 
 // ---------- Modo coach ----------
-// El alumno crea el vínculo con el código del coach; desde ahí el coach puede leer sus datos (solo leer)
-// y dejarle rutinas cambiadas en coachLinks/{alumno}/edits, que la app del alumno aplica sola.
+// El atleta crea el vínculo con el código del coach; desde ahí el coach puede leer sus datos (solo leer)
+// y dejarle rutinas cambiadas en coachLinks/{atleta}/edits, que la app del atleta aplica sola.
 const linkRef = uid => doc(fs, 'coachLinks', uid);
 const editsRef = uid => collection(fs, 'coachLinks', uid, 'edits');
 export const createCoachCode = (code, data) => setDoc(doc(fs, 'coachCodes', code), { ...data, createdAt: serverTimestamp() });
@@ -225,11 +225,11 @@ export async function getCoachCode(code) {
 export const createCoachLink = (uid, data) => setDoc(linkRef(uid), data);
 export const updateCoachLink = (uid, data) => updateDoc(linkRef(uid), data);
 export const deleteCoachLink = uid => deleteDoc(linkRef(uid));
-// Tu propio vínculo (como alumno): null si no tienes coach
+// Tu propio vínculo (como atleta): null si no tienes coach
 export function listenCoachLink(uid, cb) {
   return onSnapshot(linkRef(uid), snap => cb(snap.exists() ? snap.data() : null), () => cb(null));
 }
-// Tus alumnos (como coach)
+// Tus atletas (como coach)
 export function listenStudents(uid, cb, onError = () => {}) {
   return onSnapshot(query(collection(fs, 'coachLinks'), where('coachUid', '==', uid)),
     snap => cb(snap.docs.map(d => d.data())), onError);
@@ -241,7 +241,7 @@ export function listenPlan(uid, cb, onError = () => {}) {
     cb(p && { tier: p.tier, max: p.max, trial: !!p.trial, until: p.until && p.until.toMillis ? p.until.toMillis() : p.until });
   }, onError);
 }
-// El servidor crea la prueba gratis (la primera vez) y le da a cada alumno su puesto (1, 2, 3… por orden de llegada)
+// El servidor crea la prueba gratis (la primera vez) y le da a cada atleta su puesto (1, 2, 3… por orden de llegada)
 export const coachSync = () => httpsCallable(fns, 'coachSync')().then(r => r.data);
 // Link de pago de Mercado Pago para un plan ('coach' | 'pro') y período ('mes' | 'anual')
 export const mpCheckout = (plan, period) => httpsCallable(fns, 'mpCheckout')({ plan, period }).then(r => r.data);
@@ -258,7 +258,7 @@ export function listenCoachEdits(uid, cb) {
   }, () => {});
 }
 
-// El coach baja los datos de un alumno: main completo y solo los entrenos que cambiaron desde `since` (ms)
+// El coach baja los datos de un atleta: main completo y solo los entrenos que cambiaron desde `since` (ms)
 export async function fetchMain(uid) {
   const snap = await getDoc(mainRef(uid));
   return snap.exists() ? snap.data() : null;

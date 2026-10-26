@@ -43,7 +43,7 @@ function persistLocal() {
   if (user && !viewing) localStorage.setItem(userKey(user.uid), JSON.stringify({ db, synced }));
 }
 function save() {
-  if (viewing) { scheduleCoachEdits(); return; }   // viendo a un alumno: sus rutinas cambiadas se le envían
+  if (viewing) { scheduleCoachEdits(); return; }   // viendo a un atleta: sus rutinas cambiadas se le envían
   recordPlan();
   syncDraftRoutine();
   persistLocal(); scheduleSync(); scheduleProfile(); scheduleCoachSummary();
@@ -267,7 +267,7 @@ function weekCard() {
     </section>`;
 }
 
-// Inicio: agua, peso y sueño (mirando a un alumno solo se muestra su peso; el resto está en el resumen semanal)
+// Inicio: agua, peso y sueño (mirando a un atleta solo se muestra su peso; el resto está en el resumen semanal)
 function waterSleepCards(ml, goal, streak) {
   return `<div class="card hub">
       <a class="hub-top" href="#/agua"><span class="hub-icon">💧</span><strong>Agua</strong>${streak >= 2 ? `<span class="badge on" title="Días seguidos cumpliendo tu meta">🔥 ${streak}</span>` : ''}</a>
@@ -301,7 +301,7 @@ function viewHub() {
     ${waterSleepCards(ml, goal, streak)}`}
 
     ${weekCard()}
-    ${viewing ? `<button class="btn ghost block danger-text" data-action="student-del" data-uid="${esc(viewing.uid)}" style="margin-top:16px">Quitar a ${esc(viewing.name)} de mis alumnos</button>` : ''}
+    ${viewing ? `<button class="btn ghost block danger-text" data-action="student-del" data-uid="${esc(viewing.uid)}" style="margin-top:16px">Quitar a ${esc(viewing.name)} de mis atletas</button>` : ''}
     </div>
 `;
 }
@@ -712,7 +712,7 @@ function viewDietEditor(id) {
     <button class="btn block" data-action="meal-add">+ Agregar comida ${diet.meals.length + 1}</button>
     <p class="muted hint">¿Falta un alimento? <a href="#/alimento/nuevo">Créalo aquí</a> y vuelve.</p>
     <button class="btn primary block" data-action="diet-done" style="margin-top:20px">Terminar dieta</button>
-    ${shareBox(diet.id, 'Tu alumno toca el link y la dieta se le agrega sola (o ingresa el código en Nutrición → Mis dietas → "Importar dieta con código"). Se comparten las comidas, las cantidades y los alimentos que creaste tú. Si después cambias la dieta, comparte un código nuevo.')
+    ${shareBox(diet.id, 'Tu atleta toca el link y la dieta se le agrega sola (o ingresa el código en Nutrición → Mis dietas → "Importar dieta con código"). Se comparten las comidas, las cantidades y los alimentos que creaste tú. Si después cambias la dieta, comparte un código nuevo.')
       || '<button class="btn block" data-action="share-diet">Compartir dieta</button>'}
     <button class="btn ghost block danger-text" data-action="diet-del">Eliminar dieta</button>`;
 }
@@ -760,7 +760,7 @@ function paintDietTotals(diet) {
 
 
 function nutritionCard() {
-  // Mirando a un alumno: solo el acceso (si cumplió la dieta se ve en su semana)
+  // Mirando a un atleta: solo el acceso (si cumplió la dieta se ve en su semana)
   if (viewing) return `<a class="card hub" href="#/nutricion"><div class="hub-top"><span class="hub-icon">🍽️</span><strong>Nutrición</strong><span class="chev">›</span></div></a>`;
   const t = todayNutrition();
   return `<a class="card hub" href="#/nutricion">
@@ -2066,9 +2066,9 @@ function viewAccount() {
 
     <h2>Modo coach</h2>
     <section class="card stack">
-      <div class="quiz-set"><span class="muted">Sigue a tus alumnos: ve sus entrenos, peso, medidas, nutrición y fotos, y cambia sus rutinas.</span>
+      <div class="quiz-set"><span class="muted">Sigue a tus atletas: ve sus entrenos, peso, medidas, nutrición y fotos, y cambia sus rutinas.</span>
         <button class="chip toggle ${coachOn() ? 'on' : ''}" data-action="${coachOn() ? 'coach-off' : 'coach-on'}" aria-pressed="${coachOn()}">${coachOn() ? 'Activado' : 'Desactivado'}</button></div>
-      ${coachOn() ? '<a class="btn block center" href="#/alumnos" style="margin-top:0">Mis alumnos</a>' : ''}
+      ${coachOn() ? '<a class="btn block center" href="#/alumnos" style="margin-top:0">Mis atletas</a>' : ''}
     </section>
 
     <h2>Ideas</h2>
@@ -2492,13 +2492,13 @@ async function shareWorkout(btn, id) {
 }
 
 // ---------- Modo coach ----------
-// El alumno se vincula con el código de coach (coachLinks/{alumno}). El coach ve sus datos (solo mirar) y le cambia
-// las rutinas: los cambios quedan en coachLinks/{alumno}/edits y la app del alumno los aplica sola.
-let myCoach = null;                 // tu vínculo como alumno (null = sin coach)
+// El atleta se vincula con el código de coach (coachLinks/{atleta}). El coach ve sus datos (solo mirar) y le cambia
+// las rutinas: los cambios quedan en coachLinks/{atleta}/edits y la app del atleta los aplica sola.
+let myCoach = null;                 // tu vínculo como atleta (null = sin coach)
 let stopMyCoach = () => {}, stopCoachEdits = () => {};
 let students = [], studentsLoaded = false, stopStudents = () => {};
-// Plan del coach: gratis ve a sus 5 primeros alumnos; Coach hasta 20; Coach Pro sin límite.
-// El servidor le da a cada alumno su puesto (slot: 1, 2, 3… por orden de llegada) y las reglas de Firestore lo hacen cumplir.
+// Plan del coach: gratis ve a sus 5 primeros atletas; Coach hasta 20; Coach Pro sin límite.
+// El servidor le da a cada atleta su puesto (slot: 1, 2, 3… por orden de llegada) y las reglas de Firestore lo hacen cumplir.
 let coachPlan = null, coachPlanLoaded = false, stopPlan = () => {}, slotSyncBusy = false, slotSyncAt = 0, slotSyncTimer = null;
 let planPeriod = 'mes', planBusy = null, payResult = null;
 const FREE_STUDENTS = 5;
@@ -2512,9 +2512,9 @@ const studentLimit = () => (planActive() ? coachPlan.max || Infinity : FREE_STUD
 // Sin puesto todavía (recién vinculado) o sin poder leer el plan: se muestra normal (las reglas deciden igual)
 const canSeeStudent = l => !coachPlanLoaded || !l.slot || l.slot <= FREE_STUDENTS || (planActive() && (!coachPlan.max || l.slot <= coachPlan.max));
 const planDaysLeft = () => (coachPlan ? Math.ceil((coachPlan.until - Date.now()) / 864e5) : 0);
-// Puestos 1, 2, 3… sin huecos; si falta alguno (alumno nuevo o uno que se fue), el servidor los ordena
+// Puestos 1, 2, 3… sin huecos; si falta alguno (atleta nuevo o uno que se fue), el servidor los ordena
 const slotsOk = list => list.map(l => l.slot || 0).sort((x, y) => x - y).every((v, k) => v === k + 1);
-// Como máximo una vez cada 10 segundos; si toca antes, queda programada (así un alumno nuevo siempre recibe su puesto)
+// Como máximo una vez cada 10 segundos; si toca antes, queda programada (así un atleta nuevo siempre recibe su puesto)
 function syncSlots(force = false) {
   if (slotSyncBusy || slotSyncTimer || viewing || !cloud.coachSync) return;
   const wait = force ? 0 : slotSyncAt + 10000 - Date.now();
@@ -2523,27 +2523,27 @@ function syncSlots(force = false) {
   cloud.coachSync().catch(e => console.warn('coachSync', e)).finally(() => { slotSyncBusy = false; });
 }
 let myCoachLoaded = false;
-let coachComments = {}, stopComments = () => {};   // alumno: comentarios de tu coach por entreno
-let viewing = null;                 // alumno que estás viendo: { uid, name, own (tus datos), base (sus rutinas), queued }
+let coachComments = {}, stopComments = () => {};   // atleta: comentarios de tu coach por entreno
+let viewing = null;                 // atleta que estás viendo: { uid, name, own (tus datos), base (sus rutinas), queued }
 let coachCodeBusy = false, coachCodeError = false;
-const me = () => (viewing ? viewing.own : db);   // tus propios datos, aunque estés viendo a un alumno
+const me = () => (viewing ? viewing.own : db);   // tus propios datos, aunque estés viendo a un atleta
 const dataUid = () => (viewing ? viewing.uid : user.uid);
 const coachOn = () => !!me().body.coach;
 const coachLink = code => `${location.origin}${location.pathname}?k=${code}`;
 const coachInviteText = code => `Vincúlate conmigo como tu coach en Desdel 💪\n\nToca el link:\n${coachLink(code)}\n\n` +
   `Si no se abre, abre Desdel y en Social → Tengo coach pega este código: ${fmtCode(code)}`;
 
-// Pantallas que se pueden mirar de un alumno; las de VIEW_EXIT te devuelven a tus datos
+// Pantallas que se pueden mirar de un atleta; las de VIEW_EXIT te devuelven a tus datos
 const VIEW_OK = ['', 'chat', 'rutinas', 'rutina', 'programas', 'miprograma', 'listos', 'programa', 'dieta', 'objetivo', 'historial', 'sesion', 'progreso', 'ejercicio', 'peso', 'grasa', 'medidas', 'fotos', 'nutricion', 'sueno', 'agua'];
 const VIEW_EXIT = ['social', 'gymbro', 'perfil', 'privacidad', 'cuenta', 'alumnos', 'coach', 'asignar'];
-// Lo que se puede tocar mirando a un alumno, y lo extra en el editor de rutinas
+// Lo que se puede tocar mirando a un atleta, y lo extra en el editor de rutinas
 const VIEW_SAFE = new Set(['back', 'view-exit', 'vid-toggle', 'info', 'toggle-sec', 'range', 'toggle-history', 'hist-month', 'hist-day', 'skin-view', 'measure-view',
   'prog-open', 'prog-close', 'prog-filter', 'prog-retry', 'week-sum', 'week-day', 'guide-view', 'guide-close', 'explore-zone', 'explore-open', 'explore-back', 'explore-close', 'go-ex', 'prev-ex', 'next-ex', 'prog-rid', 'thumb-play']);
 const VIEW_ROUTINE = new Set(['reps-by', 'toggle-drop', 'toggle-bw', 'toggle-ss', 'toggle-rir', 'toggle-unit', 'move', 'ex-open', 'ex-close', 'del-ex', 'dup-routine', 'del-routine',
   'guide-pick', 'guide-change', 'guide-set', 'guide-pick-close', 'explore-list', 'explore-add', 'explore-add-custom']);
 const VIEW_PROGRAM = new Set(['myprog-new', 'myprog-weeks', 'myprog-stop', 'myprog-use', 'myprog-del', 'prog-level', 'prog-days', 'prog-add', 'prog-add-one']);
 const VIEW_NUTRI = new Set(['diet-new', 'nutri-use', 'diet-link', 'diet-done', 'diet-del', 'meal-add', 'meal-dup', 'meal-del', 'item-del', 'item-mode', 'add-mode', 'pick-food', 'pace-dir', 'set-activity']);
-const CHAT_BLOCK = new Set(['attach', 'attach-pick', 'attach-send', 'msg-add', 'gymbro-del']);   // usan tus datos: no mientras ves a un alumno
+const CHAT_BLOCK = new Set(['attach', 'attach-pick', 'attach-send', 'msg-add', 'gymbro-del']);   // usan tus datos: no mientras ves a un atleta
 const viewAllowed = action => VIEW_SAFE.has(action) || action === 'student-del'
   || (routeParts()[0] === 'chat' && !CHAT_BLOCK.has(action)) || (routeParts()[0] === 'rutina' && VIEW_ROUTINE.has(action))
   || (['programas', 'miprograma', 'listos', 'programa'].includes(routeParts()[0]) && VIEW_PROGRAM.has(action))
@@ -2627,7 +2627,7 @@ async function ensureCoachCode() {
   if (routeParts()[0] === 'alumnos') refresh();
 }
 
-// Resumen para el panel del coach (lo escribe tu teléfono, así el coach lee un solo documento por alumno)
+// Resumen para el panel del coach (lo escribe tu teléfono, así el coach lee un solo documento por atleta)
 function coachSummary() {
   const last = db.workouts[db.workouts.length - 1], bw = db.bodyweight[db.bodyweight.length - 1], wk = weekSummary(0);
   const since = Date.now() - 30 * 864e5;
@@ -2842,7 +2842,7 @@ function onCoachEdits(list) {
   notice(`${who} cambió tu entrenamiento\n\n${lines.join('\n\n')}\n\nLo ves también en Social → Mi coach.`);
 }
 
-// Copia de los entrenos de cada alumno en este teléfono (IndexedDB), para bajar solo lo que cambió
+// Copia de los entrenos de cada atleta en este teléfono (IndexedDB), para bajar solo lo que cambió
 const idb = (() => {
   let conn = null;
   const open = () => conn || (conn = new Promise((res, rej) => {
@@ -2871,18 +2871,18 @@ async function loadStudentData(sUid) {
   idb.set(key, { workouts, wAt: ws.wAt });
   return { main, workouts, edits, comments, checkins };
 }
-// Coach: mirar los datos de un alumno (los tuyos quedan guardados aparte)
+// Coach: mirar los datos de un atleta (los tuyos quedan guardados aparte)
 async function viewStudent(link, btn) {
-  if (db.draft) return notice('Termina o descarta tu entrenamiento en curso antes de ver a un alumno.');
+  if (db.draft) return notice('Termina o descarta tu entrenamiento en curso antes de ver a un atleta.');
   await busy(btn, 'Cargando…', async () => {
     while (syncing) await new Promise(r => setTimeout(r, 100));   // que termine de subir lo tuyo
     let data;
     try { data = await loadStudentData(link.studentUid); } catch (e) {
-      return notice(`No se pudieron cargar los datos de ${link.studentName || 'tu alumno'}. Revisa tu internet e intenta de nuevo.`);
+      return notice(`No se pudieron cargar los datos de ${link.studentName || 'tu atleta'}. Revisa tu internet e intenta de nuevo.`);
     }
     const sdb = dbFromCloud(data.main, data.workouts);
     for (const ed of data.edits.sort(byKind)) applyEditTo(sdb, ed);   // cambios que aún no le llegan
-    viewing = { uid: link.studentUid, name: link.studentName || 'tu alumno', own: db, base: null, queued: [],
+    viewing = { uid: link.studentUid, name: link.studentName || 'tu atleta', own: db, base: null, queued: [],
       comments: Object.fromEntries(data.comments.map(c => [c.id, c])), checkins: data.checkins };
     db = sdb;
     dietLinks();   // se arma igual que en su app, para que no cuente como un cambio tuyo
@@ -2893,7 +2893,7 @@ async function viewStudent(link, btn) {
     render();
   });
 }
-// Lo que el coach puede cambiar del alumno, para saber qué enviarle
+// Lo que el coach puede cambiar del atleta, para saber qué enviarle
 const coachMap = d => ({
   r: Object.fromEntries(d.routines.map(x => [x.id, stable(x)])),
   p: Object.fromEntries(d.programs.map(x => [x.id, stable(x)])),
@@ -2915,7 +2915,7 @@ function exitViewing() {
   if (routeParts()[0] === '' || VIEW_OK.includes(routeParts()[0])) location.replace('#/alumnos');
   else render();
 }
-// Envía al alumno las rutinas y programas que cambiaste (o borraste) y su programa activo
+// Envía al atleta las rutinas y programas que cambiaste (o borraste) y su programa activo
 let editTimer = null;
 function scheduleCoachEdits() { clearTimeout(editTimer); editTimer = setTimeout(pushCoachEdits, 700); }
 function pushCoachEdits() {
@@ -2936,13 +2936,13 @@ function pushCoachEdits() {
   if (jobs.length) Promise.all(jobs).then(() => showNote(`Enviado a ${v.name} ✓`), () => notice(`No se pudo enviar el cambio a ${v.name}. Revisa tu internet.`));
 }
 
-// Mirando a un alumno, los textos de la app hablan de él ("Hoy a Juan le toca", "Programas de Juan")
+// Mirando a un atleta, los textos de la app hablan de él ("Hoy a Juan le toca", "Programas de Juan")
 const POV = n => [
   [/^Hoy te toca:/, `Hoy a ${n} le toca:`], [/^Hoy ya entrenaste /, `Hoy ya entrenó `], [/^Hoy: descanso$/, `Hoy ${n} descansa`],
   [/^Entrenaste$/, 'Entrenó'], [/^Te toca$/, 'Le toca'], [/^Tu semana$/, `Semana de ${n}`], [/^Tu peso de hoy · último (.*)$/, 'Último peso: $1'], [/^Tu peso de hoy$/, 'Todavía no anota su peso'],
   [/^Mis programas$/i, `Programas de ${n}`], [/^Mis dietas$/, 'Dietas'], [/^Mis alimentos$/, 'Alimentos'],
   [/^Es el que estás usando: lo que cambies aquí se aplica a tu semana\.$/, `Es el que ${n} está usando: lo que cambies aquí se aplica a su semana.`],
-  [/^Para enviárselo a un alumno.*$/, ''],
+  [/^Para enviárselo a un atleta.*$/, ''],
   [/^Tu dieta tiene/, 'Su dieta tiene'], [/que tu objetivo/, 'que su objetivo'], [/^Tus kcal objetivo$/, `Kcal objetivo de ${n}`],
   [/^Referencia para armar tu dieta$/, 'Referencia para armar su dieta'], [/^Para mantener tu peso$/, 'Para mantener su peso'],
   [/^¿Qué quieres\?$/i, `¿Qué quiere ${n}?`], [/^Horas que dormiste cada noche$/, 'Horas que durmió cada noche'], [/^Te faltan/, 'Le faltan'],
@@ -2976,8 +2976,8 @@ function povTexts() {
   }
 }
 
-// Mirando a un alumno, la barra de abajo no apila pantallas: así "atrás" desde una pestaña vuelve a su Inicio,
-// y "atrás" desde su Inicio vuelve a Mis alumnos (sale de su vista)
+// Mirando a un atleta, la barra de abajo no apila pantallas: así "atrás" desde una pestaña vuelve a su Inicio,
+// y "atrás" desde su Inicio vuelve a Mis atletas (sale de su vista)
 const TOP_SCREENS = ['rutinas', 'programas', 'historial', 'progreso', 'nutricion', 'peso', 'grasa', 'medidas', 'fotos'];
 document.addEventListener('click', e => {
   if (!viewing) return;
@@ -2991,11 +2991,11 @@ document.addEventListener('click', e => {
   else location.replace(a.getAttribute('href'));   // entre pestañas: se reemplaza
 }, true);
 window.addEventListener('hashchange', () => {
-  // Llegaste a Mis alumnos con "atrás" desde su Inicio: se sale de su vista
+  // Llegaste a Mis atletas con "atrás" desde su Inicio: se sale de su vista
   if (viewing && routeParts()[0] === 'alumnos') exitViewing();
 });
 
-// Comentario del coach sobre un entreno: el coach lo escribe mirando al alumno; el alumno lo ve en ese entreno
+// Comentario del coach sobre un entreno: el coach lo escribe mirando al atleta; el atleta lo ve en ese entreno
 function coachCommentHtml(w) {
   if (viewing) {
     const c = viewing.comments[w.id];
@@ -3032,9 +3032,9 @@ async function saveCoachComment(f) {
   });
 }
 
-// =============== Asignar una rutina o programa tuyo a uno o varios alumnos ===============
+// =============== Asignar una rutina o programa tuyo a uno o varios atletas ===============
 let assignSel = null, assignTo = new Set(), assignActivate = true;
-const assignId = id => `c${id}`;   // la copia del alumno: si lo vuelves a asignar, se actualiza la misma
+const assignId = id => `c${id}`;   // la copia del atleta: si lo vuelves a asignar, se actualiza la misma
 function assignEdits(sel, activate) {
   const copyR = r => ({ ...clone(r), id: assignId(r.id) });
   if (sel.kind === 'r') {
@@ -3054,7 +3054,7 @@ const joinNames = l => (l.length > 1 ? `${l.slice(0, -1).join(', ')} y ${l[l.len
 async function assignToStudents(btn) {
   const list = students.filter(x => assignTo.has(x.studentUid)), job = assignSel && assignEdits(assignSel, assignActivate);
   if (!job || !list.length) return;
-  const names = list.map(x => x.studentName || 'Alumno');
+  const names = list.map(x => x.studentName || 'Atleta');
   const prog = assignSel.kind === 'p';
   if (!await ask(`¿Asignar ${prog ? 'el programa' : 'la rutina'} "${job.name}" a ${joinNames(names)}?${prog && assignActivate ? '\n\nQueda como su programa activo.' : ''}\n\nSi ya se lo habías asignado, se actualiza.`, 'Asignar')) return;
   await busy(btn, 'Enviando…', async () => {
@@ -3084,12 +3084,12 @@ function viewAssign() {
     <h2>A quién</h2>
     ${students.length ? `<section class="card profile-fields">${students.filter(canSeeStudent).map(x => `<label class="toggle-row small-toggle">
       <input type="checkbox" data-action="assign-to" data-uid="${esc(x.studentUid)}" ${assignTo.has(x.studentUid) ? 'checked' : ''}>
-      <span class="grow">${esc(x.studentName || 'Alumno')}</span></label>`).join('')}</section>` : '<p class="muted card">Todavía no tienes alumnos.</p>'}
-    <button class="btn primary block" data-action="assign-go" ${ready ? '' : 'disabled'} style="margin-top:14px">Asignar${assignTo.size ? ` a ${plural(assignTo.size, 'alumno')}` : ''}</button>
+      <span class="grow">${esc(x.studentName || 'Atleta')}</span></label>`).join('')}</section>` : '<p class="muted card">Todavía no tienes atletas.</p>'}
+    <button class="btn primary block" data-action="assign-go" ${ready ? '' : 'disabled'} style="margin-top:14px">Asignar${assignTo.size ? ` a ${plural(assignTo.size, 'atleta')}` : ''}</button>
     <p class="muted small">Les llega a su app con un aviso. Si ya tenían un ejercicio con el mismo nombre, se mantiene su historial.</p>`;
 }
 
-// =============== Check-in semanal (lo envía el alumno, lo lee el coach) ===============
+// =============== Check-in semanal (lo envía el atleta, lo lee el coach) ===============
 let checkinDraft = {};
 const CHECK_Q = [
   ['energy', 'Energía', 'muy baja', 'muy alta'],
@@ -3175,7 +3175,7 @@ async function sendCheckin(f) {
   });
 }
 let lastCheckin = 0;   // cuándo enviaste tu último check-in (va en el resumen para tu coach)
-// Coach: los check-ins del alumno que estás viendo (arriba en su Inicio) y el aviso de "nuevo" en Mis alumnos
+// Coach: los check-ins del atleta que estás viendo (arriba en su Inicio) y el aviso de "nuevo" en Mis atletas
 const seenKey = () => `desdel-checkin-visto-${user.uid}`;
 const seenMap = () => { try { return JSON.parse(localStorage.getItem(seenKey())) || {}; } catch (e) { return {}; } };
 function markCheckinSeen(link) {
@@ -3205,7 +3205,7 @@ function studentCheckinsCard() {
     ${list.length ? '<span class="muted small">↑↓ = cómo cambió desde su check-in anterior (el número es el de antes).</span>' : ''}</section>`;
 }
 
-// Alumno: vincularse con un coach
+// Atleta: vincularse con un coach
 async function linkCoachForm(f) {
   await busy(f.querySelector('button'), 'Buscando…', async () => {
     const code = normCode(f.elements.code.value);
@@ -3218,7 +3218,7 @@ async function linkCoachForm(f) {
 }
 async function linkCoach(code, cc, showError) {
   const name = cc.ownerName || 'Tu coach';
-  if (cc.ownerUid === user.uid) return showError('Ese es tu propio código de coach. Mándaselo a tus alumnos.');
+  if (cc.ownerUid === user.uid) return showError('Ese es tu propio código de coach. Mándaselo a tus atletas.');
   if (myCoach && myCoach.coachUid === cc.ownerUid) { go('#/coach'); return; }
   if (myCoach && !await ask(`Ya tienes como coach a ${myCoach.coachName || 'otra persona'}. ¿Cambiar a ${name}?`, 'Cambiar')) return;
   if (!await ask(`¿Vincular a ${name} como tu coach?\n\n${name} podrá ver todos tus datos: entrenamientos, peso, medidas, nutrición y fotos de progreso. También podrá cambiar tus rutinas, programas y dieta, y crearte nuevos.\n\nPuedes desvincularlo cuando quieras.`, 'Vincular')) return;
@@ -3262,15 +3262,15 @@ const daysAgo = iso => {
 };
 const daysSince = iso => Math.round((Date.parse(todayKey()) - Date.parse(String(iso).slice(0, 10))) / 864e5);
 
-// Social: tu coach, tus alumnos o la invitación a activar el modo coach
+// Social: tu coach, tus atletas o la invitación a activar el modo coach
 function coachRows() {
   const coach = myCoach
     ? `<a class="card coach-row" href="#/coach"><span class="grow"><span class="muted small">Tu coach</span><strong>${esc(myCoach.coachName || 'Coach')}</strong></span><span class="chev">›</span></a>`
     : `<a class="card coach-row" href="#/coach"><span class="grow"><strong>Tengo coach</strong><span class="muted small">Vincúlate con tu entrenador</span></span><span class="chev">›</span></a>`;
   const mine = coachOn()
-    ? `<a class="card coach-row" href="#/alumnos"><span class="grow"><strong>Mis alumnos</strong><span class="muted small">${studentsLoaded ? plural(students.length, 'alumno') : 'Cargando…'}</span></span><span class="chev">›</span></a>`
+    ? `<a class="card coach-row" href="#/alumnos"><span class="grow"><strong>Mis atletas</strong><span class="muted small">${studentsLoaded ? plural(students.length, 'atleta') : 'Cargando…'}</span></span><span class="chev">›</span></a>`
     : localStorage.getItem(`desdel-no-coach-${user.uid}`) === '1' ? ''
-    : `<div class="card coach-row coach-offer"><a class="grow coach-offer-link" href="#/alumnos"><strong>¿Eres coach?</strong><span class="muted small">Sigue a tus alumnos en Desdel</span></a>
+    : `<div class="card coach-row coach-offer"><a class="grow coach-offer-link" href="#/alumnos"><strong>¿Eres coach?</strong><span class="muted small">Sigue a tus atletas en Desdel</span></a>
         <a class="btn small-btn" href="#/alumnos">Activar</a><button class="link small" data-action="coach-hide">No soy coach</button></div>`;
   return `<div class="coach-rows">${mine}${coach}</div>`;
 }
@@ -3279,14 +3279,14 @@ function viewStudents() {
   if (!coachOn()) {
     return `${header('Modo coach', { back: true })}
       <section class="card stack">
-        <strong>Sigue a tus alumnos en Desdel</strong>
+        <strong>Sigue a tus atletas en Desdel</strong>
         <ul class="guide-ul">
           <li>Ve sus entrenamientos serie por serie, su progreso, peso, medidas, nutrición y fotos.</li>
           <li>Cambia sus rutinas, programas y dieta, o créales nuevos: les llegan solos a su app.</li>
           <li>Comenta sus entrenos y recibe su check-in semanal.</li>
           <li>Ve de un vistazo quién entrenó esta semana y quién no.</li>
-          <li>Tus alumnos se vinculan con tu código de coach y pueden desvincularse cuando quieran.</li>
-          <li>Gratis hasta 5 alumnos. Para más, planes desde ${fmtCLP(PLAN_INFO.coach.mes)} al mes. Cuando llegues a tu 6.º alumno tienes 1 mes de prueba gratis con alumnos sin límite.</li>
+          <li>Tus atletas se vinculan con tu código de coach y pueden desvincularse cuando quieran.</li>
+          <li>Gratis hasta 5 atletas. Para más, planes desde ${fmtCLP(PLAN_INFO.coach.mes)} al mes. Cuando llegues a tu 6.º atleta tienes 1 mes de prueba gratis con atletas sin límite.</li>
         </ul>
         <span class="muted small">Puedes seguir usando Desdel para tus propios entrenamientos.</span>
         <button class="btn primary block" data-action="coach-on">Activar modo coach</button>
@@ -3300,8 +3300,8 @@ function viewStudents() {
     if (!canSeeStudent(l)) {
       return `<section class="card student locked">
       <button class="student-main" data-action="student-locked">
-        ${avatarHtml(l.studentName || 'Alumno', null)}
-        <span class="grow"><strong>${esc(l.studentName || 'Alumno')}</strong>
+        ${avatarHtml(l.studentName || 'Atleta', null)}
+        <span class="grow"><strong>${esc(l.studentName || 'Atleta')}</strong>
           <span class="muted small">No cabe en tu plan. Pasa a ${l.slot > PLAN_INFO.coach.max ? 'Coach Pro' : 'Coach'} para verlo.</span></span>
         <span class="lock-tag">Bloqueado</span>
       </button>
@@ -3311,15 +3311,15 @@ function viewStudents() {
     loadProfile(l.studentUid);   // su foto de perfil (si tiene)
     return `<section class="card student">
       <button class="student-main" data-action="student-view" data-uid="${esc(l.studentUid)}">
-        ${avatarHtml(l.studentName || 'Alumno', ((profiles.get(l.studentUid) || {}).data || {}).stats?.photo || null)}
-        <span class="grow"><strong>${esc(l.studentName || 'Alumno')}</strong>
+        ${avatarHtml(l.studentName || 'Atleta', ((profiles.get(l.studentUid) || {}).data || {}).stats?.photo || null)}
+        <span class="grow"><strong>${esc(l.studentName || 'Atleta')}</strong>
           <span class="muted small">${last ? `Último entreno: ${esc(last.name || 'Entreno')} · ${daysAgo(last.date)}` : 'Todavía no anota entrenamientos'}</span>
           <span class="muted small">Esta semana: ${sm.planned ? `${sm.week || 0} de ${sm.planned}` : plural(sm.week || 0, 'entreno')}${sm.kg ? ` · Peso: ${fmtNum(sm.kg)} kg` : ''}</span>
           ${idle != null && idle >= 4 ? `<span class="student-alert">Sin registrar hace ${idle} días</span>` : ''}
           ${checkinNew(l) ? '<span class="student-new">Check-in nuevo</span>' : ''}</span>
         <span class="chev">›</span>
       </button>
-      ${chats.some(c => c.id === [user.uid, l.studentUid].sort().join('_')) ? `<a class="icon student-chat" href="#/chat/${[user.uid, l.studentUid].sort().join('_')}" aria-label="Chat con ${esc(l.studentName || 'tu alumno')}"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-4.9A8 8 0 1 1 21 12Z"/></svg></a>` : ''}
+      ${chats.some(c => c.id === [user.uid, l.studentUid].sort().join('_')) ? `<a class="icon student-chat" href="#/chat/${[user.uid, l.studentUid].sort().join('_')}" aria-label="Chat con ${esc(l.studentName || 'tu atleta')}"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-4.9A8 8 0 1 1 21 12Z"/></svg></a>` : ''}
     </section>`;
   }).join('');
   const codeBox = `<section class="card share-box">
@@ -3330,23 +3330,23 @@ function viewStudents() {
         </div>`
       : coachCodeError ? '<p>No se pudo crear tu código. Revisa tu internet.</p><button class="btn primary" data-action="coach-retry">Reintentar</button>'
       : '<p class="muted">Creando tu código…</p>'}
-      <p class="muted hint">Mándaselo solo a tus alumnos: quien lo use te da acceso a todos sus datos. Es distinto de tu código de gymbro.</p>
+      <p class="muted hint">Mándaselo solo a tus atletas: quien lo use te da acceso a todos sus datos. Es distinto de tu código de gymbro.</p>
     </section>`;
-  // Con alumnos, la lista va primero y el código queda chico abajo (Invitar alumno)
+  // Con atletas, la lista va primero y el código queda chico abajo (Invitar atleta)
   const invite = code ? `<section class="card invite-row">
       <span class="grow"><span class="muted small">Tu código de coach</span><strong>${fmtCode(code)}</strong></span>
-      <button class="btn primary small-btn" data-action="coach-send">+ Invitar alumno</button>
+      <button class="btn primary small-btn" data-action="coach-send">+ Invitar atleta</button>
     </section>` : codeBox;
-  return `${header('Mis alumnos', { back: true, sub: 'Modo coach' })}
+  return `${header('Mis atletas', { back: true, sub: 'Modo coach' })}
     ${planBarHtml()}
     ${students.length ? '' : codeBox}
     ${students.length ? '<a class="btn block center" href="#/asignar" style="margin:0 0 12px">Asignar rutina o programa</a>' : ''}
-    ${!studentsLoaded ? '<p class="empty">Cargando…</p>' : list || '<p class="empty">Todavía no tienes alumnos. Mándales tu código: en Desdel van a Social → Tengo coach.</p>'}
+    ${!studentsLoaded ? '<p class="empty">Cargando…</p>' : list || '<p class="empty">Todavía no tienes atletas. Mándales tu código: en Desdel van a Social → Tengo coach.</p>'}
     ${students.length ? invite : ''}
     <p class="muted small" style="margin-top:20px">Para dejar de usar el modo coach, ve a Cuenta.</p>`;
 }
 
-// Tu plan, arriba de Mis alumnos: cuántos ves, hasta cuándo, y renovar si está por vencer
+// Tu plan, arriba de Mis atletas: cuántos ves, hasta cuándo, y renovar si está por vencer
 function planBarHtml() {
   if (!coachPlanLoaded) return '';
   const n = students.length, seen = students.filter(canSeeStudent).length, left = planDaysLeft();
@@ -3355,13 +3355,13 @@ function planBarHtml() {
   if (planActive()) {
     const p = PLAN_INFO[coachPlan.tier] || PLAN_INFO.pro;
     title = coachPlan.trial ? `Prueba gratis de ${p.name}` : `Plan ${p.name}`;
-    sub = `${p.max ? `${n} de ${p.max} alumnos` : 'Alumnos sin límite'} · hasta el ${until}`;
-    if (left <= 5) { warn = true; sub = `Vence ${left <= 1 ? 'mañana' : `en ${left} días`} (${until}). Después ves solo a tus ${FREE_STUDENTS} primeros alumnos.`; btn = coachPlan.trial ? 'Ver planes' : 'Renovar'; }
+    sub = `${p.max ? `${n} de ${p.max} atletas` : 'Atletas sin límite'} · hasta el ${until}`;
+    if (left <= 5) { warn = true; sub = `Vence ${left <= 1 ? 'mañana' : `en ${left} días`} (${until}). Después ves solo a tus ${FREE_STUDENTS} primeros atletas.`; btn = coachPlan.trial ? 'Ver planes' : 'Renovar'; }
   } else {
     title = coachPlan && !coachPlan.trial ? 'Tu plan venció' : 'Plan gratis';
     warn = n > seen;
-    sub = n > seen ? `Ves ${seen} de ${n} alumnos. Pasa a Coach para verlos a todos.`
-      : `${n} de ${FREE_STUDENTS} alumnos gratis${coachPlan ? '' : ' · con tu 6.º alumno tienes 1 mes de prueba con alumnos sin límite'}`;
+    sub = n > seen ? `Ves ${seen} de ${n} atletas. Pasa a Coach para verlos a todos.`
+      : `${n} de ${FREE_STUDENTS} atletas gratis${coachPlan ? '' : ' · con tu 6.º atleta tienes 1 mes de prueba con atletas sin límite'}`;
     if (coachPlan && !coachPlan.trial) btn = 'Renovar';
   }
   return `<section class="card plan-bar${warn ? ' warn' : ''}">
@@ -3370,7 +3370,7 @@ function planBarHtml() {
   </section>`;
 }
 
-// Planes del modo coach: gratis hasta 5 alumnos, Coach hasta 20, Coach Pro sin límite. Se paga en Mercado Pago (1 mes o 1 año)
+// Planes del modo coach: gratis hasta 5 atletas, Coach hasta 20, Coach Pro sin límite. Se paga en Mercado Pago (1 mes o 1 año)
 function viewPlans() {
   if (!coachOn()) { location.replace('#/alumnos'); return ''; }
   const n = students.length, cur = planActive() ? coachPlan.tier : 'free';
@@ -3390,7 +3390,7 @@ function viewPlans() {
   const per = planPeriod === 'mes' ? 'al mes' : 'al año';
   const status = planActive()
     ? `${coachPlan.trial ? 'Prueba gratis' : `Plan ${(PLAN_INFO[coachPlan.tier] || PLAN_INFO.pro).name}`} hasta el ${fmtDMY(new Date(coachPlan.until).toISOString().slice(0, 10))}. Si pagas ahora, el tiempo que te queda se suma.`
-    : `Hoy tienes ${plural(n, 'alumno')}. Gratis ves a los ${FREE_STUDENTS} primeros.${coachPlan ? '' : ' Con tu 6.º alumno tienes 1 mes de prueba de Coach Pro gratis.'}`;
+    : `Hoy tienes ${plural(n, 'atleta')}. Gratis ves a los ${FREE_STUDENTS} primeros.${coachPlan ? '' : ' Con tu 6.º atleta tienes 1 mes de prueba de Coach Pro gratis.'}`;
   return `${header('Planes', { back: true, sub: 'Modo coach' })}
     ${result}
     <p class="muted small" style="margin:0 0 12px">${status}</p>
@@ -3398,12 +3398,12 @@ function viewPlans() {
       <button class="${planPeriod === 'mes' ? 'on' : ''}" data-action="plan-period" data-v="mes" role="tab" aria-selected="${planPeriod === 'mes'}">Mensual</button>
       <button class="${planPeriod === 'anual' ? 'on' : ''}" data-action="plan-period" data-v="anual" role="tab" aria-selected="${planPeriod === 'anual'}">Anual · 2 meses gratis</button>
     </div>
-    ${card('free', 'Gratis', `Hasta ${FREE_STUDENTS} alumnos`, '$0')}
-    ${card('coach', PLAN_INFO.coach.name, `Hasta ${PLAN_INFO.coach.max} alumnos`, `${fmtCLP(PLAN_INFO.coach[planPeriod])} <span class="muted small">${per}</span>`)}
-    ${card('pro', PLAN_INFO.pro.name, 'Alumnos sin límite', `${fmtCLP(PLAN_INFO.pro[planPeriod])} <span class="muted small">${per}</span>`)}
+    ${card('free', 'Gratis', `Hasta ${FREE_STUDENTS} atletas`, '$0')}
+    ${card('coach', PLAN_INFO.coach.name, `Hasta ${PLAN_INFO.coach.max} atletas`, `${fmtCLP(PLAN_INFO.coach[planPeriod])} <span class="muted small">${per}</span>`)}
+    ${card('pro', PLAN_INFO.pro.name, 'Atletas sin límite', `${fmtCLP(PLAN_INFO.pro[planPeriod])} <span class="muted small">${per}</span>`)}
     <ul class="guide-ul muted small">
       <li>Pagas en Mercado Pago con tarjeta o saldo. No se renueva solo: te avisamos antes de que venza.</li>
-      <li>Si no renuevas, tus alumnos siguen vinculados y sus datos no se pierden; ves solo a los ${FREE_STUDENTS} primeros que se unieron.</li>
+      <li>Si no renuevas, tus atletas siguen vinculados y sus datos no se pierden; ves solo a los ${FREE_STUDENTS} primeros que se unieron.</li>
       <li>Todo lo demás de Desdel sigue gratis.</li>
     </ul>`;
 }
@@ -4658,7 +4658,7 @@ function ffmiMissing() {
 function bodyweightCard() {
   const last = db.bodyweight[db.bodyweight.length - 1];
   const change = bwChange(30), gi = goalInfo();
-  if (viewing) {   // mirando a un alumno: toda la tarjeta lleva a su peso
+  if (viewing) {   // mirando a un atleta: toda la tarjeta lleva a su peso
     return `<a class="card hub" href="#/peso"><div class="hub-top"><span class="hub-icon">⚖️</span><strong>Cuerpo</strong></div>
       <span class="muted">${last ? `Último peso: ${fmtKg(last.kg)}` : 'Todavía no anota su peso'}</span></a>`;
   }
@@ -5581,7 +5581,7 @@ function render() {
     return;
   }
   if (authScreen) { location.replace('#/'); return; }
-  // Viendo a un alumno: Social, Cuenta, etc. vuelven a tus datos; entrenar o editar sus entrenos no se puede
+  // Viendo a un atleta: Social, Cuenta, etc. vuelven a tus datos; entrenar o editar sus entrenos no se puede
   if (viewing && !VIEW_OK.includes(screen)) {
     if (VIEW_EXIT.includes(screen)) exitViewing();
     else { notice(viewOnlyMsg()); history.back(); return; }
@@ -5667,7 +5667,7 @@ function render() {
   document.body.classList.toggle('viewing-chat', !!viewing && screen === 'chat');   // su chat: sin enviar tus rutinas o dietas
   $app.innerHTML = html;
   if (viewing && screen !== 'chat') document.body.style.setProperty('--viewbar', `${$app.querySelector('.view-bar').offsetHeight}px`);   // el título queda bajo la barra azul
-  // Viendo a un alumno: fuera del editor de rutinas solo se mira (los buscadores sí funcionan)
+  // Viendo a un atleta: fuera del editor de rutinas solo se mira (los buscadores sí funcionan)
   if (viewing && screen !== 'chat') povTexts();
   if (viewing && !['rutina', 'rutinas', 'miprograma', 'dieta', 'objetivo', 'chat'].includes(screen)) {
     $app.querySelectorAll('#app input, #app select, #app textarea').forEach(x => {
@@ -6343,7 +6343,7 @@ function viewMyProgram(id) {
     </section>
     ${db.routines.length ? weeks : '<p class="empty">Primero crea tus rutinas en la pestaña Rutinas; después eliges qué día va cada una.</p>'}
     ${(v => volumeHtml(v.planned, v.missing))(myProgVolume(p))}
-    <p class="muted small" style="margin:14px 0 0">Para enviárselo a un alumno o gymbro, en su chat toca ＋ → Enviar un programa.</p>
+    <p class="muted small" style="margin:14px 0 0">Para enviárselo a un atleta o gymbro, en su chat toca ＋ → Enviar un programa.</p>
     <button class="btn ghost block danger-text" data-action="myprog-del" style="margin-top:20px">Eliminar programa</button>`;
 }
 
@@ -6414,7 +6414,7 @@ function viewReadyPrograms() {
   const list = PROGRAMS.filter(p => !progDays || p.days === progDays);
   const days = [...new Set(PROGRAMS.map(p => p.days))].sort((a, b) => a - b);
   return `${header('Programas listos', { back: true, sub: 'Hechos por un coach' })}
-    <p class="muted" style="margin:0 0 12px">Elige tu nivel y cuántos días puedes entrenar. Añádelo a Mis programas para usarlo como tu plan, o cámbialo y envíaselo a un alumno.</p>
+    <p class="muted" style="margin:0 0 12px">Elige tu nivel y cuántos días puedes entrenar. Añádelo a Mis programas para usarlo como tu plan, o cámbialo y envíaselo a un atleta.</p>
     ${levelToggle()}
     <div class="skin-views">${[0, ...days].map(n => `<button class="chip toggle ${n === progDays ? 'on' : ''}" data-action="prog-days" data-n="${n}">${n ? `${n} días` : 'Todos'}</button>`).join('')}</div>
     ${list.map(p => `<a class="card prog-item" href="#/programa/${p.id}">
@@ -6447,7 +6447,7 @@ function viewProgram(id) {
       for (const k of lv.week) if (k) for (const [gid, sets] of lv.routines[k].ex) addTo(planned, GUIDE_BY_ID.get(gid).zone, sets);
       return volumeHtml(planned); })()}
     ${routines}
-    <p class="muted small">Queda en Mis programas: desde ahí lo usas como tu plan, o lo cambias y se lo envías a un alumno. Cada ejercicio trae sus series, repeticiones, RIR, descanso y guía de técnica.</p>
+    <p class="muted small">Queda en Mis programas: desde ahí lo usas como tu plan, o lo cambias y se lo envías a un atleta. Cada ejercicio trae sus series, repeticiones, RIR, descanso y guía de técnica.</p>
     <button class="btn primary block" data-action="prog-add">Añadir a mis programas</button>`;
 }
 
@@ -6469,7 +6469,7 @@ function routineFromProgram(rt) {
 }
 
 // Añade el programa listo a Mis programas (con sus rutinas), sin cambiar tu plan: lo puedes usar o
-// tomarlo como base, cambiarlo y enviárselo a un alumno
+// tomarlo como base, cambiarlo y enviárselo a un atleta
 function addReadyProgram(p) {
   const lv = p.levels[progLevel], keys = progKeys(lv), ids = {};
   for (const k of keys) { const r = routineFromProgram(lv.routines[k]); db.routines.push(r); ids[k] = r.id; }
@@ -7037,7 +7037,7 @@ function refresh() {
 // ---------- Sesión ----------
 let stopListening = () => {};
 
-// Arma los datos de la app con lo que llega de la nube (tuyos, o de un alumno si eres su coach)
+// Arma los datos de la app con lo que llega de la nube (tuyos, o de un atleta si eres su coach)
 function dbFromCloud(main, workouts) {
   const d = emptyDb();
   if (main) {
@@ -7242,7 +7242,7 @@ $app.addEventListener('click', async e => {
       setCoachMode(true);
       break;
     case 'coach-off':
-      if (await ask('¿Desactivar el modo coach? Tus alumnos siguen vinculados; los vuelves a ver al activarlo de nuevo.', 'Desactivar')) setCoachMode(false);
+      if (await ask('¿Desactivar el modo coach? Tus atletas siguen vinculados; los vuelves a ver al activarlo de nuevo.', 'Desactivar')) setCoachMode(false);
       break;
     case 'coach-send': {
       const text = coachInviteText(me().body.coachCode);
@@ -7284,7 +7284,7 @@ $app.addEventListener('click', async e => {
     }
     case 'student-del': {
       const link = students.find(x => x.studentUid === el.dataset.uid);
-      if (!link || !await ask(`¿Quitar a ${link.studentName || 'este alumno'} de tus alumnos? Dejarás de ver sus datos y de poder cambiar sus rutinas. Siguen siendo gymbros.`, 'Quitar')) return;
+      if (!link || !await ask(`¿Quitar a ${link.studentName || 'este atleta'} de tus atletas? Dejarás de ver sus datos y de poder cambiar sus rutinas. Siguen siendo gymbros.`, 'Quitar')) return;
       try { await withTimeout(cloud.deleteCoachLink(link.studentUid)); } catch (e) { notice('No se pudo quitar. Revisa tu internet e intenta de nuevo.'); return; }
       if (viewing) exitViewing();
       break;
