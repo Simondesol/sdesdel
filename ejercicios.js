@@ -991,4 +991,8 @@ export const GUIDES = [
     musc: 'Bíceps (sobre todo la parte corta) y braquial',
     cues: ['Ajusta el asiento para que la axila quede apoyada arriba del cojín', 'Brazo completo apoyado en el cojín y agarre firme', 'Sube contrayendo el bíceps sin despegar el codo', 'Baja lento hasta casi estirar el brazo'],
     errs: ['Despegar el codo o el brazo del cojín', 'Bajar de golpe al final'] },
+  { id: 'triceps-cruzado-polea', zone: 'triceps', name: 'Extensión de tríceps en cruzada en polea', alias: ['cross cable tricep extension', 'cross cable triceps extension', 'extension de triceps cruzada', 'triceps cruzado en polea', 'extension cruzada en polea', 'triceps en cruce de poleas'], video: 'videos/triceps-cruzado-polea.mp4', sq: true,
+    musc: 'Tríceps (sobre todo la cabeza lateral)',
+    cues: ['Poleas a la altura de los hombros, tomando el cable sin manilla', 'Cruza los brazos: la mano derecha toma el cable izquierdo y la izquierda el derecho', 'Desde los codos doblados frente al pecho, estira los brazos hacia abajo y afuera', 'Vuelve lento hasta cruzar las manos frente al pecho'],
+    errs: ['Mover los hombros en vez de los codos', 'Inclinar el torso para ayudarte'] },
 ];
