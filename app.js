@@ -43,6 +43,7 @@ function persistLocal() {
   if (user && !viewing) localStorage.setItem(userKey(user.uid), JSON.stringify({ db, synced }));
 }
 function save() {
+  autoUnilateral();   // ejercicio unilateral recién agregado: parte con la opción activada
   if (viewing) { scheduleCoachEdits(); return; }   // viendo a un atleta: sus rutinas cambiadas se le envían
   recordPlan();
   syncDraftRoutine();
@@ -109,8 +110,21 @@ function fmtDuration(sec) {
 // Las libras se pasan a kg para poder comparar ejercicios que cambiaron de unidad.
 const toKg = (w, unit) => (w == null ? 0 : unit === 'lb' ? w * 0.45359237 : w);
 // Ejercicio por lado (búlgara, remo a una mano…): r = izquierda, r2 = derecha. Cuenta el lado más débil
-const repsMin = s => (s.r2 != null && s.r2 !== '' ? (s.r != null && s.r !== '' ? Math.min(+s.r, +s.r2) : +s.r2) : s.r);
-const repsText = s => `${fmtNum(s.r)}${s.r2 != null ? ` / ${fmtNum(s.r2)}` : ''}`;
+// Técnicas unilaterales: en tus rutinas parten con "Unilateral" activado (side: false = lo apagaste tú y se respeta)
+const UNI_GUIDES = new Set(['remo-mancuerna', 'curl-concentrado', 'sentadilla-bulgara', 'sentadilla-bulgara-multipower', 'sentadilla-bulgara-barra',
+  'split-squat', 'split-squat-barra', 'step-up', 'patada-gluteo', 'patada-gluteo-maquina', 'flexion-lateral']);
+const isUniGuide = g => !!g && (UNI_GUIDES.has(g.id) || /unilateral/i.test(g.name));
+function autoUnilateral() {
+  let changed = false;
+  const fix = e => { if (e.side === undefined && isUniGuide(guideFor(e.name, e.guide))) { e.side = true; changed = true; } };
+  for (const r of db.routines) for (const e of r.exercises) { fix(e); (e.alts || []).forEach(fix); }
+  return changed;
+}
+// Serie por lado: r2 existe (null = ese lado no se hizo). Cuenta el lado más débil de los que hiciste
+const isSideSet = s => s.r2 !== undefined;
+const repsMin = s => { if (!isSideSet(s)) return s.r;
+  const v = [s.r, s.r2].filter(x => x != null && x !== '').map(Number); return v.length ? Math.min(...v) : null; };
+const repsText = s => `${fmtNum(s.r)}${isSideSet(s) ? ` / ${fmtNum(s.r2)}` : ''}`;
 const setStrength = x => epley((x.bw || 0) + toKg(x.w || 0, x.unit), repsMin(x) || 1, x.rir);
 // Con peso corporal, cada serie cuenta con lo que pesabas ese día (más peso tuyo con el mismo lastre = moviste más)
 function cmpSet(a, b) {
@@ -131,7 +145,7 @@ function bestSets(exerciseId, before = db.workouts.length, unit = null, rid = nu
     if (!ex || (unit && unitKind(ex.unit) !== unitKind(unit))) continue;
     const bw = bwFor(ex, db.workouts[k].date);   // con peso corporal, cada serie con lo que pesabas ese día
     ex.sets.forEach((s, j) => {
-      const c = { w: s.w, r: s.r, ...(s.r2 != null ? { r2: s.r2 } : {}), rir: s.rir, unit: ex.unit, bw };
+      const c = { w: s.w, r: s.r, ...(isSideSet(s) ? { r2: s.r2 } : {}), rir: s.rir, unit: ex.unit, bw };
       if (!best[j] || cmpSet(c, best[j]) > 0) best[j] = c;
     });
   }
@@ -144,10 +158,11 @@ function liveCmp(s, ex, best) {
   // Los íconos de progreso recién cuando escribes el peso (o lastre) y las repeticiones
   const has = v => v !== '' && v != null;
   if (!(has(s.r) || (ex.side && has(s.r2))) || !has(s.w)) return null;
+  const raw = s;
   s = { ...s, ...bwEff(s, lastreEx(ex)) };
-  const w = num(s.w), r = num(s.r), r2 = ex.side ? num(s.r2) : null;
-  if (w == null && r == null) return null;
-  return cmpSet({ w, r, ...(r2 != null ? { r2 } : {}), rir: num(s.rir), unit: ex.unit, bw: bwFor(ex, new Date().toISOString()) }, best);
+  const w = num(s.w), r = ex.side && !has(raw.r) ? null : num(s.r), r2 = ex.side && has(raw.r2) ? num(s.r2) : null;
+  if (w == null && r == null && r2 == null) return null;
+  return cmpSet({ w, r, ...(ex.side ? { r2 } : {}), rir: num(s.rir), unit: ex.unit, bw: bwFor(ex, new Date().toISOString()) }, best);
 }
 
 // Gráfico chico: sube (superaste), plano (igualaste), baja (bajo tu récord)
@@ -1298,7 +1313,7 @@ function historyFor(exerciseId, skipId = null) {
 // Al guardar, lo que dejaste vacío se completa con lo de la vez pasada; un ejercicio sin nada anotado no se guarda.
 // Si el objetivo pide más series que la última vez, las nuevas traen de referencia la última serie.
 function prefillSets(prev, rir, goalSets = 0, dropset = false) {
-  const ph = s => ({ w: '', r: '', ...(rir ? { rir: '' } : {}), pw: toField(s.w), pr: toField(s.r), ...(s.r2 != null ? { pr2: toField(s.r2) } : {}), ...(rir && s.rir != null ? { prir: toField(s.rir) } : {}) });
+  const ph = s => ({ w: '', r: '', ...(rir ? { rir: '' } : {}), pw: toField(s.w), pr: toField(s.r), ...(isSideSet(s) ? { pr2: toField(s.r2) } : {}), ...(rir && s.rir != null ? { prir: toField(s.rir) } : {}) });
   const sets = prev ? prev.ex.sets.map(s => ({
     ...ph(s),
     ...(s.drops && s.drops.length ? { drops: s.drops.map(x => ({ w: '', r: '', pw: toField(x.w), pr: toField(x.r) })) } : {}),
@@ -3907,7 +3922,7 @@ function newPRs(w) {
       const s = ex.sets.find(x => x.w != null);
       const bw = isBwEx(ex);
       const est = showsE1rm(ex) ? ` → ${bw ? 'lastre máx.' : '1RM'} ≈ ${bw ? '+' : ''}${fmtNum(round1(e1rmEx(ex, s, w.date)))} ${ex.unit}` : '';
-      prs.push({ id: ex.exerciseId, name: ex.name, text: `${ex.name}: ${fmtNum(s.w)} ${ex.unit} × ${s.r2 != null ? repsText(s) : fmtNum(s.r || 1)}${s.rir != null ? ` · RIR ${fmtNum(s.rir)}` : ''}${bw ? ' + peso corporal' : ''}${est}` });
+      prs.push({ id: ex.exerciseId, name: ex.name, text: `${ex.name}: ${fmtNum(s.w)} ${ex.unit} × ${isSideSet(s) ? repsText(s) : fmtNum(s.r || 1)}${s.rir != null ? ` · RIR ${fmtNum(s.rir)}` : ''}${bw ? ' + peso corporal' : ''}${est}` });
     }
     const best = bestSets(ex.exerciseId, idx < 0 ? db.workouts.length : idx, ex.unit, ex.extra ? null : w.routineId);
     const first = ex.sets.findIndex(x => x.w != null);
@@ -5967,12 +5982,16 @@ const cleanExercises = d => d.exercises
       .map(s => {
         const e = bwEff(s, lastreEx(ex));
         const set = { w: num(e.w), r: num(e.r) }; const rir = num(e.rir); if (ex.rir && rir != null) set.rir = rir;
-        if (ex.side) { const r2 = num(e.r2 != null && e.r2 !== '' ? e.r2 : e.r); if (r2 != null) set.r2 = r2; }   // derecha (r = izquierda); sin anotar ni vez pasada, igual que la izquierda
+        if (ex.side) {   // r = izquierda, r2 = derecha
+          const typed = v => v !== '' && v != null, tL = typed(s.r), tR = typed(s.r2);
+          if (tL || tR) { set.r = tL ? num(s.r) : null; set.r2 = tR ? num(s.r2) : null; }
+          else set.r2 = num(e.r2 != null && e.r2 !== '' ? e.r2 : e.r);
+        }
         const drops = (s.drops || []).map(effSet).map(x => ({ w: num(x.w), r: num(x.r) })).filter(x => x.w != null || x.r != null);
         if (drops.length) set.drops = drops;   // bajadas del dropset
         return set;
       })
-      .filter(s => s.w != null || s.r != null),
+      .filter(s => s.w != null || s.r != null || s.r2 != null),
   }))
   .filter(ex => ex.sets.length);
 
@@ -6030,7 +6049,7 @@ function makeEditBuf(id) {
       exerciseId: ex.exerciseId, name: ex.name, unit: ex.unit, rest: 0,
       rir: !!ex.rir, ...(ex.bw ? { bw: true } : {}), ...(ex.side ? { side: true } : {}), ...(ex.guide ? { guide: ex.guide } : {}),
       sets: ex.sets.map(s => ({
-        w: toField(s.w), r: toField(s.r), ...(s.r2 != null ? { r2: toField(s.r2) } : {}), ...(ex.rir ? { rir: toField(s.rir) } : {}),
+        w: toField(s.w), r: toField(s.r), ...(isSideSet(s) ? { r2: toField(s.r2) } : {}), ...(ex.rir ? { rir: toField(s.rir) } : {}),
         ...(s.drops ? { drops: s.drops.map(x => ({ w: toField(x.w), r: toField(x.r) })) } : {}),
       })),
     })),
@@ -6314,6 +6333,7 @@ function unifyExerciseIds() {
 const OLD_GUIDE_NAMES = { 'press declinado': 'press-declinado', 'escaladores': 'escaladores', 'curl bayesiano en polea': 'curl-bayesiano',
   'sentadilla bulgara': 'sentadilla-bulgara', 'zancada hacia atras': 'zancada-inversa', 'zancada estatica (split squat)': 'split-squat',
   'zancadas': 'zancadas', 'jalon a una mano en polea': 'jalon-unilateral', 'press frances': 'press-frances', 'remo en polea baja': 'remo-polea', 'press de pecho en maquina hammer': 'press-pecho-hammer',
+  'curl predicador a una mano': 'curl-predicador-unilateral', 'extension de triceps a una mano en polea': 'triceps-polea-unilateral', 'elevacion posterior a una mano en polea': 'posterior-polea-unilateral', 'remo en polea a una mano': 'remo-polea-unilateral', 'encogimiento lateral a una mano en polea': 'encogimiento-lateral-polea-unilateral', 'encogimiento a una mano inclinado hacia el lado': 'encogimiento-inclinado-lado', 'peso muerto a una pierna': 'peso-muerto-unilateral', 'hip thrust a una pierna': 'hip-thrust-una-pierna', 'pantorrilla a una pierna en escalon': 'pantorrilla-una-pierna', 'puente de gluteo a una pierna': 'puente-gluteo-una-pierna',
   'curl invertido': 'curl-invertido', 'extension de triceps sobre la cabeza con barra': 'triceps-sobre-cabeza-barra', 'peso muerto desde soportes': 'rack-pull', 'sissy squat': 'sissy-squat' };
 function renameOldGuideNames() {
   let changed = false;
@@ -7215,7 +7235,7 @@ async function handleUser(u) {
   status = 'ready';
   planSeen = stable(db.plan || null);
   migrateLoosePlan();
-  if ([fixJalonGironda(), splitSwapClashes(), renameOldGuideNames(), relinkGuideAlts(), unifyExerciseIds(), backfillWorkoutGuides(), syncHistoryNames()].some(Boolean)) save();
+  if ([autoUnilateral(), fixJalonGironda(), splitSwapClashes(), renameOldGuideNames(), relinkGuideAlts(), unifyExerciseIds(), backfillWorkoutGuides(), syncHistoryNames()].some(Boolean)) save();
   // Si el teléfono cerró la app en medio del entrenamiento, al abrirla vuelves a él (no al inicio)
   if (firstOpen && db.draft && routeParts()[0] === '') location.replace('#/entrenar');
   firstOpen = false;
@@ -7613,7 +7633,7 @@ $app.addEventListener('click', async e => {
     case 'toggle-side':
     case 'toggle-ss': {
       const ex = edEx(i), key = { 'toggle-drop': 'dropset', 'toggle-bw': 'bw', 'toggle-side': 'side', 'toggle-ss': 'ssNext' }[action];
-      if (ex[key]) delete ex[key]; else ex[key] = true;
+      if (key === 'side') ex.side = !ex.side; else if (ex[key]) delete ex[key]; else ex[key] = true;
       save(); render();
       if (ex[key] && action === 'toggle-drop') showNote('Dropset activado: cuando entrenes, la última serie trae una fila para anotar la bajada de peso.');
       if (ex[key] && action === 'toggle-bw') showNote('Peso corporal activado: cuando entrenes, anota solo el lastre (0 si no usas).');
