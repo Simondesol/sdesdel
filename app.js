@@ -1904,11 +1904,7 @@ function viewWorkout() {
     ${d.free && isLast ? (freeAdd ? freePickerHtml(d) : '<button class="btn block free-more" data-action="free-open">+ Otro ejercicio</button>') : ''}
     ${d.free && freeAdd ? '' : nav}
     ${isLast ? `
-    ${d.free ? '' : `<form class="add-row" data-form="extra-ex">
-      <input name="title" placeholder="+ Ejercicio extra" autocomplete="off" required>
-      ${unitSelect()}
-      <button class="btn">Agregar</button>
-    </form>`}
+    ${d.free ? '' : '<button type="button" class="add-ex-field" data-action="explore-list" data-for="entreno">+ Agregar ejercicio</button>'}
     <div class="actions">
       ${editing
         ? '<button class="btn ghost block" data-action="back">Cancelar</button>'
@@ -1917,6 +1913,7 @@ function viewWorkout() {
     ${guideView != null ? guideViewHtml() : ''}
     ${guidePickerHtml()}
     ${swapSheetHtml()}
+    ${exploreSheetHtml()}
     ${editing ? '' : `<div id="restbar" class="restbar" hidden>
       <span class="rb-text"></span>
       <button class="btn rest-plus" data-action="rest-add">+30 s</button>
@@ -5632,7 +5629,7 @@ function render() {
   if (screen !== 'fotos') { closeProgressNew(); progOpen = null; }
   const hadModal = !!guidePick || guideView != null || exploreOpen;
   if (screen !== 'entrenar' && screen !== 'editar') guideView = null;
-  if (screen !== 'rutina') { exploreOpen = false; exploreView = null; }
+  if (exploreFor === 'entreno' ? screen !== 'entrenar' && screen !== 'editar' : screen !== 'rutina') { exploreOpen = false; exploreView = null; }
   if (screen !== 'rutina' && screen !== 'entrenar' && screen !== 'editar') guidePick = null;
   if (hadModal && !guidePick && guideView == null && !exploreOpen) modalPushed = false;   // se cerró por salir de la pantalla
   if (screen !== 'nutricion') extraMode = null;
@@ -6074,9 +6071,9 @@ function findExercise(name) {
   return null;
 }
 
-function addExtraExercise(name, unit) {
-  const d = cur();
-  const found = findExercise(name);
+function addExtraExercise(name, unit, gid = null) {
+  const d = cur(), busy = new Set(d.exercises.map(e => e.exerciseId)), free = x => (x && !busy.has(x.id) ? x : null);
+  const found = findExercise(name) || (gid && free(mineFor(myGuideMap(), gid)));
   const id = found ? found.id : uid();
   if (d.exercises.some(e => e.exerciseId === id)) { notice(`"${name}" ya está en este entrenamiento.`); return; }
   const before = beforeIndex(d);
@@ -6087,11 +6084,12 @@ function addExtraExercise(name, unit) {
     rest: found ? found.rest : 0,
     rir: found ? found.rir : false,
     extra: true,   // agregado mientras entrenabas: se puede quitar
+    ...(gid ? { guide: gid } : {}),
     sets: prefillSets(lastFor(id, before), found && found.rir),
   });
   d.pos = d.exercises.length - 1;
   save(); render();
-  $app.querySelector(`[data-ex="${d.exercises.length - 1}"]`).scrollIntoView({ block: 'center' });
+  $app.querySelector(`[data-ex="${d.exercises.length - 1}"]`)?.scrollIntoView({ block: 'center' });
 }
 
 // ---------- Cronómetro de descanso ----------
@@ -6804,8 +6802,10 @@ const guideBody = g => `${g.video
 
 // ---------- Ver ejercicios por músculo (al editar una rutina): técnica y video antes de añadirlo ----------
 let exploreOpen = false, exploreQ = '', exploreZone = '', exploreView = null, exploreScroll = 0, exploreChips = 0;   // lista abierta, búsqueda, grupo, ejercicio abierto
+let exploreFor = 'rutina';   // 'rutina' (Editar rutina) o 'entreno' (se suma al entreno en curso)
 // Cada ejercicio: video chico (play ahí mismo), nombre (abre su técnica) y Agregar
-const inRoutine = g => { const r = curRoutine(); return !!r && r.exercises.some(e => sameName(e.name, g.name) || (guideFor(e.name, e.guide) || {}).id === g.id); };
+const inRoutine = g => { const list = exploreFor === 'entreno' ? (cur() || {}).exercises : (curRoutine() || {}).exercises;
+  return !!list && list.some(e => sameName(e.name, g.name) || (guideFor(e.name, e.guide) || {}).id === g.id); };
 const exploreItem = g => `<div class="explore-item">
     ${exThumb({ name: g.name, guide: g.id })}
     <button type="button" class="explore-name" data-action="explore-open" data-g="${g.id}"><strong>${esc(g.name)}</strong><span class="muted small">${esc(g.musc)}</span></button>
@@ -6830,7 +6830,8 @@ function exploreSheetHtml() {
     ? `<div class="guide-head"><button class="icon small" data-action="explore-back" aria-label="Volver a la lista">‹</button><h2 class="grow">${esc(g.name)}</h2><button class="icon small" data-action="explore-close" aria-label="Cerrar">✕</button></div>
        <span class="muted small">Trabaja: ${esc(g.musc)}</span>
        ${guideBody(g)}
-       ${inRoutine(g) ? '<button class="btn block added" data-action="explore-add">Agregado a la rutina ✓</button>' : '<button class="btn primary block" data-action="explore-add">Agregar a esta rutina</button>'}
+       ${inRoutine(g) ? `<button class="btn block added" data-action="explore-add">Agregado ${exploreFor === 'entreno' ? 'al entrenamiento' : 'a la rutina'} ✓</button>`
+         : `<button class="btn primary block" data-action="explore-add">Agregar a ${exploreFor === 'entreno' ? 'este entrenamiento' : 'esta rutina'}</button>`}
        <button class="btn block" data-action="explore-back">Volver a la lista</button>`
     : `<div class="picker-top">
          <div class="guide-head"><h2>Agregar ejercicio</h2><button class="icon small" data-action="explore-close" aria-label="Cerrar">✕</button></div>
@@ -6838,7 +6839,7 @@ function exploreSheetHtml() {
          <div class="explore-zones">${[['', 'Todos'], ...Object.entries(GUIDE_ZONES)]
            .map(([z, n]) => `<button type="button" class="chip toggle ${z === exploreZone ? 'on' : ''}" data-action="explore-zone" data-z="${z}">${n}</button>`).join('')}</div>
        </div>
-       <p class="muted small" style="margin:0">Toca el nombre para ver su técnica, o Agregar para sumarlo a la rutina.</p>
+       <p class="muted small" style="margin:0">Toca el nombre para ver su técnica, o Agregar para sumarlo ${exploreFor === 'entreno' ? 'al entrenamiento' : 'a la rutina'}.</p>
        <div class="guide-list explore-list">${exploreListHtml()}</div>`;
   return `<div class="modal-wrap">
     <div class="modal-back" data-action="explore-close"></div>
@@ -7914,8 +7915,8 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       $app.querySelectorAll('.explore-zones .chip').forEach(b => b.classList.toggle('on', b.dataset.z === exploreZone));
       $app.querySelector('.explore-list').innerHTML = exploreListHtml();
       break;
-    case 'explore-list':   // abrir la lista desde el editor de rutina (lista para escribir)
-      exploreOpen = true; exploreView = null; exploreQ = '';
+    case 'explore-list':   // abrir la lista desde el editor de rutina o desde el entreno (lista para escribir)
+      exploreOpen = true; exploreView = null; exploreQ = ''; exploreFor = el.dataset.for || 'rutina';
       render();
       syncModalHistory();
       $app.querySelector('[data-bind="explore-q"]')?.focus();
@@ -7944,6 +7945,14 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
     case 'explore-add-custom': {
       const r = curRoutine(), g = action === 'explore-add' ? GUIDE_BY_ID.get(el.dataset.g || exploreView) : null;
       const name = g ? g.name : exploreQ.trim();
+      if (exploreFor === 'entreno') {   // en el entreno: se suma al final y se va a él
+        if (!name || !cur()) return;
+        if (g ? inRoutine(g) : cur().exercises.some(e => sameName(e.name, name))) { notice(`"${name}" ya está en este entrenamiento.`); return; }
+        exploreOpen = false; exploreView = null; syncModalHistory();
+        addExtraExercise(name, lastUnit, g ? g.id : null);
+        showNote(`${name}: agregado al entrenamiento`);
+        break;
+      }
       if (!r || !name) return;
       const top = $app.querySelector('.explore-sheet')?.scrollTop || 0;
       if (!(await okRepeatedEx(name, g ? g.id : null))) { openEx = null; render(); return; }
@@ -8752,9 +8761,6 @@ $app.addEventListener('submit', async e => {
     db.routines.push(r);
     save();
     go('#/rutina/' + r.id);
-  } else if (f.dataset.form === 'extra-ex') {
-    lastUnit = f.elements.unit.value;
-    addExtraExercise(title, lastUnit);
   }
 });
 

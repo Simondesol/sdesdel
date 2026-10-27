@@ -986,4 +986,9 @@ export const GUIDES = [
     musc: 'Espalda media, dorsal y bíceps',
     cues: ['Ajusta el asiento para que las manillas queden a la altura de la parte baja del pecho', 'Pecho apoyado en el respaldo y espalda recta', 'Tira llevando los codos atrás, cerca del cuerpo', 'Aprieta las escápulas un segundo y vuelve lento hasta estirar'],
     errs: ['Despegar el pecho del apoyo', 'Tirar con impulso del torso', 'Recorrido corto'] },
+  // ---------- 27 oct ----------
+  { id: 'curl-predicador-unilateral-maquina', zone: 'biceps', name: 'Curl predicador unilateral en máquina', alias: ['single arm preacher curl machine', 'curl predicador a una mano en maquina', 'predicador unilateral en maquina', 'curl scott unilateral en maquina', 'curl predicador maquina un brazo'], video: 'videos/curl-predicador-unilateral-maquina.mp4', sq: true,
+    musc: 'Bíceps (sobre todo la parte corta) y braquial',
+    cues: ['Ajusta el asiento para que la axila quede apoyada arriba del cojín', 'Brazo completo apoyado en el cojín y agarre firme', 'Sube contrayendo el bíceps sin despegar el codo', 'Baja lento hasta casi estirar el brazo'],
+    errs: ['Despegar el codo o el brazo del cojín', 'Bajar de golpe al final'] },
 ];
