@@ -155,9 +155,10 @@ function bestSets(exerciseId, before = db.workouts.length, unit = null, rid = nu
 // Compara lo que se está escribiendo con la mejor marca (null si no hay nada que comparar)
 function liveCmp(s, ex, best) {
   if (!best) return null;
-  // Los íconos de progreso recién cuando escribes el peso (o lastre) y las repeticiones
+  // Los íconos de progreso recién cuando escribes el peso (o lastre), las repeticiones y, si lo usas, el RIR
   const has = v => v !== '' && v != null;
   if (!(has(s.r) || (ex.side && has(s.r2))) || !has(s.w)) return null;
+  if (ex.rir && !has(s.rir)) return null;   // con RIR: también tiene que estar anotado
   const raw = s;
   s = { ...s, ...bwEff(s, lastreEx(ex)) };
   const w = num(s.w), r = ex.side && !has(raw.r) ? null : num(s.r), r2 = ex.side && has(raw.r2) ? num(s.r2) : null;
@@ -3603,10 +3604,10 @@ function viewPrivacy() {
       </label>`).join('')}
     </section>
     <h2>Récords destacados</h2>
-    <p class="muted small" style="margin:0 0 8px">Elige hasta 5 (${pick.length}/5). Si no eliges ninguno, se muestran tus 5 ejercicios más entrenados.</p>
+    <p class="muted small" style="margin:0 0 8px">Elige hasta ${FEATURED_MAX} (${pick.length}/${FEATURED_MAX}). Si no eliges ninguno, se muestran tus ${FEATURED_MAX} ejercicios más entrenados.</p>
     ${sessions.length ? `<section class="card profile-fields">
       ${sessions.map(x => `<label class="toggle-row small-toggle">
-        <input type="checkbox" data-action="pr-pick" data-id="${esc(x.id)}" ${pick.includes(x.id) ? 'checked' : ''} ${!pick.includes(x.id) && pick.length >= 5 ? 'disabled' : ''}>
+        <input type="checkbox" data-action="pr-pick" data-id="${esc(x.id)}" ${pick.includes(x.id) ? 'checked' : ''} ${!pick.includes(x.id) && pick.length >= FEATURED_MAX ? 'disabled' : ''}>
         <span class="grow">${esc(x.name)}</span><span class="muted small">${plural(x.n, 'sesión', 'sesiones')}</span>
       </label>`).join('')}
     </section>` : '<p class="muted card">Cuando guardes entrenamientos podrás elegirlos aquí.</p>'}` : ''}
@@ -4225,7 +4226,7 @@ function myProfile() {
       if (!cur || kg > cur.kg || unitKind(cur.unit) !== unitKind(ex.unit)) best.set(ex.exerciseId, { kg, name: ex.name, v: round1(e), unit: ex.unit, ...(bw ? { bw: true } : {}), set: `${fmtNum(st.w)} ${ex.unit} × ${fmtNum(st.r || 1)}${st.rir != null ? ` · RIR ${fmtNum(st.rir)}` : ''}${bw ? ' + peso corporal' : ''}`, date: w.date });
     }
   }
-  // Récords destacados: los que elijas en Privacidad (hasta 5); si no eliges, tus 5 ejercicios más entrenados
+  // Récords destacados: los que elijas en Privacidad (hasta 8); si no eliges, tus 8 ejercicios más entrenados
   const sessions = exerciseSessions();
   const ids = featuredExerciseIds().filter(id => best.has(id));
   const prs = ids.map(id => best.get(id)).sort((a, b) => b.kg - a.kg).map(({ kg, ...pr }) => pr);
@@ -4285,11 +4286,12 @@ const PROFILE_FIELDS = [
   ['goal', 'Objetivo actual (subir, bajar o mantener)'], ['since', 'Entrenando desde'],
 ];
 
-// Récords destacados: los que elegiste en Privacidad (hasta 5) o, si no elegiste, tus 5 ejercicios más entrenados
+// Récords destacados: los que elegiste en Privacidad (hasta 8) o, si no elegiste, tus 8 ejercicios más entrenados
+const FEATURED_MAX = 8;   // récords destacados (perfil y avisos de PR a tus gymbros)
 function featuredExerciseIds() {
   const done = new Set(db.workouts.flatMap(w => w.exercises.map(ex => ex.exerciseId)));
   const picked = (db.body.prPick || []).filter(id => done.has(id));
-  return picked.length ? picked : exerciseSessions().slice(0, 5).map(x => x.id);
+  return picked.length ? picked : exerciseSessions().slice(0, FEATURED_MAX).map(x => x.id);
 }
 
 // Veces que hiciste cada ejercicio, del más entrenado al menos
@@ -8388,9 +8390,9 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       break;
     }
     case 'pr-pick': {
-      // Récords destacados: hasta 5
+      // Récords destacados: hasta FEATURED_MAX
       const pick = (db.body.prPick ||= []), k = pick.indexOf(id);
-      if (k >= 0) pick.splice(k, 1); else if (pick.length < 5) pick.push(id);
+      if (k >= 0) pick.splice(k, 1); else if (pick.length < FEATURED_MAX) pick.push(id);
       save(); render();
       break;
     }
