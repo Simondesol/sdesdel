@@ -1788,10 +1788,10 @@ function viewWorkout() {
     const drops = (s.drops || []).map((x, k) => `
       <div class="set drop ${ex.rir ? 'has-rir' : ''}">
         <span class="n">↓</span>
-        <input inputmode="decimal" data-bind="dw" data-i="${i}" data-j="${j}" data-k="${k}" value="${esc(x.w)}" placeholder="${esc(x.pw || (ex.unit === 'placas' ? 'placas' : 'peso'))}" aria-label="Peso bajada ${k + 1} de la serie ${label}">
+        <input inputmode="decimal" enterkeyhint="next" data-bind="dw" data-i="${i}" data-j="${j}" data-k="${k}" value="${esc(x.w)}" placeholder="${esc(x.pw || (ex.unit === 'placas' ? 'placas' : 'peso'))}" aria-label="Peso bajada ${k + 1} de la serie ${label}">
         <span class="u">${unitShort(ex.unit)}</span>
         <span class="x">×</span>
-        <input inputmode="numeric" data-bind="dr" data-i="${i}" data-j="${j}" data-k="${k}" value="${esc(x.r)}" placeholder="${esc(x.pr || 'reps')}" aria-label="Repeticiones bajada ${k + 1} de la serie ${label}">
+        <input inputmode="numeric" enterkeyhint="next" data-bind="dr" data-i="${i}" data-j="${j}" data-k="${k}" value="${esc(x.r)}" placeholder="${esc(x.pr || 'reps')}" aria-label="Repeticiones bajada ${k + 1} de la serie ${label}">
         ${ex.rir ? '<span></span>' : ''}
         <span></span>
       </div>`).join('');
@@ -1800,10 +1800,10 @@ function viewWorkout() {
     if (ex.side) return `
       <div class="set side ${ex.rir ? 'has-rir' : ''}">
         <span class="n">${dots}</span>
-        <input inputmode="decimal" data-bind="w" data-i="${i}" data-j="${j}" value="${esc(s.w)}" placeholder="${esc(wPh)}" aria-label="${ex.unit === 'placas' ? 'Placas' : isBwEx(ex) ? 'Lastre' : 'Peso'} serie ${label}">
-        <input inputmode="numeric" data-bind="r" data-i="${i}" data-j="${j}" value="${esc(s.r)}" placeholder="${esc(rPh(s.pr, 'izq'))}" aria-label="Repeticiones izquierda serie ${label}">
-        <input inputmode="numeric" data-bind="r2" data-i="${i}" data-j="${j}" value="${esc(s.r2 ?? '')}" placeholder="${esc(rPh(s.pr2 ?? s.pr, 'der'))}" aria-label="Repeticiones derecha serie ${label}">
-        ${ex.rir ? `<input class="rir" inputmode="numeric" data-bind="rir" data-i="${i}" data-j="${j}" value="${esc(s.rir ?? '')}" placeholder="${esc(rirFor(ex, j) || s.prir || 'RIR')}" aria-label="RIR serie ${label}">` : ''}
+        <input inputmode="decimal" enterkeyhint="next" data-bind="w" data-i="${i}" data-j="${j}" value="${esc(s.w)}" placeholder="${esc(wPh)}" aria-label="${ex.unit === 'placas' ? 'Placas' : isBwEx(ex) ? 'Lastre' : 'Peso'} serie ${label}">
+        <input inputmode="numeric" enterkeyhint="next" data-bind="r" data-i="${i}" data-j="${j}" value="${esc(s.r)}" placeholder="${esc(rPh(s.pr, 'izq'))}" aria-label="Repeticiones izquierda serie ${label}">
+        <input inputmode="numeric" enterkeyhint="next" data-bind="r2" data-i="${i}" data-j="${j}" value="${esc(s.r2 ?? '')}" placeholder="${esc(rPh(s.pr2 ?? s.pr, 'der'))}" aria-label="Repeticiones derecha serie ${label}">
+        ${ex.rir ? `<input class="rir" inputmode="numeric" enterkeyhint="next" data-bind="rir" data-i="${i}" data-j="${j}" value="${esc(s.rir ?? '')}" placeholder="${esc(rirFor(ex, j) || s.prir || 'RIR')}" aria-label="RIR serie ${label}">` : ''}
         <span class="mark-cell" data-mark="${i}-${j}">${markSpan(liveCmp(s, ex, best[j]))}</span>
       </div>
       ${setMenu(s, i, j, label)}
@@ -1812,11 +1812,11 @@ function viewWorkout() {
     return `
       <div class="set ${ex.rir ? 'has-rir' : ''}">
         <span class="n">${dots}</span>
-        <input inputmode="decimal" data-bind="w" data-i="${i}" data-j="${j}" value="${esc(s.w)}" placeholder="${esc(wPh)}" aria-label="${ex.unit === 'placas' ? 'Placas' : isBwEx(ex) ? 'Lastre' : 'Peso'} serie ${label}">
+        <input inputmode="decimal" enterkeyhint="next" data-bind="w" data-i="${i}" data-j="${j}" value="${esc(s.w)}" placeholder="${esc(wPh)}" aria-label="${ex.unit === 'placas' ? 'Placas' : isBwEx(ex) ? 'Lastre' : 'Peso'} serie ${label}">
         <span class="u">${unitShort(ex.unit)}</span>
         <span class="x">×</span>
-        <input inputmode="numeric" data-bind="r" data-i="${i}" data-j="${j}" value="${esc(s.r)}" placeholder="${esc(repsFor(ex, j) || s.pr || 'reps')}" aria-label="Repeticiones serie ${label}">
-        ${ex.rir ? `<input class="rir" inputmode="numeric" data-bind="rir" data-i="${i}" data-j="${j}" value="${esc(s.rir ?? '')}" placeholder="${esc(rirFor(ex, j) || s.prir || 'RIR')}" aria-label="RIR serie ${label}">` : ''}
+        <input inputmode="numeric" enterkeyhint="next" data-bind="r" data-i="${i}" data-j="${j}" value="${esc(s.r)}" placeholder="${esc(repsFor(ex, j) || s.pr || 'reps')}" aria-label="Repeticiones serie ${label}">
+        ${ex.rir ? `<input class="rir" inputmode="numeric" enterkeyhint="next" data-bind="rir" data-i="${i}" data-j="${j}" value="${esc(s.rir ?? '')}" placeholder="${esc(rirFor(ex, j) || s.prir || 'RIR')}" aria-label="RIR serie ${label}">` : ''}
         <span class="mark-cell" data-mark="${i}-${j}">${markSpan(liveCmp(s, ex, best[j]))}</span>
       </div>
       ${setMenu(s, i, j, label)}
@@ -8767,8 +8767,17 @@ $app.addEventListener('focusin', e => {
   if (e.target.matches('[data-bind="myprog-name"]')) e.target.select();
 });
 
+// Entrenando: la tecla → / Enter del teclado salta a la siguiente casilla (peso → repeticiones → RIR → serie siguiente)
+const SET_BINDS = ['w', 'r', 'r2', 'rir', 'dw', 'dr'];
 $app.addEventListener('keydown', e => {
   const bind = e.target.dataset.bind || '';
+  if (e.key === 'Enter' && SET_BINDS.includes(bind)) {
+    e.preventDefault();
+    const all = [...$app.querySelectorAll(SET_BINDS.map(b => `input[data-bind="${b}"]`).join(','))];
+    const next = all[all.indexOf(e.target) + 1];
+    if (next) { next.focus(); next.select(); } else e.target.blur();   // la última: cierra el teclado
+    return;
+  }
   if (e.key === 'Enter' && (bind === 'note' || bind === 'ex-rest' || bind === 'pace-amt' || bind.startsWith('ex-goal-'))) e.target.blur();
 });
 
