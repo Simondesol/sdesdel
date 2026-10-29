@@ -1774,7 +1774,8 @@ function viewWorkout() {
   const setMenu = (s, i, j, label) => (setMenuOpen === `${i}-${j}` ? `<div class="set-pop-wrap">
       <div class="set-pop-back" data-action="set-menu-close"></div>
       <div class="set-pop" role="menu" aria-label="Opciones de la serie ${label}">
-        <button class="set-pop-item" role="menuitem" data-action="set-note" data-i="${i}" data-j="${j}">Agregar nota</button>
+        ${s.note && s.note.trim() ? `<button class="set-pop-item" role="menuitem" data-action="set-note-del" data-i="${i}" data-j="${j}">Quitar nota</button>`
+          : `<button class="set-pop-item" role="menuitem" data-action="set-note" data-i="${i}" data-j="${j}">Agregar nota</button>`}
         <button class="set-pop-item" role="menuitem" data-action="add-drop" data-i="${i}" data-j="${j}">Agregar bajada</button>
         ${(s.drops || []).length ? `<button class="set-pop-item" role="menuitem" data-action="del-drop" data-i="${i}" data-j="${j}" data-k="${s.drops.length - 1}">Quitar bajada</button>` : ''}
         <button class="set-pop-item danger" role="menuitem" data-action="del-set" data-i="${i}" data-j="${j}">${TRASH_ICON}Borrar serie</button>
@@ -7811,6 +7812,13 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
     case 'set-menu-close':   // tocar fuera del cuadro (ya se cerró arriba)
       render();
       break;
+    case 'set-note-del': {   // quitar la nota de una serie
+      const st = cur().exercises[i].sets[j];
+      delete st.note;
+      if (setNoteOpen === `${i}-${j}`) setNoteOpen = null;
+      save(); render();
+      break;
+    }
     case 'set-note':   // abrir la nota de una serie
       setNoteOpen = `${i}-${j}`;
       render();
