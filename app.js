@@ -1771,11 +1771,14 @@ function viewWorkout() {
       ${s.pnote ? `<p class="set-prev-note">La vez pasada: ${esc(s.pnote)}</p>` : ''}`;
   };
   // Opciones de una serie (⋮): nota, bajada (dropset) y borrar
-  const setMenu = (s, i, j, label) => (setMenuOpen === `${i}-${j}` ? `<div class="set-menu" role="menu" aria-label="Opciones de la serie ${label}">
-      <button class="chip" data-action="set-note" data-i="${i}" data-j="${j}">Agregar nota</button>
-      <button class="chip" data-action="add-drop" data-i="${i}" data-j="${j}">Agregar bajada</button>
-      ${(s.drops || []).length ? `<button class="chip" data-action="del-drop" data-i="${i}" data-j="${j}" data-k="${s.drops.length - 1}">Quitar bajada</button>` : ''}
-      <button class="chip danger-text" data-action="del-set" data-i="${i}" data-j="${j}">${TRASH_ICON}Borrar serie</button>
+  const setMenu = (s, i, j, label) => (setMenuOpen === `${i}-${j}` ? `<div class="set-pop-wrap">
+      <div class="set-pop-back" data-action="set-menu-close"></div>
+      <div class="set-pop" role="menu" aria-label="Opciones de la serie ${label}">
+        <button class="set-pop-item" role="menuitem" data-action="set-note" data-i="${i}" data-j="${j}">Agregar nota</button>
+        <button class="set-pop-item" role="menuitem" data-action="add-drop" data-i="${i}" data-j="${j}">Agregar bajada</button>
+        ${(s.drops || []).length ? `<button class="set-pop-item" role="menuitem" data-action="del-drop" data-i="${i}" data-j="${j}" data-k="${s.drops.length - 1}">Quitar bajada</button>` : ''}
+        <button class="set-pop-item danger" role="menuitem" data-action="del-set" data-i="${i}" data-j="${j}">${TRASH_ICON}Borrar serie</button>
+      </div>
     </div>` : '');
   // badge: en un superset, la letra de color (va junto a los ⋮)
   const setRow = (ex, i, s, j, label, badge = '') => {
@@ -7805,6 +7808,9 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       setMenuOpen = setMenuOpen === `${i}-${j}` ? null : `${i}-${j}`;
       render();
       break;
+    case 'set-menu-close':   // tocar fuera del cuadro (ya se cerró arriba)
+      render();
+      break;
     case 'set-note':   // abrir la nota de una serie
       setNoteOpen = `${i}-${j}`;
       render();
@@ -8533,6 +8539,17 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
 });
 
 // Escritura en campos: se guarda al instante, sin redibujar (para no perder el foco)
+// Nota de una serie vacía: al salir de la casilla, se quita (sin redibujar, para no perder el toque en otro botón)
+$app.addEventListener('focusout', e => {
+  const el = e.target;
+  if (el.dataset && el.dataset.bind === 'snote' && !el.value.trim()) {
+    const d = cur(), st = d && d.exercises[+el.dataset.i] && d.exercises[+el.dataset.i].sets[+el.dataset.j];
+    if (st) delete st.note;
+    if (setNoteOpen === `${el.dataset.i}-${el.dataset.j}`) setNoteOpen = null;
+    el.remove();
+  }
+});
+
 // Foto de perfil elegida
 $app.addEventListener('change', async e => {
   const b = e.target.dataset.bind;
