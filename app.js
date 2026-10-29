@@ -4777,6 +4777,10 @@ function viewBodyweight() {
             <button class="btn primary">Guardar</button>
           </div>
         </label>
+        <label class="field"><span>Empezó el</span>
+          <div class="date-field"><span class="date-show">${fmtDMY(goalFrom(g))}</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>
+            <input type="date" name="from" data-bind="goal-from" value="${goalFrom(g)}" max="${todayKey()}" aria-label="Fecha de inicio de la meta"></div></label>
         <label class="field"><span>Para cuándo (opcional)</span>
           <div class="date-field"><span class="date-show">${g && g.by ? fmtDMY(g.by) : 'Sin fecha: usa tu ritmo de Nutrición'}</span>
             <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>
@@ -4881,14 +4885,16 @@ function saveBodyweight(f) {
   if (after) formMsg(after, `Guardado: ${fmtKg(kg)} hoy`, true);
 }
 
-// Meta de peso: la nueva parte desde tu último peso anotado
+// Inicio de la meta: el que tenía, o tu último peso anotado si es nueva
+const goalFrom = g => (g && g.startDate) || (db.bodyweight.length ? db.bodyweight[db.bodyweight.length - 1].date : todayKey());
+// Meta de peso: cuenta desde la fecha "Empezó el" (tu peso de ese día; si no anotaste ese día, el anterior más cercano)
 function saveGoal(f) {
   const g = num(f.elements.goal.value);
   if (g == null || g < 30 || g > 300) return formMsg(f, 'Escribe tu peso meta en kg (ej. 80).');
-  if (!db.body.goal || db.body.goal.kg !== round1(g)) {
-    const last = db.bodyweight[db.bodyweight.length - 1];
-    db.body.goal = { kg: round1(g), startKg: last ? last.kg : null, startDate: last ? last.date : todayKey() };
-  }
+  const from = (f.elements.from && f.elements.from.value) || goalFrom(db.body.goal);
+  if (from > todayKey()) return formMsg(f, 'La fecha de inicio no puede ser después de hoy.');
+  const startKg = db.bodyweight.length ? bwOn(bwIso(from)) : null;
+  db.body.goal = { ...(db.body.goal || {}), kg: round1(g), startKg, startDate: from };
   const by = f.elements.by ? f.elements.by.value : '';
   if (by && by > todayKey()) db.body.goal.by = by; else delete db.body.goal.by;
   goalEditing = false;
@@ -8523,6 +8529,11 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
 $app.addEventListener('change', async e => {
   const b = e.target.dataset.bind;
   if (b === 'prog-cmp') { progCmp[+e.target.dataset.k] = e.target.value; render(); return; }
+  if (b === 'goal-from') {
+    const show = e.target.parentElement.querySelector('.date-show');
+    if (show && e.target.value) show.textContent = fmtDMY(e.target.value);
+    return;
+  }
   if (b === 'goal-by') {
     const show = e.target.parentElement.querySelector('.date-show');
     if (show) show.textContent = e.target.value ? fmtDMY(e.target.value) : 'Sin fecha: usa tu ritmo de Nutrición';
