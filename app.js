@@ -1314,7 +1314,7 @@ function historyFor(exerciseId, skipId = null) {
 // Al guardar, lo que dejaste vacío se completa con lo de la vez pasada; un ejercicio sin nada anotado no se guarda.
 // Si el objetivo pide más series que la última vez, las nuevas traen de referencia la última serie.
 function prefillSets(prev, rir, goalSets = 0, dropset = false) {
-  const ph = s => ({ w: '', r: '', ...(rir ? { rir: '' } : {}), pw: toField(s.w), pr: toField(s.r), ...(isSideSet(s) ? { pr2: toField(s.r2) } : {}), ...(rir && s.rir != null ? { prir: toField(s.rir) } : {}) });
+  const ph = s => ({ w: '', r: '', ...(rir ? { rir: '' } : {}), pw: toField(s.w), pr: toField(s.r), ...(isSideSet(s) ? { pr2: toField(s.r2) } : {}), ...(s.note ? { pnote: s.note } : {}), ...(rir && s.rir != null ? { prir: toField(s.rir) } : {}) });
   const sets = prev ? prev.ex.sets.map(s => ({
     ...ph(s),
     ...(s.drops && s.drops.length ? { drops: s.drops.map(x => ({ w: '', r: '', pw: toField(x.w), pr: toField(x.r) })) } : {}),
@@ -1368,7 +1368,9 @@ const goalFields = ex => ({
 // Texto de una serie guardada: "40 kg × 10" o "40 kg × 10 · RIR 2"
 const dropsText = s => (s.drops && s.drops.length ? s.drops.map(x => ` ↓ ${fmtNum(x.w)}×${fmtNum(x.r)}`).join('') : '');
 const setText = (s, unit) => `${fmtNum(s.w)} ${unit} × ${repsText(s)}${s.rir != null ? ` · RIR ${fmtNum(s.rir)}` : ''}${dropsText(s)}`;
-const setsChips = ex => `<div class="sets-list">${ex.sets.map(s => `<span>${setText(s, ex.unit)}</span>`).join('')}</div>`;
+let setNoteOpen = null;   // serie con la casilla de nota abierta ("i-j")
+const setNoteChip = s => (s.note ? `<em class="set-chip-note"> · ${esc(s.note)}</em>` : '');
+const setsChips = ex => `<div class="sets-list">${ex.sets.map(s => `<span>${setText(s, ex.unit)}${setNoteChip(s)}</span>`).join('')}</div>`;
 
 const unitSelect = () => `<select name="unit" aria-label="Unidad">
   <option ${lastUnit === 'kg' ? 'selected' : ''}>kg</option>
@@ -1762,7 +1764,17 @@ function viewWorkout() {
   // "↓ drop" solo en ejercicios marcados como Dropset en la rutina (o que ya tienen bajadas, al editar uno guardado)
   const canDrop = ex => ex.dropset || ex.sets.some(st => st.drops && st.drops.length);
   // Fila de una serie, con sus bajadas de dropset debajo (label: "1", o "A1" en un superset)
-  const setRow = (ex, i, s, j, label) => {
+  // Debajo de cada serie: tu mejor marca, "+ nota" (o la nota que escribiste) y la nota de la vez pasada
+  const setFoot = (ex, i, s, j, best, label) => {
+    const open = !!s.note || setNoteOpen === `${i}-${j}`;
+    return `<div class="set-ref"><span>${best[j] ? `Mejor: ${fmtNum(best[j].w)} ${best[j].unit} × ${repsText(best[j])}` : ''}</span>
+        <span class="set-ref-acts">${open ? '' : `<button class="note-add" data-action="set-note" data-i="${i}" data-j="${j}">+ nota</button>`}
+        ${canDrop(ex) ? `<button class="drop-add" data-action="add-drop" data-i="${i}" data-j="${j}">↓ drop</button>` : ''}</span></div>
+      ${open ? `<input class="set-note-in" data-bind="snote" data-i="${i}" data-j="${j}" value="${esc(s.note || '')}" maxlength="140" placeholder="Nota de esta serie (ej. me dolió el codo)" aria-label="Nota de la serie ${label}">` : ''}
+      ${s.pnote ? `<p class="set-prev-note">La vez pasada: ${esc(s.pnote)}</p>` : ''}`;
+  };
+  // badge: lo que se ve como número de serie (en un superset, la letra de color)
+  const setRow = (ex, i, s, j, label, badge = label) => {
     const best = bests.get(i);
     const okCol = '';
     const drops = (s.drops || []).map((x, k) => `
@@ -1780,7 +1792,7 @@ function viewWorkout() {
     const rPh = (pr, side) => repsFor(ex, j) || pr || side;
     if (ex.side) return `
       <div class="set side ${ex.rir ? 'has-rir' : ''}">
-        <span class="n">${label}</span>
+        <span class="n">${badge}</span>
         <input inputmode="decimal" data-bind="w" data-i="${i}" data-j="${j}" value="${esc(s.w)}" placeholder="${esc(wPh)}" aria-label="${ex.unit === 'placas' ? 'Placas' : isBwEx(ex) ? 'Lastre' : 'Peso'} serie ${label}">
         <input inputmode="numeric" data-bind="r" data-i="${i}" data-j="${j}" value="${esc(s.r)}" placeholder="${esc(rPh(s.pr, 'izq'))}" aria-label="Repeticiones izquierda serie ${label}">
         <input inputmode="numeric" data-bind="r2" data-i="${i}" data-j="${j}" value="${esc(s.r2 ?? '')}" placeholder="${esc(rPh(s.pr2 ?? s.pr, 'der'))}" aria-label="Repeticiones derecha serie ${label}">
@@ -1789,11 +1801,10 @@ function viewWorkout() {
         <button class="set-del" data-action="del-set" data-i="${i}" data-j="${j}" aria-label="Borrar serie">${TRASH_ICON}</button>
       </div>
       ${drops}
-      <div class="set-ref"><span>${best[j] ? `Mejor: ${fmtNum(best[j].w)} ${best[j].unit} × ${repsText(best[j])}` : ''}</span>
-        ${canDrop(ex) ? `<button class="drop-add" data-action="add-drop" data-i="${i}" data-j="${j}">↓ drop</button>` : ''}</div>`;
+      ${setFoot(ex, i, s, j, best, label)}`;
     return `
       <div class="set ${ex.rir ? 'has-rir' : ''}">
-        <span class="n">${label}</span>
+        <span class="n">${badge}</span>
         <input inputmode="decimal" data-bind="w" data-i="${i}" data-j="${j}" value="${esc(s.w)}" placeholder="${esc(wPh)}" aria-label="${ex.unit === 'placas' ? 'Placas' : isBwEx(ex) ? 'Lastre' : 'Peso'} serie ${label}">
         <span class="u">${unitShort(ex.unit)}</span>
         <span class="x">×</span>
@@ -1803,12 +1814,11 @@ function viewWorkout() {
         <button class="set-del" data-action="del-set" data-i="${i}" data-j="${j}" aria-label="Borrar serie">${TRASH_ICON}</button>
       </div>
       ${drops}
-      <div class="set-ref"><span>${best[j] ? `Mejor: ${fmtNum(best[j].w)} ${best[j].unit} × ${repsText(best[j])}` : ''}</span>
-        ${canDrop(ex) ? `<button class="drop-add" data-action="add-drop" data-i="${i}" data-j="${j}">↓ drop</button>` : ''}</div>`;
+      ${setFoot(ex, i, s, j, best, label)}`;
   };
 
   // Objetivo de la rutina (si tiene), aviso para subir el peso, nota y "Primera vez"
-  const exInfo = (ex, i) => {
+  const exInfo = (ex, i, compact = false) => {
     let hint = '';
     if (!editing && (ex.goalReps || hasRepsBy(ex))) {
       const prev = lastFor(ex.exerciseId, before, ridOf(ex));
@@ -1822,7 +1832,7 @@ function viewWorkout() {
     }
     return `${hint}
       ${noteHtml(ex.exerciseId, i)}
-      ${bests.get(i).length ? '' : '<p class="prev">Primera vez</p>'}`;
+      ${compact || bests.get(i).length ? '' : '<p class="prev">Primera vez</p>'}`;
   };
   const historyHtml = ex => historyFor(ex.exerciseId, d.editOf).map(({ w, ex: pex }) => `
       <div class="hist-item">
@@ -1871,20 +1881,21 @@ function viewWorkout() {
   // Superset: A1, B1, A2, B2… en una sola tarjeta; cada ejercicio tiene su propio Rest (haces A, descansas, haces B…)
   const supersetBlock = idx => {
     const rounds = Math.max(...idx.map(k => d.exercises[k].sets.length));
+    const letter = n => `<span class="ss-letter l${n % 3}">${letterOf(n)}</span>`;   // A, B… del mismo color arriba y en cada fila
     let rows = '';
     for (let j = 0; j < rounds; j++) {
-      rows += `<div class="ss-round">${idx.map((k, n) => {
+      rows += `<div class="ss-round"><div class="ss-round-title">Vuelta ${j + 1}</div>${idx.map((k, n) => {
         const ex = d.exercises[k], st = ex.sets[j];
-        return st ? `<div class="ss-name">${letterOf(n)} · ${esc(ex.name)}</div>${setRow(ex, k, st, j, `${letterOf(n)}${j + 1}`)}` : '';
+        return st ? setRow(ex, k, st, j, `${letterOf(n)}${j + 1}`, letter(n)) : '';
       }).join('')}</div>`;
     }
     const open = idx.some(k => openHistory.has(d.exercises[k].exerciseId));
     const tab = muscleTab(idx.map(k => d.exercises[k]));
     return `<section class="card superset${tab ? ' has-tab' : ''}" data-ex="${idx[0]}">${tab}
-      <div class="ss-tag">🔗 Superset · alterna una serie de cada uno</div>
+      <div class="ss-tag">Superset · alterna una serie de cada uno</div>
       ${idx.map((k, n) => `<div class="ss-ex">
-        <div class="ex-head">${exTitle(d.exercises[k], `${letterOf(n)} · ${esc(d.exercises[k].name)}`)}${dropBadge(d.exercises[k])}${swapBtn(k)}${techBtn(k)}</div>
-        ${exInfo(d.exercises[k], k)}
+        <div class="ss-line">${letter(n)}<strong class="grow">${esc(d.exercises[k].name)}</strong>${dropBadge(d.exercises[k])}${swapBtn(k)}${techBtn(k)}</div>
+        ${exInfo(d.exercises[k], k, true)}
       </div>`).join('')}
       <div class="sets">${setHead(idx.map(k => d.exercises[k]))}${rows}</div>
       <div class="ex-actions">
@@ -2453,7 +2464,7 @@ function viewSession(id) {
     const chips = ex.sets.map((s, j) => {
       const c = best[j] ? cmpSet({ ...s, unit: ex.unit, bw: bwFor(ex, w.date) }, best[j]) : null;
       if (c != null) count[c > 0 ? 'up' : c < 0 ? 'down' : 'eq']++;
-      return `<span>${setText(s, ex.unit)} ${markSpan(c)}</span>`;
+      return `<span>${setText(s, ex.unit)} ${markSpan(c)}${setNoteChip(s)}</span>`;
     }).join('');
     const tally = !best.length ? '<span class="muted">Primera vez</span>'
       : ['up', 'eq', 'down'].filter(k => count[k]).map(k => `<span class="mark ${k}">${count[k]} ${TREND_ICON[k]}</span>`).join(' ')
@@ -5984,6 +5995,7 @@ const cleanExercises = d => d.exercises
       .map(s => {
         const e = bwEff(s, lastreEx(ex));
         const set = { w: num(e.w), r: num(e.r) }; const rir = num(e.rir); if (ex.rir && rir != null) set.rir = rir;
+        if (s.note && s.note.trim()) set.note = s.note.trim().slice(0, 140);   // nota de la serie
         if (ex.side) {   // r = izquierda, r2 = derecha
           const typed = v => v !== '' && v != null, tL = typed(s.r), tR = typed(s.r2);
           if (tL || tR) { set.r = tL ? num(s.r) : null; set.r2 = tR ? num(s.r2) : null; }
@@ -6051,7 +6063,7 @@ function makeEditBuf(id) {
       exerciseId: ex.exerciseId, name: ex.name, unit: ex.unit, rest: 0,
       rir: !!ex.rir, ...(ex.bw ? { bw: true } : {}), ...(ex.side ? { side: true } : {}), ...(ex.guide ? { guide: ex.guide } : {}),
       sets: ex.sets.map(s => ({
-        w: toField(s.w), r: toField(s.r), ...(isSideSet(s) ? { r2: toField(s.r2) } : {}), ...(ex.rir ? { rir: toField(s.rir) } : {}),
+        w: toField(s.w), r: toField(s.r), ...(isSideSet(s) ? { r2: toField(s.r2) } : {}), ...(s.note ? { note: s.note } : {}), ...(ex.rir ? { rir: toField(s.rir) } : {}),
         ...(s.drops ? { drops: s.drops.map(x => ({ w: toField(x.w), r: toField(x.r) })) } : {}),
       })),
     })),
@@ -7779,6 +7791,11 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       save(); render();
       break;
     }
+    case 'set-note':   // abrir la nota de una serie
+      setNoteOpen = `${i}-${j}`;
+      render();
+      $app.querySelector(`[data-bind="snote"][data-i="${i}"][data-j="${j}"]`)?.focus();
+      break;
     case 'add-set': {
       const ex = cur().exercises[i];
       ex.sets.push(nextSet(ex.sets, ex.rir));
@@ -8655,6 +8672,7 @@ $app.addEventListener('input', e => {
     if (cell) cell.innerHTML = markSpan(liveCmp(ex.sets[j], ex, bestSets(ex.exerciseId, beforeIndex(d), ex.unit, ex.extra ? null : d.routineId)[j]));
   }
   else if (bind === 'dw' || bind === 'dr') cur().exercises[i].sets[j].drops[+el.dataset.k][bind === 'dw' ? 'w' : 'r'] = el.value;
+  else if (bind === 'snote') cur().exercises[i].sets[j].note = el.value;
   else if (bind === 'note') {
     const exId = cur().exercises[i].exerciseId, text = el.value.trim();
     if (text) db.notes[exId] = text; else delete db.notes[exId];

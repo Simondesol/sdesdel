@@ -565,9 +565,8 @@ a.card.hub { display: grid; }
 .ex-head .badge { margin-left: 8px; }
 /* Superset: series intercaladas A1, B1, A2, B2… */
 .superset .ss-tag { color: var(--accent); font-weight: 700; font-size: 13px; margin-bottom: 8px; }
-.ss-ex + .ss-ex { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
-.ss-round { padding-top: 8px; border-top: 1px dashed var(--border); }
-.ss-round:first-child { border-top: 0; padding-top: 0; }
+.ss-ex + .ss-ex { margin-top: 8px; }
+.ss-round { padding-top: 4px; }
 .ss-name { margin: 0 0 4px 24px; font-size: 12px; color: var(--muted); }
 .superset .set .n { font-size: 12px; font-weight: 700; }
 .ex-edit li.ss-link { display: flex; justify-content: center; padding: 0; margin: -2px 0; }
@@ -860,7 +859,7 @@ button.link { color: var(--accent); font-weight: 600; background: none; border: 
 
 /* Guías de técnica */
 .ex-head { display: flex; align-items: center; gap: 8px; }
-.ex-head .tech-btn { margin-left: auto; flex: none; min-height: 36px; width: 42px; padding: 0; display: inline-grid; place-items: center; color: var(--accent); border-color: var(--accent); }
+.ex-head .tech-btn, .ss-line .tech-btn { margin-left: auto; flex: none; min-height: 36px; width: 42px; padding: 0; display: inline-grid; place-items: center; color: var(--accent); border-color: var(--accent); }
 svg.video-ic { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; display: block; }
 svg.video-ic .fill { fill: currentColor; stroke: none; }
 .ex-guide { flex: 1 1 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -1111,8 +1110,8 @@ button.wk-day { font-family: inherit; border: 0; cursor: pointer; padding: 0; }
 .ex-tab { position: absolute; top: -12px; left: 12px; max-width: calc(100% - 24px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   padding: 3px 10px; border-radius: 8px; border: 1px solid var(--accent); background: #16301a; color: #7fd866;
   font-size: 11.5px; font-weight: 800; letter-spacing: .7px; text-transform: uppercase; line-height: 1.45; }
-.ex-head .swap-btn { margin-left: auto; flex: none; min-height: 32px; padding: 0 12px; font-size: 13px; }
-.ex-head .swap-btn + .tech-btn { margin-left: 0; }
+.ex-head .swap-btn, .ss-line .swap-btn { margin-left: auto; flex: none; min-height: 32px; padding: 0 12px; font-size: 13px; }
+.ex-head .swap-btn + .tech-btn, .ss-line .swap-btn + .tech-btn { margin-left: 0; }
 .swap-mode { display: flex; gap: 6px; }
 .swap-mode .chip { flex: 1; justify-content: center; }
 .swap-alt { display: flex; align-items: center; gap: 6px; }
@@ -1200,3 +1199,22 @@ button.wk-day { font-family: inherit; border: 0; cursor: pointer; padding: 0; }
 /* Ejercicio por lado: Peso · Izq · Der (· RIR), sin la columna de unidad ni el × */
 .set.side { grid-template-columns: 18px 1fr 1fr 1fr 20px 26px; }
 .set.side.has-rir { grid-template-columns: 18px 1fr 1fr 1fr 44px 20px 26px; }
+
+/* Superset: cada ejercicio en una línea con su letra de color; las series agrupadas por vuelta */
+.ss-line { display: flex; align-items: center; gap: 8px; }
+.ss-line strong { font-size: 16px; line-height: 1.25; min-width: 0; }
+.ss-letter { flex: none; display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 7px; font-weight: 800; font-size: 13px; }
+.set .n .ss-letter { width: 20px; height: 20px; font-size: 12px; border-radius: 6px; }
+.ss-letter.l0 { background: rgba(76, 173, 52, .2); color: #7fd866; }
+.ss-letter.l1 { background: rgba(74, 158, 255, .2); color: #7db8ff; }
+.ss-letter.l2 { background: rgba(255, 166, 77, .2); color: #ffb870; }
+.ss-round-title { display: flex; align-items: center; gap: 8px; margin: 6px 0 6px; font-size: 12px; font-weight: 700; color: var(--muted); }
+.ss-round-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+/* Nota de una serie */
+.set-ref-acts { display: flex; align-items: center; gap: 12px; }
+.note-add { background: none; border: 0; padding: 0; color: var(--muted); font: inherit; font-size: 12px; cursor: pointer; }
+.set-note-in { display: block; margin: -4px 0 8px 24px; width: calc(100% - 24px); min-height: 34px; padding: 4px 10px; font-size: 14px; text-align: left;
+  border: 0; border-left: 3px solid var(--accent); border-radius: 0 8px 8px 0; background: var(--surface2); color: var(--accent); }
+.set-prev-note { margin: -4px 0 8px 24px; font-size: 12px; color: var(--muted); font-style: italic; }
+.set-chip-note { font-style: italic; color: var(--muted); }
