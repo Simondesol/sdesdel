@@ -1369,6 +1369,7 @@ const goalFields = ex => ({
 const dropsText = s => (s.drops && s.drops.length ? s.drops.map(x => ` ↓ ${fmtNum(x.w)}×${fmtNum(x.r)}`).join('') : '');
 const setText = (s, unit) => `${fmtNum(s.w)} ${unit} × ${repsText(s)}${s.rir != null ? ` · RIR ${fmtNum(s.rir)}` : ''}${dropsText(s)}`;
 let setNoteOpen = null;   // serie con la casilla de nota abierta ("i-j")
+let setMenuOpen = null;   // serie con su menú ⋮ abierto ("i-j")
 const setNoteChip = s => (s.note ? `<em class="set-chip-note"> · ${esc(s.note)}</em>` : '');
 const setsChips = ex => `<div class="sets-list">${ex.sets.map(s => `<span>${setText(s, ex.unit)}${setNoteChip(s)}</span>`).join('')}</div>`;
 
@@ -1556,7 +1557,6 @@ function exSummary(ex) {
   else if (ex.goalReps) parts.push(`${ex.goalReps} reps`);
   if (ex.rir) parts.push(rirText(ex) ? `RIR ${rirText(ex)}` : 'Con RIR');
   else if (ex.goalSets || ex.goalReps) parts.push('Al fallo');
-  if (ex.dropset) parts.push('Dropset');
   if (ex.bw) parts.push('Peso corporal');
   if (ex.side) parts.push('Unilateral');
   if (ex.rest) parts.push(`Rest ${fmtRest(ex.rest)}`);
@@ -1589,7 +1589,6 @@ function viewRoutine() {
       <button class="link small reps-by-toggle" data-action="reps-by" data-i="${i}" ${ex.goalSets >= 2 ? '' : 'hidden'}>${repsByOn(ex) ? 'Usar un solo rango' : 'Distinto por serie'}</button>
       <div class="ex-toggles">
         <button class="chip toggle ${ex.rir ? 'on' : ''}" data-action="toggle-rir" data-i="${i}" aria-pressed="${!!ex.rir}">RIR</button>
-        <button class="chip toggle ${ex.dropset ? 'on' : ''}" data-action="toggle-drop" data-i="${i}" aria-pressed="${!!ex.dropset}">Dropset</button>
         <button class="chip toggle ${ex.bw ? 'on' : ''}" data-action="toggle-bw" data-i="${i}" aria-pressed="${!!ex.bw}" title="Dominadas, dips…: lo que anotas es el lastre">Peso corporal</button>
         <button class="chip toggle ${ex.side ? 'on' : ''}" data-action="toggle-side" data-i="${i}" aria-pressed="${!!ex.side}" title="Búlgara, remo a una mano…: repeticiones de cada lado">Unilateral</button>
       </div>
@@ -1762,21 +1761,26 @@ function viewWorkout() {
   const bests = new Map(group.map(k => [k, bestSets(d.exercises[k].exerciseId, before, d.exercises[k].unit, ridOf(d.exercises[k]))]));
 
   // "↓ drop" solo en ejercicios marcados como Dropset en la rutina (o que ya tienen bajadas, al editar uno guardado)
-  const canDrop = ex => ex.dropset || ex.sets.some(st => st.drops && st.drops.length);
   // Fila de una serie, con sus bajadas de dropset debajo (label: "1", o "A1" en un superset)
   // Debajo de cada serie: tu mejor marca, "+ nota" (o la nota que escribiste) y la nota de la vez pasada
   const setFoot = (ex, i, s, j, best, label) => {
     const open = !!s.note || setNoteOpen === `${i}-${j}`;
     return `<div class="set-ref"><span>${best[j] ? `Mejor: ${fmtNum(best[j].w)} ${best[j].unit} × ${repsText(best[j])}` : ''}</span>
-        <span class="set-ref-acts">${open ? '' : `<button class="note-add" data-action="set-note" data-i="${i}" data-j="${j}">+ nota</button>`}
-        ${canDrop(ex) ? `<button class="drop-add" data-action="add-drop" data-i="${i}" data-j="${j}">↓ drop</button>` : ''}</span></div>
+</div>
       ${open ? `<input class="set-note-in" data-bind="snote" data-i="${i}" data-j="${j}" value="${esc(s.note || '')}" maxlength="140" placeholder="Nota de esta serie (ej. me dolió el codo)" aria-label="Nota de la serie ${label}">` : ''}
       ${s.pnote ? `<p class="set-prev-note">La vez pasada: ${esc(s.pnote)}</p>` : ''}`;
   };
-  // badge: lo que se ve como número de serie (en un superset, la letra de color)
-  const setRow = (ex, i, s, j, label, badge = label) => {
+  // Opciones de una serie (⋮): nota, bajada (dropset) y borrar
+  const setMenu = (s, i, j, label) => (setMenuOpen === `${i}-${j}` ? `<div class="set-menu" role="menu" aria-label="Opciones de la serie ${label}">
+      <button class="chip" data-action="set-note" data-i="${i}" data-j="${j}">Agregar nota</button>
+      <button class="chip" data-action="add-drop" data-i="${i}" data-j="${j}">Agregar bajada</button>
+      ${(s.drops || []).length ? `<button class="chip" data-action="del-drop" data-i="${i}" data-j="${j}" data-k="${s.drops.length - 1}">Quitar bajada</button>` : ''}
+      <button class="chip danger-text" data-action="del-set" data-i="${i}" data-j="${j}">${TRASH_ICON}Borrar serie</button>
+    </div>` : '');
+  // badge: en un superset, la letra de color (va junto a los ⋮)
+  const setRow = (ex, i, s, j, label, badge = '') => {
     const best = bests.get(i);
-    const okCol = '';
+    const dots = `${badge}<button class="set-dots${setMenuOpen === `${i}-${j}` ? ' on' : ''}" data-action="set-menu" data-i="${i}" data-j="${j}" aria-label="Opciones de la serie ${label}" aria-expanded="${setMenuOpen === `${i}-${j}`}">⋮</button>`;
     const drops = (s.drops || []).map((x, k) => `
       <div class="set drop ${ex.rir ? 'has-rir' : ''}">
         <span class="n">↓</span>
@@ -1786,33 +1790,32 @@ function viewWorkout() {
         <input inputmode="numeric" data-bind="dr" data-i="${i}" data-j="${j}" data-k="${k}" value="${esc(x.r)}" placeholder="${esc(x.pr || 'reps')}" aria-label="Repeticiones bajada ${k + 1} de la serie ${label}">
         ${ex.rir ? '<span></span>' : ''}
         <span></span>
-        <button class="set-del" data-action="del-drop" data-i="${i}" data-j="${j}" data-k="${k}" aria-label="Quitar bajada">${TRASH_ICON}</button>
       </div>`).join('');
     const wPh = s.pw || (lastreEx(ex) ? '0' : ex.unit === 'placas' ? 'placas' : 'peso');
     const rPh = (pr, side) => repsFor(ex, j) || pr || side;
     if (ex.side) return `
       <div class="set side ${ex.rir ? 'has-rir' : ''}">
-        <span class="n">${badge}</span>
+        <span class="n">${dots}</span>
         <input inputmode="decimal" data-bind="w" data-i="${i}" data-j="${j}" value="${esc(s.w)}" placeholder="${esc(wPh)}" aria-label="${ex.unit === 'placas' ? 'Placas' : isBwEx(ex) ? 'Lastre' : 'Peso'} serie ${label}">
         <input inputmode="numeric" data-bind="r" data-i="${i}" data-j="${j}" value="${esc(s.r)}" placeholder="${esc(rPh(s.pr, 'izq'))}" aria-label="Repeticiones izquierda serie ${label}">
         <input inputmode="numeric" data-bind="r2" data-i="${i}" data-j="${j}" value="${esc(s.r2 ?? '')}" placeholder="${esc(rPh(s.pr2 ?? s.pr, 'der'))}" aria-label="Repeticiones derecha serie ${label}">
         ${ex.rir ? `<input class="rir" inputmode="numeric" data-bind="rir" data-i="${i}" data-j="${j}" value="${esc(s.rir ?? '')}" placeholder="${esc(rirFor(ex, j) || s.prir || 'RIR')}" aria-label="RIR serie ${label}">` : ''}
         <span class="mark-cell" data-mark="${i}-${j}">${markSpan(liveCmp(s, ex, best[j]))}</span>
-        <button class="set-del" data-action="del-set" data-i="${i}" data-j="${j}" aria-label="Borrar serie">${TRASH_ICON}</button>
       </div>
+      ${setMenu(s, i, j, label)}
       ${drops}
       ${setFoot(ex, i, s, j, best, label)}`;
     return `
       <div class="set ${ex.rir ? 'has-rir' : ''}">
-        <span class="n">${badge}</span>
+        <span class="n">${dots}</span>
         <input inputmode="decimal" data-bind="w" data-i="${i}" data-j="${j}" value="${esc(s.w)}" placeholder="${esc(wPh)}" aria-label="${ex.unit === 'placas' ? 'Placas' : isBwEx(ex) ? 'Lastre' : 'Peso'} serie ${label}">
         <span class="u">${unitShort(ex.unit)}</span>
         <span class="x">×</span>
         <input inputmode="numeric" data-bind="r" data-i="${i}" data-j="${j}" value="${esc(s.r)}" placeholder="${esc(repsFor(ex, j) || s.pr || 'reps')}" aria-label="Repeticiones serie ${label}">
         ${ex.rir ? `<input class="rir" inputmode="numeric" data-bind="rir" data-i="${i}" data-j="${j}" value="${esc(s.rir ?? '')}" placeholder="${esc(rirFor(ex, j) || s.prir || 'RIR')}" aria-label="RIR serie ${label}">` : ''}
         <span class="mark-cell" data-mark="${i}-${j}">${markSpan(liveCmp(s, ex, best[j]))}</span>
-        <button class="set-del" data-action="del-set" data-i="${i}" data-j="${j}" aria-label="Borrar serie">${TRASH_ICON}</button>
       </div>
+      ${setMenu(s, i, j, label)}
       ${drops}
       ${setFoot(ex, i, s, j, best, label)}`;
   };
@@ -1842,7 +1845,7 @@ function viewWorkout() {
   // pre: letra del ejercicio en un superset ("A "), para saber de cuál es cada descanso
   const restBtn = (i, pre = '') => (!editing && d.exercises[i].rest
     ? `<button class="btn ghost" data-action="rest" data-i="${i}" data-rest="${i}" data-pre="${pre}">Rest ${pre}${fmtRest(d.exercises[i].rest)}</button>` : '');
-  const dropBadge = ex => (ex.dropset ? '<span class="badge on">Dropset</span>' : '');
+  const dropBadge = () => '';
   // Técnica: ícono de video (deja más espacio para el nombre del ejercicio)
   const techBtn = i => `<button class="btn small-btn tech-btn" data-action="guide-view" data-i="${i}" aria-label="Ver técnica" title="Técnica">${VIDEO_ICON}</button>`;
   const exTitle = (ex, label) => `<div class="ex-title"><strong>${label}</strong></div>`;
@@ -1857,9 +1860,9 @@ function viewWorkout() {
     if (list.some(x => !!x.rir !== rir || !!x.side !== side)) return '';
     const ex = list[0], w = list.length > 1 ? 'Peso' : ex.unit === 'placas' ? 'Placas' : isBwEx(ex) ? 'Lastre' : 'Peso';
     if (side) return `<div class="set set-head side${rir ? ' has-rir' : ''}"><span></span><span>${w}${ex.unit === 'placas' ? '' : ` ${unitShort(ex.unit)}`}</span><span>Izq</span><span>Der</span>
-      ${rir ? `<span class="rir-h">RIR${infoBtn('rir')}</span>` : ''}<span></span><span></span></div>${rir ? infoBox('rir') : ''}`;
+      ${rir ? `<span class="rir-h">RIR${infoBtn('rir')}</span>` : ''}<span></span></div>${rir ? infoBox('rir') : ''}`;
     return `<div class="set set-head${rir ? ' has-rir' : ''}"><span></span><span>${w}</span><span></span><span></span><span>${rir ? 'Reps' : 'Repeticiones'}</span>
-      ${rir ? `<span class="rir-h">RIR${infoBtn('rir')}</span>` : ''}<span></span><span></span></div>${rir ? infoBox('rir') : ''}`;
+      ${rir ? `<span class="rir-h">RIR${infoBtn('rir')}</span>` : ''}<span></span></div>${rir ? infoBox('rir') : ''}`;
   };
   const exerciseBlock = (ex, i) => {
     const open = openHistory.has(ex.exerciseId);
@@ -5930,7 +5933,7 @@ const routineSig = r => { const t = stable(r.exercises); let h = 0; for (let k =
 const draftEx = (ex, last, rid) => ({
   exerciseId: ex.id, name: ex.name, unit: ex.unit, rest: ex.rest || 0, rir: !!ex.rir, ...planFields(ex),
   ...(last ? { ssNext: false } : {}),   // el último no se une con nada
-  sets: prefillSets(lastFor(ex.id, db.workouts.length, rid), ex.rir, ex.goalSets, ex.dropset),
+  sets: prefillSets(lastFor(ex.id, db.workouts.length, rid), ex.rir, ex.goalSets),
 });
 // Editaste la rutina del entreno en curso: el entreno toma los cambios sin perder lo que ya anotaste
 function syncDraftRoutine() {
@@ -7352,6 +7355,7 @@ $app.addEventListener('click', async e => {
   if (!el || el.disabled) return;
   const { action, id } = el.dataset;
   const i = +el.dataset.i, j = +el.dataset.j;
+  if (action !== 'set-menu') setMenuOpen = null;   // elegir una opción (o tocar otra cosa) cierra el menú de la serie
   if (viewing && !viewAllowed(action)) { notice(viewOnlyMsg()); return; }
 
   switch (action) {
@@ -7797,6 +7801,10 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       save(); render();
       break;
     }
+    case 'set-menu':
+      setMenuOpen = setMenuOpen === `${i}-${j}` ? null : `${i}-${j}`;
+      render();
+      break;
     case 'set-note':   // abrir la nota de una serie
       setNoteOpen = `${i}-${j}`;
       render();

@@ -1218,3 +1218,22 @@ button.wk-day { font-family: inherit; border: 0; cursor: pointer; padding: 0; }
   border: 0; border-left: 3px solid var(--accent); border-radius: 0 8px 8px 0; background: var(--surface2); color: var(--accent); }
 .set-prev-note { margin: -4px 0 8px 24px; font-size: 12px; color: var(--muted); font-style: italic; }
 .set-chip-note { font-style: italic; color: var(--muted); }
+
+/* Series sin basurero: ⋮ a la izquierda (en un superset, letra + ⋮) */
+.set { grid-template-columns: var(--n, 26px) 1fr 20px 10px 1fr 20px; }
+.set.has-rir { grid-template-columns: var(--n, 26px) 1fr 20px 10px 1fr 44px 20px; }
+.set.side { grid-template-columns: var(--n, 26px) 1fr 1fr 1fr 20px; }
+.set.side.has-rir { grid-template-columns: var(--n, 26px) 1fr 1fr 1fr 44px 20px; }
+.superset .set { --n: 50px; }
+.set .n { display: flex; align-items: center; justify-content: center; gap: 2px; }
+.set-dots { width: 26px; height: 44px; padding: 0; border: 0; background: none; color: var(--muted); font-size: 22px; font-weight: 700; line-height: 1; cursor: pointer; border-radius: 8px; }
+.set-dots.on { color: var(--accent); background: var(--surface2); }
+.set-ref { margin-left: 32px; }
+.superset .set-ref { margin-left: 56px; }
+.set-menu { display: flex; flex-wrap: wrap; gap: 6px; margin: -2px 0 8px 32px; }
+.superset .set-menu { margin-left: 56px; }
+.set-menu .chip { min-height: 34px; padding: 0 12px; font-size: 13px; display: inline-flex; align-items: center; gap: 6px; }
+.set-menu svg.trash { width: 16px; height: 16px; margin: 0; }
+.set-note-in, .set-prev-note { margin-left: 32px; width: calc(100% - 32px); }
+.superset .set-note-in, .superset .set-prev-note { margin-left: 56px; width: calc(100% - 56px); }
+.set-menu .chip.danger-text { color: var(--danger); }
