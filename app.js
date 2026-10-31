@@ -731,8 +731,7 @@ function viewDietEditor(id) {
     <button class="btn block" data-action="meal-add">+ Agregar comida ${diet.meals.length + 1}</button>
     <p class="muted hint">¿Falta un alimento? <a href="#/alimento/nuevo">Créalo aquí</a> y vuelve.</p>
     <button class="btn primary block" data-action="diet-done" style="margin-top:20px">Terminar dieta</button>
-    ${shareBox(diet.id, 'Tu atleta toca el link y la dieta se le agrega sola (o ingresa el código en Nutrición → Mis dietas → "Importar dieta con código"). Se comparten las comidas, las cantidades y los alimentos que creaste tú. Si después cambias la dieta, comparte un código nuevo.')
-      || '<button class="btn block" data-action="share-diet">Compartir dieta</button>'}
+    <button class="btn block" data-action="share-diet">Compartir dieta</button>
     <button class="btn ghost block danger-text" data-action="diet-del">Eliminar dieta</button>`;
 }
 
@@ -1625,8 +1624,7 @@ function viewRoutine() {
     <h2>Ejercicios</h2>
     <ul class="list ex-edit">${items || '<p class="empty">Agrega los ejercicios de esta rutina.</p>'}</ul>
     <button type="button" class="add-ex-field" data-action="explore-list">+ Agregar ejercicio</button>
-    ${shareBox(r.id, 'Tu amigo toca el link y la rutina se le agrega sola (o ingresa el código en Rutinas → "Importar rutina con código"). Solo se comparten los ejercicios, el Rest y los objetivos, no tus pesos ni tu historial.')
-      || '<button class="btn block" data-action="share-routine" style="margin-top:32px">Compartir rutina</button>'}
+    <button class="btn block" data-action="share-routine" style="margin-top:32px">Compartir rutina</button>
     <button class="btn block" data-action="dup-routine">Duplicar rutina</button>
     <button class="btn ghost block danger-text" data-action="del-routine">Eliminar rutina</button>
     ${guidePickerHtml()}
@@ -2220,7 +2218,6 @@ const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const newCode = () => Array.from(crypto.getRandomValues(new Uint32Array(6)), n => CODE_CHARS[n % CODE_CHARS.length]).join('');
 const fmtCode = c => `${c.slice(0, 3)}-${c.slice(3)}`;
 const normCode = s => s.toUpperCase().replace(/[^A-Z0-9]/g, '');
-let shareResult = null;   // { id, code, name, kind } del último código generado (rutina o dieta)
 let importOpen = false;   // formulario "Importar con código" visible
 
 // Link que abre Desdel y agrega la rutina (?r=CÓDIGO)
@@ -2236,40 +2233,9 @@ const shareText = ({ name, code, kind }) => kind === 'program'
     `Si no se abre, copia este código, abre Desdel y en Rutinas toca "Pegar código": ${fmtCode(code)}`;
 
 // Sube lo compartido con un código nuevo (si el código ya existe se prueba otro)
-async function shareWithCode(btn, data, result) {
-  await busy(btn, 'Generando código…', async () => {
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const code = newCode();
-      try {
-        await withTimeout(cloud.shareRoutine(code, { ownerUid: user.uid, ownerName: user.username || '', ...data }));
-        shareResult = { ...result, code };
-        return;
-      } catch (e) {
-        if (e.code === 'permission-denied' && attempt < 2) continue;   // código repetido: se prueba otro
-        notice(e.code === 'auth/network-request-failed'
-          ? 'Se necesita internet para compartir.'
-          : 'No se pudo generar el código. Intenta de nuevo en un rato.');
-        return;
-      }
-    }
-  });
-  render();
-}
-
-async function shareRoutine(btn) {
-  const r = curRoutine();
-  if (!r.exercises.length) { notice('Agrega ejercicios a la rutina antes de compartirla.'); return; }
-  // Solo se comparten los ejercicios: sin pesos, historial ni notas
-  await shareWithCode(btn, { routine: routinePayload(r) }, { id: r.id, name: r.name, kind: 'routine' });
-}
 const routinePayload = r => ({ name: r.name, exercises: r.exercises.map(ex => ({ name: ex.name, unit: ex.unit, rest: ex.rest || 0, rir: !!ex.rir, ...planFields(ex) })) });
 
 // Se comparten las comidas con sus cantidades y los alimentos propios que usa (los de la base ya los tiene todo el mundo)
-async function shareDiet(btn) {
-  const d = dietById(routeParts()[1]);
-  if (!d.meals.some(m => m.items.length)) { notice('Agrega alimentos a la dieta antes de compartirla.'); return; }
-  await shareWithCode(btn, { diet: dietPayload(d) }, { id: d.id, name: d.name, kind: 'diet' });
-}
 function dietPayload(d) {
   const foods = new Map();
   const meals = d.meals.map(m => ({
@@ -2281,20 +2247,6 @@ function dietPayload(d) {
     }),
   }));
   return { name: d.name, meals, foods: [...foods.values()] };
-}
-
-// Cuadro con el código generado (rutina o dieta)
-function shareBox(id, hint) {
-  if (!shareResult || shareResult.id !== id) return '';
-  return `<section class="card share-box" style="margin-top:32px">
-      <div class="muted">Código para compartir "${esc(shareResult.name)}"</div>
-      <div class="code">${fmtCode(shareResult.code)}</div>
-      <div class="ex-actions">
-        <button class="btn primary" data-action="send-code">Enviar</button>
-        <button class="btn" data-action="copy-code">Copiar link</button>
-      </div>
-      <p class="muted hint">${hint}</p>
-    </section>`;
 }
 
 // Formulario "Importar rutina con código"
@@ -2533,23 +2485,6 @@ function workoutShareText(w, forChat = false) {
   const closing = ups ? `🔥 Superé mi récord en ${plural(ups, 'serie')}` : '✅ Entrenamiento completado';
   const text = `${title}\n${fmtLongDate(w.date)}\n\n${lines.join('\n')}\n\n${closing}`;
   return forChat ? text : `${text}\n\nDesdel · ${location.origin}${location.pathname}`;
-}
-
-async function shareWorkout(btn, id) {
-  const w = db.workouts.find(x => x.id === id);
-  if (!w) return;
-  const text = workoutShareText(w);
-  if (navigator.share) {
-    try { await navigator.share({ text }); } catch (e) { /* se cerró el menú de compartir */ }
-    return;
-  }
-  // Computador sin menú de compartir: se copia el texto
-  try {
-    await navigator.clipboard.writeText(text);
-    btn.textContent = 'Copiado, pégalo en WhatsApp';
-  } catch (e) {
-    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
-  }
 }
 
 // ---------- Modo coach ----------
@@ -3894,6 +3829,49 @@ function shareToChat(chatId) {
       notice('No se pudo enviar el mensaje. Revisa tu internet e intenta de nuevo.');
     });
 }
+// Sube lo compartido con un código nuevo (si el código ya existe se prueba otro); null si no se pudo
+async function newShareCode(data) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const code = newCode();
+    try {
+      await withTimeout(cloud.shareRoutine(code, { ownerUid: user.uid, ownerName: user.username || '', ...data }));
+      return code;
+    } catch (e) {
+      if (e.code === 'permission-denied' && attempt < 2) continue;   // código repetido: se prueba otro
+      notice(e.code === 'auth/network-request-failed' || !navigator.onLine
+        ? 'Se necesita internet para compartir.' : 'No se pudo preparar el link. Intenta de nuevo en un rato.');
+      return null;
+    }
+  }
+  return null;
+}
+// Otra app (WhatsApp…): el entreno va como texto; rutina, dieta y programa con su link
+async function shareOut() {
+  const sh = shareSheet;
+  if (!sh || sh.busy) return;
+  if (sh.kind === 'workout') return sendOut(workoutShareText(db.workouts.find(x => x.id === sh.id)));
+  if (!sh.code) {
+    const m = shareMsg(sh.kind, sh.id);
+    if (!m) return;
+    const { type, ...data } = m[0];
+    sh.busy = true; render();
+    sh.code = await newShareCode(data);
+    sh.busy = false;
+    if (shareSheet !== sh) return;   // se cerró mientras tanto
+    render();
+    if (!sh.code) return;
+  }
+  sendOut(shareText({ name: sh.name, code: sh.code, kind: sh.kind }));
+}
+function sendOut(text) {
+  if (navigator.share) {   // si el teléfono no abre el menú esta vez, el link ya queda listo para volver a tocar
+    navigator.share({ text }).then(() => { shareSheet = null; render(); }, () => {});
+    return;
+  }
+  // Computador sin menú de compartir: se copia el texto
+  navigator.clipboard.writeText(text).then(() => showNote('Copiado, pégalo en WhatsApp'),
+    () => window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank'));
+}
 function shareSheetHtml() {
   const sh = shareSheet;
   const what = { workout: 'entrenamiento', routine: 'rutina', diet: 'dieta', program: 'programa' }[sh.kind];
@@ -3904,7 +3882,7 @@ function shareSheetHtml() {
         ${avatarHtml(name, gymbroPhoto(c))}<strong class="grow">${esc(name)}</strong>
         <span class="share-st ${sent ? 'sent' : ''}">${sent ? 'Enviado ✓' : 'Enviar'}</span></button>`;
   }).join('');
-  const other = sh.kind === 'workout' ? 'WhatsApp u otra app' : sh.kind === 'program' ? '' : 'Código o link (WhatsApp u otra app)';
+
   return `<div class="modal-wrap">
     <div class="modal-back" data-action="share-close"></div>
     <section class="modal card share-sheet" role="dialog" aria-modal="true" aria-label="Compartir ${what}">
@@ -3914,7 +3892,8 @@ function shareSheetHtml() {
       ${!chatsLoaded ? '<p class="muted small">Cargando…</p>'
         : rows ? `<div class="share-list">${rows}</div>`
         : '<p class="muted small" style="margin:0">Todavía no tienes gymbros. <a href="#/gymbro" data-action="share-close">Agrega uno</a> y podrás mandárselo por el chat.</p>'}
-      ${other ? `<h3 class="guide-zone">Otras apps</h3><button class="btn block" data-action="share-out">${other}</button>` : ''}
+      <h3 class="guide-zone">Otras apps</h3>
+      <button class="btn block" data-action="share-out" ${sh.busy ? 'disabled' : ''}>${sh.busy ? 'Preparando link…' : 'WhatsApp u otra app'}</button>
       <button class="btn ${sh.sent.length ? 'primary' : ''} block" data-action="share-close">${sh.sent.length ? 'Listo' : 'Cancelar'}</button>
     </section>
   </div>`;
@@ -5698,7 +5677,6 @@ function render() {
   else if (!editBuf || editBuf.editOf !== arg) editBuf = makeEditBuf(arg);
   if (screen !== 'rutina') { altEdit = null; editReturn = false; }
   if (screen !== 'sesion' || arg !== justFinished) justFinished = null;
-  if (screen !== 'rutina' && screen !== 'dieta' && screen !== 'miprograma') shareResult = null;
   if (screen !== 'chat') { attach = null; editingMsg = null; selectedMsg = null; }
   if (screen !== 'agua') waterEditing = null;
   if (screen !== 'peso') goalEditing = false;
@@ -6515,7 +6493,7 @@ function viewMyProgram(id) {
     ${db.routines.length ? weeks : '<p class="empty">Primero crea tus rutinas en la pestaña Rutinas; después eliges qué día va cada una.</p>'}
     ${(v => volumeHtml(v.planned, v.missing))(myProgVolume(p))}
     ${viewing ? '' : `<button class="btn block" data-action="share-program" data-id="${p.id}" style="margin-top:20px">Compartir programa</button>`}
-    <button class="btn ghost block danger-text" data-action="myprog-del" style="margin-top:${viewing ? 20 : 0}px">Eliminar programa</button>`;
+    <button class="btn ghost block danger-text" data-action="myprog-del" ${viewing ? 'style="margin-top:20px"' : ''}>Eliminar programa</button>`;
 }
 
 // ---------- Series por músculo a la semana (en los programas) ----------
@@ -8443,13 +8421,9 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       shareSheet = null;
       if (el.tagName !== 'A') render();   // el link "Agrega uno" cambia de pantalla solo
       break;
-    case 'share-out': {   // otra app: el entreno como texto; rutina y dieta con su código
-      const sh = shareSheet; shareSheet = null;
-      if (sh.kind === 'workout') { render(); shareWorkout(el, sh.id); }
-      else if (sh.kind === 'routine') shareRoutine(el);
-      else shareDiet(el);
+    case 'share-out':
+      shareOut();
       break;
-    }
     case 'del-session':
       if (!await ask('¿Eliminar este entrenamiento del historial?')) return;
       db.workouts = db.workouts.filter(w => w.id !== id);
@@ -8459,10 +8433,6 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
     // Compartir rutinas
     case 'share-routine':
       openShare('routine', curRoutine().id);
-      break;
-    case 'copy-code':
-      navigator.clipboard.writeText(shareLink(shareResult.code))
-        .then(() => { el.textContent = 'Link copiado'; }, () => notice(`Link: ${shareLink(shareResult.code)}`));
       break;
     case 'share-diet':
       openShare('diet', routeParts()[1]);
@@ -8556,12 +8526,6 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       const c = chats.find(x => x.id === routeParts()[1]);
       if (!c || !await ask(`¿Eliminar a ${gymbroName(c)} de tus gymbros? El chat se borra para los dos.`)) return;
       cloud.deleteChat(c.id).then(() => location.replace('#/social'), () => notice('No se pudo eliminar. Revisa tu internet.'));
-      break;
-    }
-    case 'send-code': {
-      const text = shareText(shareResult);
-      if (navigator.share) navigator.share({ text }).catch(() => {});
-      else window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
       break;
     }
     case 'paste-import':
