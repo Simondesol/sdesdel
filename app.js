@@ -3003,7 +3003,6 @@ const POV = n => [
   [/^Entrenaste$/, 'Entrenó'], [/^Te toca$/, 'Le toca'], [/^Tu semana$/, `Semana de ${n}`], [/^Tu peso de hoy · último (.*)$/, 'Último peso: $1'], [/^Tu peso de hoy$/, 'Todavía no anota su peso'],
   [/^Mis programas$/i, `Programas de ${n}`], [/^Mis dietas$/, 'Dietas'], [/^Mis alimentos$/, 'Alimentos'],
   [/^Es el que estás usando: lo que cambies aquí se aplica a tu semana\.$/, `Es el que ${n} está usando: lo que cambies aquí se aplica a su semana.`],
-  [/^Para enviárselo a un atleta.*$/, ''],
   [/^Tu dieta tiene/, 'Su dieta tiene'], [/que tu objetivo/, 'que su objetivo'], [/^Tus kcal objetivo$/, `Kcal objetivo de ${n}`],
   [/^Referencia para armar tu dieta$/, 'Referencia para armar su dieta'], [/^Para mantener tu peso$/, 'Para mantener su peso'],
   [/^¿Qué quieres\?$/i, `¿Qué quiere ${n}?`], [/^Horas que dormiste cada noche$/, 'Horas que durmió cada noche'], [/^Te faltan/, 'Le faltan'],
@@ -3860,25 +3859,65 @@ function saveMsgEdit(text) {
   render();
 }
 
+function shareMsg(kind, id) {   // [mensaje, vista previa] o null si no hay nada que mandar
+  if (kind === 'program') { const p = db.programs.find(x => x.id === id), pr = p && checkSendable(p); return pr ? [{ type: 'program', program: pr }, `📅 Programa: ${pr.name}`] : null; }
+  if (kind === 'diet') { const d = dietById(id); return d ? [{ type: 'diet', diet: dietPayload(d) }, `🥗 Dieta: ${d.name}`] : null; }
+  if (kind === 'routine') { const r = db.routines.find(x => x.id === id); return r ? [{ type: 'routine', routine: routinePayload(r) }, `🏋️ Rutina: ${r.name}`] : null; }
+  const w = db.workouts.find(x => x.id === id); return w ? [{ type: 'workout', text: workoutShareText(w, true) }, `💪 Entrenamiento: ${w.routineName}`] : null;
+}
 function sendAttachment(id) {
-  const chatId = routeParts()[1];
-  if (attach === 'program') {
-    const p = db.programs.find(x => x.id === id), pr = p && checkSendable(p);
-    if (!pr) return;
-    sendMsg(chatId, { type: 'program', program: pr }, `📅 Programa: ${pr.name}`);
-  } else if (attach === 'diet') {
-    const d = dietById(id);
-    sendMsg(chatId, { type: 'diet', diet: dietPayload(d) }, `🥗 Dieta: ${d.name}`);
-  } else if (attach === 'routine') {
-    const r = db.routines.find(x => x.id === id);
-    sendMsg(chatId, { type: 'routine', routine: routinePayload(r) }, `🏋️ Rutina: ${r.name}`);
-  } else {
-    const w = db.workouts.find(x => x.id === id);
-    sendMsg(chatId, { type: 'workout', text: workoutShareText(w, true) }, `💪 Entrenamiento: ${w.routineName}`);
-  }
-  attach = null;
+  const chatId = routeParts()[1], m = shareMsg(attach, id);
+  if (!m) return;
+  sendMsg(chatId, m[0], m[1]);
+  attach = null; render(); scrollChatBottom();
+}
+
+// Panel "Compartir": mandarlo por el chat a tus gymbros (a uno o a varios) o por otra app
+let shareSheet = null;   // { kind: 'workout' | 'routine' | 'diet' | 'program', id, name, at: ruta, sent: chats ya enviados }
+function openShare(kind, id) {
+  const ok = kind === 'routine' ? (db.routines.find(x => x.id === id) || {}).exercises?.length || (notice('Agrega ejercicios a la rutina antes de compartirla.'), 0)
+    : kind === 'diet' ? (dietById(id) || { meals: [] }).meals.some(m => m.items.length) || (notice('Agrega alimentos a la dieta antes de compartirla.'), 0)
+    : shareMsg(kind, id);
+  if (!ok) return;
+  const name = kind === 'program' ? db.programs.find(x => x.id === id).name : kind === 'diet' ? dietById(id).name
+    : kind === 'routine' ? db.routines.find(x => x.id === id).name : db.workouts.find(x => x.id === id).routineName;
+  shareSheet = { kind, id, name, at: location.hash, sent: [] };
   render();
-  scrollChatBottom();
+}
+function shareToChat(chatId) {
+  const c = chats.find(x => x.id === chatId), m = shareSheet && shareMsg(shareSheet.kind, shareSheet.id);
+  if (!c || !m || shareSheet.sent.includes(chatId)) return;
+  shareSheet.sent.push(chatId); render();
+  cloud.sendMessage(c.id, { from: user.uid, ...m[0] }, m[1].slice(0, 120))
+    .then(() => showNote(`Enviado a ${gymbroName(c)} ✓`), () => {
+      if (shareSheet) { shareSheet.sent = shareSheet.sent.filter(x => x !== chatId); render(); }
+      notice('No se pudo enviar el mensaje. Revisa tu internet e intenta de nuevo.');
+    });
+}
+function shareSheetHtml() {
+  const sh = shareSheet;
+  const what = { workout: 'entrenamiento', routine: 'rutina', diet: 'dieta', program: 'programa' }[sh.kind];
+  const when = c => (c.last ? c.last.at : c.createdAt || 0);
+  const rows = chats.slice().sort((a, b) => when(b) - when(a)).map(c => {
+    const name = gymbroName(c), sent = sh.sent.includes(c.id);
+    return `<button class="share-to" data-action="share-to" data-id="${c.id}" ${sent ? 'disabled' : ''} aria-label="${sent ? `Enviado a ${esc(name)}` : `Enviar a ${esc(name)}`}">
+        ${avatarHtml(name, gymbroPhoto(c))}<strong class="grow">${esc(name)}</strong>
+        <span class="share-st ${sent ? 'sent' : ''}">${sent ? 'Enviado ✓' : 'Enviar'}</span></button>`;
+  }).join('');
+  const other = sh.kind === 'workout' ? 'WhatsApp u otra app' : sh.kind === 'program' ? '' : 'Código o link (WhatsApp u otra app)';
+  return `<div class="modal-wrap">
+    <div class="modal-back" data-action="share-close"></div>
+    <section class="modal card share-sheet" role="dialog" aria-modal="true" aria-label="Compartir ${what}">
+      <div class="guide-head"><h2>Compartir ${what}</h2><button class="icon small" data-action="share-close" aria-label="Cerrar">✕</button></div>
+      <p class="muted small" style="margin:0">${esc(sh.name || '')}</p>
+      <h3 class="guide-zone">Por chat a tus gymbros</h3>
+      ${!chatsLoaded ? '<p class="muted small">Cargando…</p>'
+        : rows ? `<div class="share-list">${rows}</div>`
+        : '<p class="muted small" style="margin:0">Todavía no tienes gymbros. <a href="#/gymbro" data-action="share-close">Agrega uno</a> y podrás mandárselo por el chat.</p>'}
+      ${other ? `<h3 class="guide-zone">Otras apps</h3><button class="btn block" data-action="share-out">${other}</button>` : ''}
+      <button class="btn ${sh.sent.length ? 'primary' : ''} block" data-action="share-close">${sh.sent.length ? 'Listo' : 'Cancelar'}</button>
+    </section>
+  </div>`;
 }
 
 // Texto corto del mensaje para la lista de chats
@@ -5729,6 +5768,8 @@ function render() {
   }
   if (!viewing && !['entrenar', 'editar', 'chat'].includes(screen)) maybeAskSleep();
   if (sleepAsk && !tourOpen && !viewing && !['entrenar', 'editar', 'chat'].includes(screen)) html += sleepModal();
+  if (shareSheet && shareSheet.at !== location.hash) shareSheet = null;   // cambiaste de pantalla
+  if (shareSheet && !viewing) html += shareSheetHtml();
   if (tourOpen) html += tourHtml();
   if (viewing && screen !== 'chat') html = viewBarHtml() + html;
   document.body.classList.toggle('viewing', !!viewing && screen !== 'chat');
@@ -6473,8 +6514,8 @@ function viewMyProgram(id) {
     </section>
     ${db.routines.length ? weeks : '<p class="empty">Primero crea tus rutinas en la pestaña Rutinas; después eliges qué día va cada una.</p>'}
     ${(v => volumeHtml(v.planned, v.missing))(myProgVolume(p))}
-    <p class="muted small" style="margin:14px 0 0">Para enviárselo a un atleta o gymbro, en su chat toca ＋ → Enviar un programa.</p>
-    <button class="btn ghost block danger-text" data-action="myprog-del" style="margin-top:20px">Eliminar programa</button>`;
+    ${viewing ? '' : `<button class="btn block" data-action="share-program" data-id="${p.id}" style="margin-top:20px">Compartir programa</button>`}
+    <button class="btn ghost block danger-text" data-action="myprog-del" style="margin-top:${viewing ? 20 : 0}px">Eliminar programa</button>`;
 }
 
 // ---------- Series por músculo a la semana (en los programas) ----------
@@ -8390,8 +8431,25 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       save(); render();
       break;
     case 'share-workout':
-      shareWorkout(el, el.dataset.id);
+      openShare('workout', el.dataset.id);
       break;
+    case 'share-program':
+      openShare('program', el.dataset.id);
+      break;
+    case 'share-to':
+      shareToChat(id);
+      break;
+    case 'share-close':
+      shareSheet = null;
+      if (el.tagName !== 'A') render();   // el link "Agrega uno" cambia de pantalla solo
+      break;
+    case 'share-out': {   // otra app: el entreno como texto; rutina y dieta con su código
+      const sh = shareSheet; shareSheet = null;
+      if (sh.kind === 'workout') { render(); shareWorkout(el, sh.id); }
+      else if (sh.kind === 'routine') shareRoutine(el);
+      else shareDiet(el);
+      break;
+    }
     case 'del-session':
       if (!await ask('¿Eliminar este entrenamiento del historial?')) return;
       db.workouts = db.workouts.filter(w => w.id !== id);
@@ -8400,14 +8458,14 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
 
     // Compartir rutinas
     case 'share-routine':
-      shareRoutine(el);
+      openShare('routine', curRoutine().id);
       break;
     case 'copy-code':
       navigator.clipboard.writeText(shareLink(shareResult.code))
         .then(() => { el.textContent = 'Link copiado'; }, () => notice(`Link: ${shareLink(shareResult.code)}`));
       break;
     case 'share-diet':
-      shareDiet(el);
+      openShare('diet', routeParts()[1]);
       break;
 
     // Social

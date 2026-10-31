@@ -1245,3 +1245,15 @@ button.wk-day { font-family: inherit; border: 0; cursor: pointer; padding: 0; }
 .set-pop-item.danger { color: var(--danger); }
 .set-pop-item svg.trash { width: 18px; height: 18px; margin: 0; }
 .superset .set-pop { left: 48px; }
+
+/* Panel Compartir: tus gymbros para mandarlo por el chat */
+.share-sheet { max-height: calc(100dvh - 32px); overflow-y: auto; }
+.share-list { display: grid; gap: 8px; max-height: 46dvh; overflow-y: auto; }
+.share-to { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 56px; padding: 8px 12px; border: 1px solid var(--border);
+  border-radius: 12px; background: var(--surface2); color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.share-to .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.share-to .avatar { width: 36px; height: 36px; background: var(--surface); }
+.share-to:active:not(:disabled) { background: var(--surface); }
+.share-to:disabled { cursor: default; }
+.share-st { flex: none; padding: 6px 12px; border-radius: 999px; background: var(--accent); color: var(--accent-ink); font-size: 14px; font-weight: 600; }
+.share-st.sent { background: none; color: var(--muted); padding: 6px 0; }
