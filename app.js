@@ -2527,7 +2527,7 @@ function workoutShareText(w, forChat = false) {
       const mark = c == null ? '' : c > 0 ? ' ▲' : c < 0 ? ' ▼' : ' =';
       return `${fmtNum(s.w)}×${repsText(s).replace(' / ', '/')}${s.rir != null ? ` RIR ${fmtNum(s.rir)}` : ''}${dropsText(s)}${mark}`;
     });
-    return `• ${ex.name} (${ex.unit}): ${sets.join(' · ')}`;
+    return `• ${ex.name} (${ex.unit}):\n${sets.join('\n')}`;   // una serie por línea
   });
   const title = `💪 ${forChat ? w.routineName : `*${w.routineName}*`}${w.durationSec ? ` · ${fmtDuration(w.durationSec)}` : ''}`;
   const closing = ups ? `🔥 Superé mi récord en ${plural(ups, 'serie')}` : '✅ Entrenamiento completado';
