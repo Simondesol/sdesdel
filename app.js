@@ -141,6 +141,7 @@ function bestSets(exerciseId, before = db.workouts.length, unit = null, rid = nu
   const best = [];
   for (let k = 0; k < before; k++) {
     if (rid && db.workouts[k].routineId !== rid) continue;
+    if (db.workouts[k].deload) continue;   // semana de descarga: no es tu marca
     const ex = db.workouts[k].exercises.find(e => e.exerciseId === exerciseId);
     if (!ex || (unit && unitKind(ex.unit) !== unitKind(unit))) continue;
     const bw = bwFor(ex, db.workouts[k].date);   // con peso corporal, cada serie con lo que pesabas ese día
@@ -314,6 +315,7 @@ function viewHub() {
     ${viewing ? studentCheckinsCard() : socialCard()}
 
     ${entrenoCard()}
+    ${deloadCard()}
     ${checkinCard()}
 
     ${viewing ? `<div class="hub-pair">${nutritionCard()}${bodyweightCard()}</div>` : `${nutritionCard()}
@@ -1289,13 +1291,15 @@ function viewWater() {
 
 // Última vez que se hizo un ejercicio (antes de la posición `before` del historial)
 function lastFor(exerciseId, before = db.workouts.length, rid = null) {
+  let deload = null;   // lo de una semana de descarga solo si no hay nada más
   for (let i = before - 1; i >= 0; i--) {
     const w = db.workouts[i];
     if (rid && w.routineId !== rid) continue;
     const ex = w.exercises.find(e => e.exerciseId === exerciseId);
-    if (ex) return { date: w.date, ex };
+    if (ex && !w.deload) return { date: w.date, ex };
+    if (ex && !deload) deload = { date: w.date, ex };
   }
-  return null;
+  return deload;
 }
 
 // Todas las veces que se hizo un ejercicio, de la más reciente a la más antigua
@@ -1758,7 +1762,7 @@ function viewWorkout() {
   d.done = d.done || [];
   const gi = groupIndex(groups, d.pos), group = groups[gi], isLast = gi === groups.length - 1;
   const ridOf = ex => (ex.extra ? null : d.routineId);
-  const bests = new Map(group.map(k => [k, bestSets(d.exercises[k].exerciseId, before, d.exercises[k].unit, ridOf(d.exercises[k]))]));
+  const bests = new Map(group.map(k => [k, d.deload ? [] : bestSets(d.exercises[k].exerciseId, before, d.exercises[k].unit, ridOf(d.exercises[k]))]));
 
   // "↓ drop" solo en ejercicios marcados como Dropset en la rutina (o que ya tienen bajadas, al editar uno guardado)
   // Fila de una serie, con sus bajadas de dropset debajo (label: "1", o "A1" en un superset)
@@ -1827,7 +1831,7 @@ function viewWorkout() {
   // Objetivo de la rutina (si tiene), aviso para subir el peso, nota y "Primera vez"
   const exInfo = (ex, i, compact = false) => {
     let hint = '';
-    if (!editing && (ex.goalReps || hasRepsBy(ex))) {
+    if (!editing && !d.deload && (ex.goalReps || hasRepsBy(ex))) {
       const prev = lastFor(ex.exerciseId, before, ridOf(ex));
       const done = prev ? prev.ex.sets.filter(x => x.w != null) : [];
       const topOf = j => (repsFor(ex, j) ? rangeTop(repsFor(ex, j)) : Infinity);
@@ -1839,7 +1843,7 @@ function viewWorkout() {
     }
     return `${hint}
       ${noteHtml(ex.exerciseId, i)}
-      ${compact || bests.get(i).length ? '' : '<p class="prev">Primera vez</p>'}`;
+      ${compact || d.deload || bests.get(i).length ? '' : '<p class="prev">Primera vez</p>'}`;
   };
   const historyHtml = ex => historyFor(ex.exerciseId, d.editOf).map(({ w, ex: pex }) => `
       <div class="hist-item">
@@ -1935,6 +1939,7 @@ function viewWorkout() {
   // Entrenando: cuánto llevas (se actualiza solo). Editando uno guardado: su fecha
   return `${header(title, { back: true, sub: `Ejercicio ${gi + 1} de ${groups.length} · ${editing ? fmtDate(d.start) : `Duración ${elapsedClock(d.start)}`}` })}
     ${steps}
+    ${d.deload ? '<p class="deload-tag">Semana de descarga · la mitad de las series y 10% menos de peso</p>' : ''}
     ${group.length > 1 ? supersetBlock(group) : exerciseBlock(d.exercises[group[0]], group[0])}
     ${editing ? '' : '<div id="quizcard" class="quiz card" hidden></div>'}
     ${d.free && isLast ? (freeAdd ? freePickerHtml(d) : '<button class="btn block free-more" data-action="free-open">+ Otro ejercicio</button>') : ''}
@@ -2429,14 +2434,14 @@ function viewSession(id) {
 
   // Cada serie comparada con la mejor serie de esa posición en los entrenamientos anteriores
   const blocks = w.exercises.map(ex => {
-    const best = bestSets(ex.exerciseId, k, ex.unit, w.routineId);
+    const best = w.deload ? [] : bestSets(ex.exerciseId, k, ex.unit, w.routineId);
     const count = { up: 0, eq: 0, down: 0 };
     const chips = ex.sets.map((s, j) => {
       const c = best[j] ? cmpSet({ ...s, unit: ex.unit, bw: bwFor(ex, w.date) }, best[j]) : null;
       if (c != null) count[c > 0 ? 'up' : c < 0 ? 'down' : 'eq']++;
       return `<span>${setText(s, ex.unit)} ${markSpan(c)}${setNoteChip(s)}</span>`;
     }).join('');
-    const tally = !best.length ? '<span class="muted">Primera vez</span>'
+    const tally = w.deload ? '<span class="muted">Descarga</span>' : !best.length ? '<span class="muted">Primera vez</span>'
       : ['up', 'eq', 'down'].filter(k => count[k]).map(k => `<span class="mark ${k}">${count[k]} ${TREND_ICON[k]}</span>`).join(' ')
         || '<span class="muted">Sin series para comparar</span>';
     return `<section class="card">
@@ -2483,7 +2488,7 @@ function workoutShareText(w, forChat = false) {
   const k = db.workouts.indexOf(w);
   let ups = 0;
   const lines = w.exercises.map(ex => {
-    const best = bestSets(ex.exerciseId, k, ex.unit, w.routineId);
+    const best = w.deload ? [] : bestSets(ex.exerciseId, k, ex.unit, w.routineId);
     const sets = ex.sets.map((s, j) => {
       const c = best[j] ? cmpSet({ ...s, unit: ex.unit, bw: bwFor(ex, w.date) }, best[j]) : null;
       if (c > 0) ups++;
@@ -2493,7 +2498,7 @@ function workoutShareText(w, forChat = false) {
     return `• ${ex.name} (${ex.unit}):\n${sets.join('\n')}`;   // una serie por línea
   });
   const title = `💪 ${forChat ? w.routineName : `*${w.routineName}*`}${w.durationSec ? ` · ${fmtDuration(w.durationSec)}` : ''}`;
-  const closing = ups ? `🔥 Superé mi récord en ${plural(ups, 'serie')}` : '✅ Entrenamiento completado';
+  const closing = w.deload ? '🧘 Semana de descarga' : ups ? `🔥 Superé mi récord en ${plural(ups, 'serie')}` : '✅ Entrenamiento completado';
   const text = `${title}\n${fmtLongDate(w.date)}\n\n${lines.join('\n')}\n\n${closing}`;
   return forChat ? text : `${text}\n\nDesdel · ${location.origin}${location.pathname}`;
 }
@@ -2593,7 +2598,8 @@ const CHAT_BLOCK = new Set(['attach', 'attach-pick', 'attach-send', 'msg-add', '
 const viewAllowed = action => VIEW_SAFE.has(action) || action === 'student-del'
   || (routeParts()[0] === 'chat' && !CHAT_BLOCK.has(action)) || (routeParts()[0] === 'rutina' && VIEW_ROUTINE.has(action))
   || (['programas', 'miprograma', 'listos', 'programa'].includes(routeParts()[0]) && VIEW_PROGRAM.has(action))
-  || (['nutricion', 'dieta', 'objetivo'].includes(routeParts()[0]) && VIEW_NUTRI.has(action));
+  || (['nutricion', 'dieta', 'objetivo'].includes(routeParts()[0]) && VIEW_NUTRI.has(action))
+  || (routeParts()[0] === '' && (action === 'deload-on' || action === 'deload-off'));
 const viewOnlyMsg = () => `Estás viendo los datos de ${viewing.name}. Puedes ver todo y cambiar sus rutinas, programas y dieta, pero no anotar ni borrar sus registros.`;
 const viewBarHtml = () => `<div class="view-bar"><span class="grow"><span class="muted small">Modo coach</span><strong>${esc(viewing.name)}</strong></span>
   ${chats.some(c => c.id === [user.uid, viewing.uid].sort().join('_')) ? `<a class="btn small-btn" href="#/chat/${[user.uid, viewing.uid].sort().join('_')}">Chat</a>` : ''}
@@ -2733,8 +2739,8 @@ function routineChanges(o, n) {
 // Rutinas que te cambió tu coach: se aplican y se borran de la nube
 // Un cambio del coach: { routine } | { program } | { plan } | { deleted, kind }.
 // Se guarda con el id de la rutina, 'prog_' + id del programa, o 'plan' (el programa activo)
-const editKind = ed => ed.kind || ['program', 'plan', 'diet', 'nutri', 'target'].find(k => k in ed) || 'routine';
-const KIND_ORDER = { routine: 0, program: 1, plan: 2, diet: 3, nutri: 4, target: 5 };   // primero las rutinas, que el programa usa
+const editKind = ed => ed.kind || ['program', 'plan', 'diet', 'nutri', 'target', 'deload'].find(k => k in ed) || 'routine';
+const KIND_ORDER = { routine: 0, program: 1, plan: 2, diet: 3, nutri: 4, target: 5, deload: 6 };   // primero las rutinas, que el programa usa
 // Objetivo de calorías (Nutrición → Objetivo): ritmo y actividad
 const targetOf = b => ({ paceMonth: b.paceMonth ?? null, pace: b.pace ?? null, paceAmt: b.paceAmt ?? null, activity: b.activity ?? null });
 const dietFood = (d, id) => (d.nutrition.foods.find(f => f.id === id) || BASE_BY_ID.get(id) || {}).name || 'un alimento';
@@ -2823,6 +2829,11 @@ function applyEditTo(d, ed) {
     if (paceMonth(before) !== paceMonth(b)) out.push(`Ritmo: ${paceLabel(paceMonth(before))} → ${paceLabel(paceMonth(b))} al mes`);
     if ((before.activity || null) !== (b.activity || null)) out.push(`Actividad: ${act(before.activity)} → ${act(b.activity)}`);
     return { text: 'Cambió tu objetivo de calorías', changes: out };
+  }
+  if (kind === 'deload') {
+    if ((d.body.deload || null) === (ed.deload || null)) return null;
+    if (ed.deload) { d.body.deload = ed.deload; delete d.body.deloadAsk; } else { delete d.body.deload; if (ed.deloadAsk) d.body.deloadAsk = ed.deloadAsk; }
+    return { text: ed.deload ? 'Te activó una semana de descarga: esta semana, la mitad de las series y 10% menos de peso' : 'Quitó tu semana de descarga' };
   }
   if (kind === 'plan') {
     const before = d.plan && d.plan.prog;
@@ -2947,6 +2958,7 @@ const coachMap = d => ({
   d: Object.fromEntries(d.nutrition.diets.map(x => [x.id, stable(x)])),
   nutri: stable({ a: d.nutrition.activeDietId || null, l: d.nutrition.dietLinks || null }),
   target: stable(targetOf(d.body)),
+  deload: d.body.deload || null,
 });
 function exitViewing() {
   if (!viewing) return;
@@ -2978,6 +2990,7 @@ function pushCoachEdits() {
   for (const id of Object.keys(v.base.d)) if (!(id in now.d)) put(`diet_${id}`, { deleted: true, kind: 'diet' });
   if (now.nutri !== v.base.nutri) put('nutri', { nutri: { activeDietId: db.nutrition.activeDietId || null, dietLinks: db.nutrition.dietLinks ? clone(db.nutrition.dietLinks) : null } });
   if (now.target !== v.base.target) put('target', { target: targetOf(db.body) });
+  if (now.deload !== v.base.deload) put('deload', { deload: db.body.deload || null, deloadAsk: db.body.deloadAsk || null });
   v.base = now;
   if (jobs.length) Promise.all(jobs).then(() => showNote(`Enviado a ${v.name} ✓`), () => notice(`No se pudo enviar el cambio a ${v.name}. Revisa tu internet.`));
 }
@@ -4017,12 +4030,14 @@ function newPRs(w) {
     return s ? toKg(e1rmEx(ex, s, date), ex.unit) : 0;
   };
   const prs = [], idx = db.workouts.indexOf(w);
+  if (w.deload) return prs;
   for (const ex of w.exercises) {
     const cur = firstE1rm(ex, w.date);
     if (!cur) continue;
     let prev = 0;
     // Solo contra los entrenos anteriores (al mirar uno antiguo, los de después no cuentan)
     for (const o of db.workouts.slice(0, idx < 0 ? db.workouts.length : idx)) {
+      if (o.deload) continue;
       const oe = o.exercises.find(e => e.exerciseId === ex.exerciseId);
       if (oe && unitKind(oe.unit) === unitKind(ex.unit)) prev = Math.max(prev, firstE1rm(oe, o.date));
     }
@@ -4307,6 +4322,72 @@ const shareProfile = () => localStorage.getItem(shareProfileKey()) !== '0';
 const profilePubKey = () => `desdel-perfil-pub-${user.uid}`;
 const profiles = new Map();   // uid → { data, error, loading, at }
 let profileTimer = null;
+
+// ---------- Semana de descarga ----------
+// Después de 6 semanas seguidas entrenando se sugiere una semana suave: mismas rutinas, la mitad de las series y 10% menos
+// de peso. No cambia tus rutinas y se termina sola el lunes. db.body.deload = lunes de la última semana de descarga;
+// db.body.deloadAsk = no volver a preguntar antes de ese día
+const DELOAD_WEEKS = 6;
+const thisMonday = () => dayKeyOf(mondayOf(new Date()));
+const deloadOn = () => db.body.deload === thisMonday();
+function weeksInARow() {   // semanas seguidas entrenando desde la última descarga (esta semana cuenta si ya entrenaste)
+  const weeks = new Set(db.workouts.filter(w => !w.deload).map(w => dayKeyOf(mondayOf(w.date))));
+  const d = mondayOf(new Date()), last = db.body.deload || '';
+  if (!weeks.has(dayKeyOf(d))) d.setDate(d.getDate() - 7);
+  let n = 0;
+  while (weeks.has(dayKeyOf(d)) && dayKeyOf(d) > last) { n++; d.setDate(d.getDate() - 7); }
+  return n;
+}
+const deloadDue = () => !deloadOn() && weeksInARow() >= DELOAD_WEEKS && (db.body.deloadAsk || '') <= todayKey();
+function deloadCard() {
+  const who = viewing ? esc(viewing.name) : '';
+  if (deloadOn()) {
+    return `<section class="card deload-card on"><div class="grow"><strong>Semana de descarga</strong>
+      <span class="muted small">${viewing ? `${who} entrena` : 'Entrenas'} con la mitad de las series y 10% menos de peso. El lunes ${viewing ? 'vuelve' : 'vuelves'} a lo normal.</span></div>
+      <button class="btn small-btn" data-action="deload-off">${viewing ? 'Quitar' : 'Terminarla'}</button></section>`;
+  }
+  const n = weeksInARow();
+  if (viewing) {
+    return `<section class="card deload-card"><div class="grow"><strong>Semana de descarga</strong>
+      <span class="muted small">${n >= 2 ? `Lleva ${n} semanas seguidas entrenando. ` : ''}Solo esta semana: la mitad de las series y 10% menos de peso.</span></div>
+      <button class="btn small-btn" data-action="deload-on">Activar</button></section>`;
+  }
+  if (!deloadDue()) return '';
+  return `<section class="card deload-card stack">
+      <strong>Llevas ${n} semanas seguidas. ¿Hacemos una semana de descarga?</strong>
+      <span class="muted small">Esta semana entrenas con la mitad de las series y 10% menos de peso para recuperarte y volver con más fuerza. Tu rutina no cambia y el lunes vuelves a lo normal.</span>
+      <div class="deload-btns"><button class="btn primary" data-action="deload-on">Sí, activar</button><button class="btn" data-action="deload-no">Ahora no</button></div>
+    </section>`;
+}
+// El entreno de la semana de descarga: la mitad de las series (redondeando hacia arriba) y los pesos de la vez pasada con 10% menos
+function deloadDraft(d) {
+  d.deload = true;
+  const cut = (v, unit) => {
+    const n = num(v);
+    if (n == null || n <= 0) return v;
+    if (unit === 'placas') return toField(Math.max(1, Math.floor(n * 0.9)));
+    const step = unit === 'lb' ? (n >= 40 ? 5 : 1) : n >= 20 ? 2.5 : 0.5;
+    return toField(Math.round((n * 0.9) / step) * step);
+  };
+  for (const ex of d.exercises) {
+    const keep = Math.max(1, Math.ceil(ex.sets.length / 2));
+    ex.sets = ex.sets.slice(0, keep);
+    if (ex.goalSets) ex.goalSets = keep;
+    for (const st of ex.sets) {
+      if (st.pw !== undefined) st.pw = cut(st.pw, ex.unit);
+      for (const x of st.drops || []) if (x.pw !== undefined) x.pw = cut(x.pw, ex.unit);
+    }
+  }
+}
+function setDeload(on) {
+  if (on) { db.body.deload = thisMonday(); delete db.body.deloadAsk; }
+  else {   // terminarla: no se vuelve a sugerir en 2 semanas
+    delete db.body.deload;
+    db.body.deloadAsk = dayKeyOf(new Date(Date.now() + 14 * 864e5));
+  }
+  save(); render();
+  if (on && !viewing) showNote('Semana de descarga activada. Tus próximos entrenos de esta semana vienen más suaves.');
+}
 
 // Lunes de la semana (para la racha de semanas seguidas entrenando)
 function weekStart(ms) {
@@ -6076,6 +6157,7 @@ function startWorkout(r) {
     rsig: routineSig(r),
     exercises: r.exercises.map((ex, k) => draftEx(ex, k === r.exercises.length - 1, r.id)),
   };
+  if (deloadOn()) deloadDraft(db.draft);
   save();
   go('#/entrenar');
 }
@@ -6119,7 +6201,7 @@ function finishWorkout() {
   setTimer(null);
   const id = uid();
   const durationSec = Math.max(0, Math.round((Date.now() - new Date(d.start).getTime()) / 1000));
-  const w = { id, routineId: d.routineId, routineName: d.routineName, date: d.start, durationSec, exercises, ...(d.free ? { free: true } : {}) };
+  const w = { id, routineId: d.routineId, routineName: d.routineName, date: d.start, durationSec, exercises, ...(d.free ? { free: true } : {}), ...(d.deload ? { deload: true } : {}) };
   db.workouts.push(w);
   db.draft = null;
   save();
@@ -6159,6 +6241,7 @@ function makeEditBuf(id) {
   if (!w) return null;
   return {
     editOf: w.id,
+    ...(w.deload ? { deload: true } : {}),
     routineId: w.routineId,
     routineName: w.routineName,
     start: w.date,
@@ -8531,6 +8614,17 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
     case 'share-workout':
       openShare('workout', el.dataset.id);
       break;
+    case 'deload-on':
+      setDeload(true);
+      break;
+    case 'deload-off':
+      if (!viewing && !await ask('¿Terminar la semana de descarga? Tus próximos entrenos vuelven a lo normal.', 'Terminar')) return;
+      setDeload(false);
+      break;
+    case 'deload-no':
+      db.body.deloadAsk = dayKeyOf(new Date(Date.now() + 14 * 864e5));
+      save(); render();
+      break;
     case 'export-workouts':
       exportWorkouts();
       break;
@@ -8861,7 +8955,7 @@ $app.addEventListener('input', e => {
     const d = cur(), ex = d.exercises[i];
     ex.sets[j][bind] = el.value;
     const cell = $app.querySelector(`[data-mark="${i}-${j}"]`);
-    if (cell) cell.innerHTML = markSpan(liveCmp(ex.sets[j], ex, bestSets(ex.exerciseId, beforeIndex(d), ex.unit, ex.extra ? null : d.routineId)[j]));
+    if (cell && !d.deload) cell.innerHTML = markSpan(liveCmp(ex.sets[j], ex, bestSets(ex.exerciseId, beforeIndex(d), ex.unit, ex.extra ? null : d.routineId)[j]));
     const wl = bind === 'w' && j === 0 && $app.querySelector(`[data-warm="${i}"]`);
     if (wl) wl.innerHTML = warmLine(d, i);
   }

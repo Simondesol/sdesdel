@@ -1272,3 +1272,10 @@ button.wk-day { font-family: inherit; border: 0; cursor: pointer; padding: 0; }
 .coach-alert-row { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 0; border: 0; border-top: 1px solid var(--border);
   background: none; color: var(--text); font: inherit; text-align: left; text-decoration: none; cursor: pointer; }
 .coach-alert-row .grow { display: grid; min-width: 0; }
+
+/* Semana de descarga */
+.deload-card { display: flex; align-items: center; gap: 12px; border-color: var(--accent); }
+.deload-card.stack { display: grid; gap: 8px; }
+.deload-card .grow { display: grid; gap: 2px; min-width: 0; }
+.deload-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.deload-tag { margin: 0 0 10px; padding: 8px 12px; border: 1px solid var(--accent); border-radius: 10px; color: var(--accent); font-size: 14px; }
