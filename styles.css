@@ -710,7 +710,7 @@ img.avatar { object-fit: cover; padding: 0; }
 .bar .titles-text { min-width: 0; }
 
 /* Editor de rutina: RIR, Dropset y Peso corporal en una fila, del mismo ancho */
-.ex-toggles { flex: 1 1 100%; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.ex-toggles { flex: 1 1 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
 .ex-toggles .chip { min-width: 0; padding: 0 4px; font-size: 13px; white-space: nowrap; }
 
 /* Ajustar foto */
@@ -1260,7 +1260,6 @@ button.wk-day { font-family: inherit; border: 0; cursor: pointer; padding: 0; }
 .warm-line { margin: 2px 0 8px; font-size: 14px; color: var(--text); }
 .warm-line:empty { display: none; }
 .warm-k { color: var(--muted); }
-.ex-warm { flex: 1 1 100%; display: grid; gap: 4px; }
 
 /* Cambiar ejercicio: ¿solo hoy o siempre en la rutina? */
 .swap-confirm h2 { margin: 0 0 4px; font-size: 19px; line-height: 1.3; }

@@ -1529,7 +1529,7 @@ const repsByBlock = (ex, i) => (ex.goalSets && ex.rir
 const INFO = {
   rm: '1RM = el peso máximo que podrías levantar 1 vez. Desdel lo estima con tu 1ª serie (peso y repeticiones), así ves si te estás haciendo más fuerte aunque cambies las repeticiones.',
   rir: 'RIR = repeticiones en reserva: cuántas más podrías haber hecho con buena técnica. RIR 2 es que te quedaban 2; RIR 0, que no podías hacer otra. No es lo mismo que el fallo: al fallo intentas otra repetición y no la completas.',
-  opts: 'RIR: al entrenar anotas cuántas repeticiones te quedaban en cada serie (y puedes ponerle un RIR objetivo). Peso corporal: para dominadas, fondos y similares; lo que anotas es el lastre. Unilateral: anotas las repeticiones de cada lado. Calentamiento: al entrenar, arriba de tus series aparecen las series de aproximación con su peso, calculadas desde tu primera serie. En Automático el primer ejercicio de cada músculo lleva calentamiento completo; si el músculo ya trabajó antes en la rutina, una sola aproximación. En dominadas y fondos con lastre, primero sin lastre y después con la mitad. Siempre: calentamiento completo aunque el músculo ya esté caliente. Nunca: no aparece.',
+  opts: 'RIR: al entrenar anotas cuántas repeticiones te quedaban en cada serie (y puedes ponerle un RIR objetivo). Peso corporal: para dominadas, fondos y similares; lo que anotas es el lastre. Unilateral: anotas las repeticiones de cada lado. Calentamiento: al entrenar, arriba de tus series aparecen las series de aproximación con su peso, calculadas desde tu primera serie: el primer ejercicio de cada músculo lleva calentamiento completo y, si el músculo ya trabajó antes en la rutina, una sola aproximación. En dominadas y fondos con lastre, primero sin lastre y después con la mitad. Apágalo en los ejercicios donde no lo quieras.',
 };
 const infoOpen = new Set();
 const infoBtn = k => `<button class="info-btn ${infoOpen.has(k) ? 'on' : ''}" data-action="info" data-k="${k}" aria-label="¿Qué es?" aria-expanded="${infoOpen.has(k)}">ⓘ</button>`;
@@ -1558,7 +1558,7 @@ function exSummary(ex) {
   else if (ex.goalSets || ex.goalReps) parts.push('Al fallo');
   if (ex.bw) parts.push('Peso corporal');
   if (ex.side) parts.push('Unilateral');
-  if (ex.warm) parts.push(ex.warm === 'never' ? 'Sin calentamiento' : 'Calentamiento siempre');
+  if (ex.warm === 'never') parts.push('Sin calentamiento');
   if (ex.rest) parts.push(`Rest ${fmtRest(ex.rest)}`);
   if (ex.unit !== 'kg') parts.push(ex.unit);
   return parts.join(' · ') || 'Toca para configurar';
@@ -1591,11 +1591,7 @@ function viewRoutine() {
         <button class="chip toggle ${ex.rir ? 'on' : ''}" data-action="toggle-rir" data-i="${i}" aria-pressed="${!!ex.rir}">RIR</button>
         <button class="chip toggle ${ex.bw ? 'on' : ''}" data-action="toggle-bw" data-i="${i}" aria-pressed="${!!ex.bw}" title="Dominadas, dips…: lo que anotas es el lastre">Peso corporal</button>
         <button class="chip toggle ${ex.side ? 'on' : ''}" data-action="toggle-side" data-i="${i}" aria-pressed="${!!ex.side}" title="Búlgara, remo a una mano…: repeticiones de cada lado">Unilateral</button>
-      </div>
-      <div class="ex-warm" role="group" aria-label="Calentamiento">
-        <span class="muted small">Calentamiento</span>
-        <div class="ex-toggles">${[['', 'Automático'], ['always', 'Siempre'], ['never', 'Nunca']].map(([v, t]) =>
-          `<button class="chip toggle ${(ex.warm || '') === v ? 'on' : ''}" data-action="ex-warm" data-i="${i}" data-v="${v}" aria-pressed="${(ex.warm || '') === v}">${t}</button>`).join('')}</div>
+        <button class="chip toggle ${ex.warm !== 'never' ? 'on' : ''}" data-action="ex-warm" data-i="${i}" aria-pressed="${ex.warm !== 'never'}" title="Series de aproximación sugeridas al entrenar">Calentamiento</button>
       </div>
       <button class="link small" data-action="info" data-k="opts" style="justify-self:start">${infoOpen.has('opts') ? 'Ocultar' : '¿Qué hace cada opción?'}</button>
       ${infoBox('opts')}
@@ -6508,7 +6504,7 @@ function viewMyProgram(id) {
 // Series de aproximación antes de la primera serie efectiva. Solo se muestran: no se anotan, no se guardan ni cuentan.
 // Automático: completo en el primer ejercicio de cada músculo en la rutina (mientras más peso, más series); si ese
 // músculo ya trabajó antes, una sola aproximación. Dominadas, fondos…: con lastre, primero sin lastre y después la mitad.
-// ex.warm: 'always' | 'never' (sin = automático)
+// ex.warm: 'never' = apagado (sin = automático)
 const WARM_SCHEMES = [[], [[0.6, 8]], [[0.5, 8], [0.75, 4]], [[0.5, 8], [0.7, 5], [0.85, 2]], [[0.4, 8], [0.6, 5], [0.75, 3], [0.9, 1]]];
 function warmupFor(d, i) {
   const ex = d.exercises[i];
@@ -6519,7 +6515,7 @@ function warmupFor(d, i) {
   if (!(W > 0)) return [];
   const plates = ex.unit === 'placas', kg = ex.unit === 'lb' ? W / 2.2 : W;
   const zone = zoneOf(ex);
-  const warmed = ex.warm !== 'always' && !!zone && d.exercises.slice(0, i).some(e => zoneOf(e) === zone);
+  const warmed = !!zone && d.exercises.slice(0, i).some(e => zoneOf(e) === zone);
   const scheme = bw ? (warmed ? [[0, 4]] : kg >= 30 ? [[0, 5], [0.5, 3], [0.75, 2]] : [[0, 5], [0.5, 3]])
     : warmed ? [[0.7, 4]]
     : WARM_SCHEMES[plates ? (W <= 3 ? 1 : W <= 8 ? 2 : 3) : kg < 15 ? 1 : kg < 50 ? 2 : kg < 100 ? 3 : 4];
@@ -7736,7 +7732,7 @@ $app.addEventListener('click', async e => {
     case 'toggle-bw':
     case 'ex-warm': {
       const ex = edEx(i);
-      if (el.dataset.v) ex.warm = el.dataset.v; else delete ex.warm;
+      if (ex.warm === 'never') delete ex.warm; else ex.warm = 'never';
       save(); render();
       break;
     }
