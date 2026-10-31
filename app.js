@@ -6781,11 +6781,6 @@ function swapSheetHtml() {
       <div class="guide-head"><h2>Cambiar ${esc(dx.name)}</h2><button class="icon small" data-action="swap-close" aria-label="Cerrar">✕</button></div>
       <p class="muted small" style="margin:0">Elige por cuál lo cambias${rex ? '; después te pregunta si es solo hoy o siempre en la rutina' : ''}.</p>
       ${alts.length ? `<h3 class="guide-zone">Tus alternativas</h3><div class="guide-list">${alts.map(altRow).join('')}</div>` : ''}
-      <form class="add-row" data-form="swap-new">
-        <input name="title" placeholder="${esc(dx.name)} · máquina 2" autocomplete="off" required aria-label="Nombre de la alternativa">
-        <button class="btn">Crear</button>
-      </form>
-      <p class="muted small" style="margin:0">Otra máquina o variante del mismo ejercicio: crea una alternativa con su propio historial.</p>
       <h3 class="guide-zone">${g ? `Otros de ${GUIDE_ZONES[g.zone]}` : 'Otros ejercicios'}</h3>
       <input data-bind="swap-q" value="${esc(swapPick.q || '')}" placeholder="Buscar cualquier ejercicio" autocomplete="off" aria-label="Buscar ejercicio">
       <div class="guide-list swap-others">${swapOthersHtml(others, swapPick.q)}</div>
@@ -6824,7 +6819,7 @@ function swapOthers(dx, alts, rex, g, q) {
 }
 const swapOthersHtml = (list, q) => (list.length ? list.map(o => pickRow({ name: o.name, guide: o.id }, `data-action="swap-to" data-g="${o.id}"`,
     esc(o.mine ? o.mine.name : o.name), o.mine ? `Tu ejercicio · ${lastSetText(o.mine.id)}` : esc(o.musc))).join('')
-  : `<p class="muted small" style="margin:0">${q && q.trim() ? 'No hay ejercicios con ese nombre. Puedes crearlo arriba como alternativa.' : 'Busca un ejercicio por su nombre.'}</p>`);
+  : `<p class="muted small" style="margin:0">${q && q.trim() ? 'No hay ejercicios con ese nombre.' : 'Busca un ejercicio por su nombre.'}</p>`);
 // edit: después de cambiarlo se abre su editor (botón Editar de una alternativa)
 async function swapExercise(alt, edit = false) {
   const d = db.draft, i = swapPick.i, dx = d && d.exercises[i];
@@ -6870,14 +6865,6 @@ function pickSwap(alt) {
   if (rex && alt.id !== rex.id) { swapPick.confirm = alt; render(); return; }
   swapPick.always = false;
   swapExercise(alt);
-}
-function swapNew(f) {
-  const name = f.elements.title.value.trim(), d = db.draft, dx = swapPick && d && d.exercises[swapPick.i];
-  if (!name || !dx) return;
-  if (sameName(name, dx.name)) { notice('Ponle otro nombre, por ejemplo "' + dx.name + ' · máquina 2".'); return; }
-  const found = findExercise(name), g = guideFor(dx.name, dx.guide);
-  // Otra máquina del mismo ejercicio: misma técnica (y mismo músculo), distinto historial
-  pickSwap({ id: found ? found.id : uid(), name: found ? found.name : name, unit: found ? found.unit : dx.unit, ...(g ? { guide: g.id } : {}) });
 }
 function setGuide(ctx, id) {
   const r = db.routines.find(x => x.id === ctx.rid), ex = r && (r.exercises.find(e => e.id === ctx.exId) || r.exercises.flatMap(e => e.alts || []).find(a => a.id === ctx.exId));
@@ -8879,7 +8866,6 @@ $app.addEventListener('submit', async e => {
     case 'coach-code': linkCoachForm(f); return;
     case 'coach-comment': saveCoachComment(f); return;
     case 'checkin': sendCheckin(f); return;
-    case 'swap-new': swapNew(f); return;
     case 'login':
     case 'register': submitAuth(f); return;
     case 'profile': saveProfileData(f); return;
