@@ -1529,7 +1529,7 @@ const repsByBlock = (ex, i) => (ex.goalSets && ex.rir
 const INFO = {
   rm: '1RM = el peso máximo que podrías levantar 1 vez. Desdel lo estima con tu 1ª serie (peso y repeticiones), así ves si te estás haciendo más fuerte aunque cambies las repeticiones.',
   rir: 'RIR = repeticiones en reserva: cuántas más podrías haber hecho con buena técnica. RIR 2 es que te quedaban 2; RIR 0, que no podías hacer otra. No es lo mismo que el fallo: al fallo intentas otra repetición y no la completas.',
-  opts: 'RIR: al entrenar anotas cuántas repeticiones te quedaban en cada serie (y puedes ponerle un RIR objetivo). Peso corporal: para dominadas, fondos y similares; lo que anotas es el lastre. Unilateral: anotas las repeticiones de cada lado. Calentamiento: al entrenar, arriba de tus series aparecen las series de aproximación con su peso, calculadas desde tu primera serie. En Automático el primer ejercicio de cada músculo lleva calentamiento completo; si el músculo ya trabajó antes en la rutina, solo una aproximación cuando el peso es alto. Siempre: calentamiento completo aunque el músculo ya esté caliente. Nunca: no aparece.',
+  opts: 'RIR: al entrenar anotas cuántas repeticiones te quedaban en cada serie (y puedes ponerle un RIR objetivo). Peso corporal: para dominadas, fondos y similares; lo que anotas es el lastre. Unilateral: anotas las repeticiones de cada lado. Calentamiento: al entrenar, arriba de tus series aparecen las series de aproximación con su peso, calculadas desde tu primera serie. En Automático el primer ejercicio de cada músculo lleva calentamiento completo; si el músculo ya trabajó antes en la rutina, una sola aproximación. En dominadas y fondos con lastre, primero sin lastre y después con la mitad. Siempre: calentamiento completo aunque el músculo ya esté caliente. Nunca: no aparece.',
 };
 const infoOpen = new Set();
 const infoBtn = k => `<button class="info-btn ${infoOpen.has(k) ? 'on' : ''}" data-action="info" data-k="${k}" aria-label="¿Qué es?" aria-expanded="${infoOpen.has(k)}">ⓘ</button>`;
@@ -6506,33 +6506,34 @@ function viewMyProgram(id) {
 
 // ---------- Calentamiento ----------
 // Series de aproximación antes de la primera serie efectiva. Solo se muestran: no se anotan, no se guardan ni cuentan.
-// Automático: completo en el primer ejercicio de cada músculo en la rutina; si ese músculo ya trabajó antes, solo
-// una aproximación cuando el peso es alto. Mientras más peso, más series. ex.warm: 'always' | 'never' (sin = automático)
+// Automático: completo en el primer ejercicio de cada músculo en la rutina (mientras más peso, más series); si ese
+// músculo ya trabajó antes, una sola aproximación. Dominadas, fondos…: con lastre, primero sin lastre y después la mitad.
+// ex.warm: 'always' | 'never' (sin = automático)
 const WARM_SCHEMES = [[], [[0.6, 8]], [[0.5, 8], [0.75, 4]], [[0.5, 8], [0.7, 5], [0.85, 2]], [[0.4, 8], [0.6, 5], [0.75, 3], [0.9, 1]]];
 function warmupFor(d, i) {
   const ex = d.exercises[i];
-  if (ex.warm === 'never' || isBwEx(ex)) return [];
+  const bw = lastreEx(ex);   // lo anotado es el lastre (con placas es una máquina asistida: sin calentamiento)
+  if (ex.warm === 'never' || (isBwEx(ex) && !bw)) return [];
   const s0 = ex.sets[0] || {}, num = v => (v === '' || v == null ? NaN : +String(v).replace(',', '.'));
   const W = Number.isFinite(num(s0.w)) && num(s0.w) > 0 ? num(s0.w) : num(s0.pw);   // lo que anotaste, o lo de la vez pasada
   if (!(W > 0)) return [];
   const plates = ex.unit === 'placas', kg = ex.unit === 'lb' ? W / 2.2 : W;
   const zone = zoneOf(ex);
   const warmed = ex.warm !== 'always' && !!zone && d.exercises.slice(0, i).some(e => zoneOf(e) === zone);
-  const n = warmed ? ((plates ? W >= 8 : kg >= 50) ? 1 : 0)
-    : plates ? (W <= 3 ? 1 : W <= 8 ? 2 : 3)
-    : kg < 15 ? 1 : kg < 50 ? 2 : kg < 100 ? 3 : 4;
-  const scheme = warmed ? (n ? [[0.7, 4]] : []) : WARM_SCHEMES[n];
+  const scheme = bw ? (warmed ? [[0, 4]] : kg >= 30 ? [[0, 5], [0.5, 3], [0.75, 2]] : [[0, 5], [0.5, 3]])
+    : warmed ? [[0.7, 4]]
+    : WARM_SCHEMES[plates ? (W <= 3 ? 1 : W <= 8 ? 2 : 3) : kg < 15 ? 1 : kg < 50 ? 2 : kg < 100 ? 3 : 4];
   const step = plates ? 1 : ex.unit === 'lb' ? 5 : 2.5;
   const out = [];
   for (const [pct, r] of scheme) {
     const v = Math.round((W * pct) / step) * step;
-    if (v > 0 && v < W && !out.some(x => x.w === v)) out.push({ w: v, r });
+    if ((v > 0 || (bw && pct === 0)) && v < W && !out.some(x => x.w === v)) out.push({ w: v, r });
   }
   return out;
 }
 const warmLine = (d, i) => {
   const list = warmupFor(d, i);
-  return list.length ? `<span class="warm-k">Calentamiento (${d.exercises[i].unit}):</span> ${list.map(x => `${fmtNum(x.w)}×${x.r}`).join(' · ')}` : '';
+  return list.length ? `<span class="warm-k">Calentamiento (${d.exercises[i].unit}):</span> ${list.map(x => (x.w ? `${fmtNum(x.w)}×${x.r}` : `sin lastre ×${x.r}`)).join(' · ')}` : '';
 };
 
 // ---------- Series por músculo a la semana (en los programas) ----------
