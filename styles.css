@@ -1257,3 +1257,9 @@ button.wk-day { font-family: inherit; border: 0; cursor: pointer; padding: 0; }
 .share-to:disabled { cursor: default; }
 .share-st { flex: none; padding: 6px 12px; border-radius: 999px; background: var(--accent); color: var(--accent-ink); font-size: 14px; font-weight: 600; }
 .share-st.sent { background: none; color: var(--muted); padding: 6px 0; }
+
+/* Calentamiento sugerido arriba de las series (solo se muestra) */
+.warm-line { margin: 2px 0 8px; font-size: 14px; color: var(--text); }
+.warm-line:empty { display: none; }
+.warm-k { color: var(--muted); }
+.ex-warm { flex: 1 1 100%; display: grid; gap: 4px; }

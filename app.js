@@ -1348,7 +1348,7 @@ function parseRange(text, maxV) {
 }
 const rangeTop = t => +String(t).split('-').pop();
 // Plan del ejercicio en la rutina: objetivo, dropset y superset con el siguiente
-const planFields = ex => ({ ...goalFields(ex), ...(ex.dropset ? { dropset: true } : {}), ...(ex.ssNext ? { ssNext: true } : {}), ...(ex.bw ? { bw: true } : {}), ...(ex.side ? { side: true } : {}), ...(ex.guide ? { guide: ex.guide } : {}) });
+const planFields = ex => ({ ...goalFields(ex), ...(ex.dropset ? { dropset: true } : {}), ...(ex.ssNext ? { ssNext: true } : {}), ...(ex.bw ? { bw: true } : {}), ...(ex.side ? { side: true } : {}), ...(ex.warm ? { warm: ex.warm } : {}), ...(ex.guide ? { guide: ex.guide } : {}) });
 // Repeticiones distintas por serie: ex.goalRepsBy[j] (vacío = el rango general de Reps)
 const hasRepsBy = ex => (ex.goalSets || 0) >= 2 && Array.isArray(ex.goalRepsBy) && ex.goalRepsBy.slice(0, ex.goalSets).some(Boolean);
 const repsFor = (ex, j) => (hasRepsBy(ex) ? ex.goalRepsBy[j] || '' : ex.goalReps || '');
@@ -1529,7 +1529,7 @@ const repsByBlock = (ex, i) => (ex.goalSets && ex.rir
 const INFO = {
   rm: '1RM = el peso máximo que podrías levantar 1 vez. Desdel lo estima con tu 1ª serie (peso y repeticiones), así ves si te estás haciendo más fuerte aunque cambies las repeticiones.',
   rir: 'RIR = repeticiones en reserva: cuántas más podrías haber hecho con buena técnica. RIR 2 es que te quedaban 2; RIR 0, que no podías hacer otra. No es lo mismo que el fallo: al fallo intentas otra repetición y no la completas.',
-  opts: 'RIR: al entrenar anotas cuántas repeticiones te quedaban en cada serie (y puedes ponerle un RIR objetivo). Dropset: la última serie trae una fila para anotar la bajada de peso. Peso corporal: para dominadas, fondos y similares; lo que anotas es el lastre.',
+  opts: 'RIR: al entrenar anotas cuántas repeticiones te quedaban en cada serie (y puedes ponerle un RIR objetivo). Peso corporal: para dominadas, fondos y similares; lo que anotas es el lastre. Unilateral: anotas las repeticiones de cada lado. Calentamiento: al entrenar, arriba de tus series aparecen las series de aproximación con su peso, calculadas desde tu primera serie. En Automático el primer ejercicio de cada músculo lleva calentamiento completo; si el músculo ya trabajó antes en la rutina, solo una aproximación cuando el peso es alto. Siempre: calentamiento completo aunque el músculo ya esté caliente. Nunca: no aparece.',
 };
 const infoOpen = new Set();
 const infoBtn = k => `<button class="info-btn ${infoOpen.has(k) ? 'on' : ''}" data-action="info" data-k="${k}" aria-label="¿Qué es?" aria-expanded="${infoOpen.has(k)}">ⓘ</button>`;
@@ -1558,6 +1558,7 @@ function exSummary(ex) {
   else if (ex.goalSets || ex.goalReps) parts.push('Al fallo');
   if (ex.bw) parts.push('Peso corporal');
   if (ex.side) parts.push('Unilateral');
+  if (ex.warm) parts.push(ex.warm === 'never' ? 'Sin calentamiento' : 'Calentamiento siempre');
   if (ex.rest) parts.push(`Rest ${fmtRest(ex.rest)}`);
   if (ex.unit !== 'kg') parts.push(ex.unit);
   return parts.join(' · ') || 'Toca para configurar';
@@ -1590,6 +1591,11 @@ function viewRoutine() {
         <button class="chip toggle ${ex.rir ? 'on' : ''}" data-action="toggle-rir" data-i="${i}" aria-pressed="${!!ex.rir}">RIR</button>
         <button class="chip toggle ${ex.bw ? 'on' : ''}" data-action="toggle-bw" data-i="${i}" aria-pressed="${!!ex.bw}" title="Dominadas, dips…: lo que anotas es el lastre">Peso corporal</button>
         <button class="chip toggle ${ex.side ? 'on' : ''}" data-action="toggle-side" data-i="${i}" aria-pressed="${!!ex.side}" title="Búlgara, remo a una mano…: repeticiones de cada lado">Unilateral</button>
+      </div>
+      <div class="ex-warm" role="group" aria-label="Calentamiento">
+        <span class="muted small">Calentamiento</span>
+        <div class="ex-toggles">${[['', 'Automático'], ['always', 'Siempre'], ['never', 'Nunca']].map(([v, t]) =>
+          `<button class="chip toggle ${(ex.warm || '') === v ? 'on' : ''}" data-action="ex-warm" data-i="${i}" data-v="${v}" aria-pressed="${(ex.warm || '') === v}">${t}</button>`).join('')}</div>
       </div>
       <button class="link small" data-action="info" data-k="opts" style="justify-self:start">${infoOpen.has('opts') ? 'Ocultar' : '¿Qué hace cada opción?'}</button>
       ${infoBox('opts')}
@@ -1872,6 +1878,7 @@ function viewWorkout() {
     return `<section class="card${tab ? ' has-tab' : ''}" data-ex="${i}">${tab}
       <div class="ex-head">${exTitle(ex, esc(ex.name))}${dropBadge(ex)}${swapBtn(i)}${techBtn(i)}</div>
       ${exInfo(ex, i)}
+      ${editing ? '' : `<p class="warm-line" data-warm="${i}">${warmLine(d, i)}</p>`}
       <div class="sets">${setHead([ex])}${ex.sets.map((st, j) => setRow(ex, i, st, j, j + 1)).join('')}</div>
       <div class="ex-actions">
         <button class="btn ghost" data-action="add-set" data-i="${i}">+ serie</button>
@@ -1901,6 +1908,7 @@ function viewWorkout() {
       ${idx.map((k, n) => `<div class="ss-ex">
         <div class="ss-line">${letter(n)}<strong class="grow">${esc(d.exercises[k].name)}</strong>${dropBadge(d.exercises[k])}${swapBtn(k)}${techBtn(k)}</div>
         ${exInfo(d.exercises[k], k, true)}
+        ${editing ? '' : `<p class="warm-line" data-warm="${k}">${warmLine(d, k)}</p>`}
       </div>`).join('')}
       <div class="sets">${setHead(idx.map(k => d.exercises[k]))}${rows}</div>
       <div class="ex-actions">
@@ -6496,6 +6504,37 @@ function viewMyProgram(id) {
     <button class="btn ghost block danger-text" data-action="myprog-del" ${viewing ? 'style="margin-top:20px"' : ''}>Eliminar programa</button>`;
 }
 
+// ---------- Calentamiento ----------
+// Series de aproximación antes de la primera serie efectiva. Solo se muestran: no se anotan, no se guardan ni cuentan.
+// Automático: completo en el primer ejercicio de cada músculo en la rutina; si ese músculo ya trabajó antes, solo
+// una aproximación cuando el peso es alto. Mientras más peso, más series. ex.warm: 'always' | 'never' (sin = automático)
+const WARM_SCHEMES = [[], [[0.6, 8]], [[0.5, 8], [0.75, 4]], [[0.5, 8], [0.7, 5], [0.85, 2]], [[0.4, 8], [0.6, 5], [0.75, 3], [0.9, 1]]];
+function warmupFor(d, i) {
+  const ex = d.exercises[i];
+  if (ex.warm === 'never' || isBwEx(ex)) return [];
+  const s0 = ex.sets[0] || {}, num = v => (v === '' || v == null ? NaN : +String(v).replace(',', '.'));
+  const W = Number.isFinite(num(s0.w)) && num(s0.w) > 0 ? num(s0.w) : num(s0.pw);   // lo que anotaste, o lo de la vez pasada
+  if (!(W > 0)) return [];
+  const plates = ex.unit === 'placas', kg = ex.unit === 'lb' ? W / 2.2 : W;
+  const zone = zoneOf(ex);
+  const warmed = ex.warm !== 'always' && !!zone && d.exercises.slice(0, i).some(e => zoneOf(e) === zone);
+  const n = warmed ? ((plates ? W >= 8 : kg >= 50) ? 1 : 0)
+    : plates ? (W <= 3 ? 1 : W <= 8 ? 2 : 3)
+    : kg < 15 ? 1 : kg < 50 ? 2 : kg < 100 ? 3 : 4;
+  const scheme = warmed ? (n ? [[0.7, 4]] : []) : WARM_SCHEMES[n];
+  const step = plates ? 1 : ex.unit === 'lb' ? 5 : 2.5;
+  const out = [];
+  for (const [pct, r] of scheme) {
+    const v = Math.round((W * pct) / step) * step;
+    if (v > 0 && v < W && !out.some(x => x.w === v)) out.push({ w: v, r });
+  }
+  return out;
+}
+const warmLine = (d, i) => {
+  const list = warmupFor(d, i);
+  return list.length ? `<span class="warm-k">Calentamiento (${d.exercises[i].unit}):</span> ${list.map(x => `${fmtNum(x.w)}×${x.r}`).join(' · ')}` : '';
+};
+
 // ---------- Series por músculo a la semana (en los programas) ----------
 // Cada ejercicio suma sus series objetivo a su músculo principal (el de su guía de técnica)
 const VOL_RANGE = [6, 15];   // series por semana por músculo: lo típico para hipertrofia
@@ -7677,6 +7716,12 @@ $app.addEventListener('click', async e => {
       break;
     case 'toggle-drop':
     case 'toggle-bw':
+    case 'ex-warm': {
+      const ex = edEx(i);
+      if (el.dataset.v) ex.warm = el.dataset.v; else delete ex.warm;
+      save(); render();
+      break;
+    }
     case 'toggle-side':
     case 'toggle-ss': {
       const ex = edEx(i), key = { 'toggle-drop': 'dropset', 'toggle-bw': 'bw', 'toggle-side': 'side', 'toggle-ss': 'ssNext' }[action];
@@ -8736,6 +8781,8 @@ $app.addEventListener('input', e => {
     ex.sets[j][bind] = el.value;
     const cell = $app.querySelector(`[data-mark="${i}-${j}"]`);
     if (cell) cell.innerHTML = markSpan(liveCmp(ex.sets[j], ex, bestSets(ex.exerciseId, beforeIndex(d), ex.unit, ex.extra ? null : d.routineId)[j]));
+    const wl = bind === 'w' && j === 0 && $app.querySelector(`[data-warm="${i}"]`);
+    if (wl) wl.innerHTML = warmLine(d, i);
   }
   else if (bind === 'dw' || bind === 'dr') cur().exercises[i].sets[j].drops[+el.dataset.k][bind === 'dw' ? 'w' : 'r'] = el.value;
   else if (bind === 'snote') cur().exercises[i].sets[j].note = el.value;
