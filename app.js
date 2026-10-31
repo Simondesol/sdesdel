@@ -2507,7 +2507,7 @@ function viewSession(id) {
     ${coachCommentHtml(w)}
     ${asRoutine}
     ${(prs => (prs.length ? `<section class="card pr-card"><strong>🔥 ${prs.length === 1 ? 'Nuevo récord' : `${prs.length} récords nuevos`}</strong>
-      ${prs.map(pr => `<span>${esc(pr.text + (pr.was || ''))}</span>`).join('')}
+      ${prs.map(pr => `<span>${esc(pr.text)}</span>`).join('')}
       <span class="muted small">Récord = superar tu mejor 1ª serie (en cualquier rutina), o tu mejor 2ª, 3ª… serie en esta rutina.${prsSent && prsSent.id === w.id ? ' Se lo avisamos a tus gymbros.' : ''}</span></section>` : ''))(newPRs(w))}
     ${viewing ? '' : `<button class="btn primary block" data-action="share-workout" data-id="${w.id}" style="margin:0 0 10px">📤 Compartir entrenamiento</button>`}
     ${blocks}
@@ -2525,7 +2525,7 @@ function workoutShareText(w, forChat = false) {
       const c = best[j] ? cmpSet({ ...s, unit: ex.unit, bw: bwFor(ex, w.date) }, best[j]) : null;
       if (c > 0) ups++;
       const mark = c == null ? '' : c > 0 ? ' ▲' : c < 0 ? ' ▼' : ' =';
-      return `${fmtNum(s.w)}×${repsText(s).replace(' / ', '/')}${dropsText(s)}${mark}`;
+      return `${fmtNum(s.w)}×${repsText(s).replace(' / ', '/')}${s.rir != null ? ` RIR ${fmtNum(s.rir)}` : ''}${dropsText(s)}${mark}`;
     });
     return `• ${ex.name} (${ex.unit}): ${sets.join(' · ')}`;
   });
@@ -3949,7 +3949,7 @@ function newPRs(w) {
       if (j <= first || x.w == null || !best[j]) return;
       const c = { w: x.w, r: x.r, rir: x.rir, unit: ex.unit, bw: bwFor(ex, w.date) };
       if (cmpSet(c, best[j]) > 0) {
-        prs.push({ id: ex.exerciseId, name: ex.name, text: `${ex.name} · serie ${j + 1}: ${setText(x, ex.unit)}`, was: ` (antes ${fmtNum(best[j].w)} ${best[j].unit} × ${fmtNum(best[j].r)})` });
+        prs.push({ id: ex.exerciseId, name: ex.name, text: `${ex.name} · serie ${j + 1}: ${setText(x, ex.unit)}` });
       }
     });
   }
