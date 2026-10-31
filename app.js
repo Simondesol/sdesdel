@@ -6745,7 +6745,7 @@ const zoneOf = ex => { const g = guideFor(ex.name, ex.guide); return g ? GUIDE_Z
 
 // Cambiar un ejercicio del entreno (máquina ocupada, otra variante…). Cada alternativa es otro ejercicio con su propio
 // historial, así no se mezclan los pesos. La rutina las recuerda en ex.alts = [{ id, name, unit, guide }]
-let swapPick = null;   // { i, always } ejercicio del entreno que vas a cambiar
+let swapPick = null;   // { i, always, confirm } ejercicio del entreno que vas a cambiar (confirm: el elegido, falta decir hasta cuándo)
 const routineExOf = (d, dx) => { const r = d.routineId && !dx.extra && db.routines.find(x => x.id === d.routineId);
   return r ? r.exercises.find(e => e.id === (dx.swapOf || dx.exerciseId)) || null : null; };
 const PLAN_KEYS = ['rest', 'rir', 'goalSets', 'goalReps', 'goalRepsBy', 'goalRir', 'goalRirBy', 'dropset', 'bw', 'side'];
@@ -6757,6 +6757,21 @@ function swapSheetHtml() {
   const d = db.draft, dx = swapPick && d && d.exercises[swapPick.i];
   if (!dx) return '';
   const rex = routineExOf(d, dx);
+  if (swapPick.confirm && rex) {
+    const to = swapPick.confirm.name;
+    return `<div class="modal-wrap">
+    <div class="modal-back" data-action="swap-confirm-no"></div>
+    <section class="modal card swap-confirm" role="dialog" aria-modal="true" aria-label="¿Hasta cuándo?">
+      <h2>¿Cambiar ${esc(dx.name)} por ${esc(to)}?</h2>
+      <button class="btn block swap-choice" data-action="swap-confirm" data-v="0"><strong>Solo hoy</strong>
+        <span>La próxima vez tu rutina vuelve a ${esc(rex.name)}.</span></button>
+      <button class="btn block swap-choice" data-action="swap-confirm" data-v="1"><strong>Siempre en la rutina</strong>
+        <span>${esc(to)} queda en tu rutina en vez de ${esc(rex.name)}.</span></button>
+      <p class="muted small" style="margin:0">Cada uno guarda sus propios pesos.</p>
+      <button class="btn ghost block" data-action="swap-confirm-no">Cancelar</button>
+    </section>
+  </div>`;
+  }
   const g = guideFor(dx.name, dx.guide);
   const lastTxt = a => lastSetText(a.id);
   const alts = [...(rex && dx.swapOf ? [{ ...altOf(rex), orig: true }] : []), ...(rex ? rex.alts || [] : [])].filter(a => a.id !== dx.exerciseId);
@@ -6764,15 +6779,11 @@ function swapSheetHtml() {
   const altRow = a => pickRow(a, `data-action="swap-to" data-id="${a.id}"`, `${a.orig ? 'Volver a ' : ''}${esc(a.name)}`, lastTxt(a),
     a.orig ? '<span class="chev">›</span>' : `<button class="btn small-btn" data-action="swap-alt-edit" data-id="${a.id}" aria-label="Editar ${esc(a.name)}">Editar</button>
         <button class="icon small danger" data-action="swap-alt-del" data-id="${a.id}" aria-label="Quitar ${esc(a.name)} de tus alternativas">${TRASH_ICON}</button>`);
-  const always = !!(rex && swapPick.always);
   return `<div class="modal-wrap">
     <div class="modal-back" data-action="swap-close"></div>
     <section class="modal card guide-modal swap-modal" role="dialog" aria-modal="true" aria-label="Cambiar ejercicio">
       <div class="guide-head"><h2>Cambiar ${esc(dx.name)}</h2><button class="icon small" data-action="swap-close" aria-label="Cerrar">✕</button></div>
-      ${rex ? `<div class="swap-mode" role="group" aria-label="Por cuánto tiempo">
-        <button class="chip toggle ${always ? '' : 'on'}" data-action="swap-mode" data-v="0" aria-pressed="${!always}">Solo hoy</button>
-        <button class="chip toggle ${always ? 'on' : ''}" data-action="swap-mode" data-v="1" aria-pressed="${always}">Siempre en la rutina</button></div>
-        <p class="muted small" style="margin:0">${always ? 'Queda en tu rutina en vez de este.' : 'La próxima vez la rutina vuelve a este ejercicio.'} Cada uno guarda sus propios pesos.</p>` : ''}
+      <p class="muted small" style="margin:0">Elige por cuál lo cambias${rex ? '; después te pregunta si es solo hoy o siempre en la rutina' : ''}.</p>
       ${alts.length ? `<h3 class="guide-zone">Tus alternativas</h3><div class="guide-list">${alts.map(altRow).join('')}</div>` : ''}
       <form class="add-row" data-form="swap-new">
         <input name="title" placeholder="${esc(dx.name)} · máquina 2" autocomplete="off" required aria-label="Nombre de la alternativa">
@@ -6858,13 +6869,19 @@ function openAltEditor(rid, rex, altId) {
   if (modalPushed) { modalPushed = false; location.replace(`#/rutina/${rid}`); }   // reemplaza el paso de la ventana
   else go(`#/rutina/${rid}`);
 }
+function pickSwap(alt) {
+  const d = db.draft, rex = routineExOf(d, d.exercises[swapPick.i]);
+  if (rex && alt.id !== rex.id) { swapPick.confirm = alt; render(); return; }
+  swapPick.always = false;
+  swapExercise(alt);
+}
 function swapNew(f) {
   const name = f.elements.title.value.trim(), d = db.draft, dx = swapPick && d && d.exercises[swapPick.i];
   if (!name || !dx) return;
   if (sameName(name, dx.name)) { notice('Ponle otro nombre, por ejemplo "' + dx.name + ' · máquina 2".'); return; }
   const found = findExercise(name), g = guideFor(dx.name, dx.guide);
   // Otra máquina del mismo ejercicio: misma técnica (y mismo músculo), distinto historial
-  swapExercise({ id: found ? found.id : uid(), name: found ? found.name : name, unit: found ? found.unit : dx.unit, ...(g ? { guide: g.id } : {}) });
+  pickSwap({ id: found ? found.id : uid(), name: found ? found.name : name, unit: found ? found.unit : dx.unit, ...(g ? { guide: g.id } : {}) });
 }
 function setGuide(ctx, id) {
   const r = db.routines.find(x => x.id === ctx.rid), ex = r && (r.exercises.find(e => e.id === ctx.exId) || r.exercises.flatMap(e => e.alts || []).find(a => a.id === ctx.exId));
@@ -8108,8 +8125,15 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       swapPick = null;
       render(); syncModalHistory();
       break;
-    case 'swap-mode':
-      swapPick.always = el.dataset.v === '1';
+    case 'swap-confirm': {
+      const alt = swapPick.confirm;
+      swapPick.confirm = null; swapPick.always = el.dataset.v === '1';
+      await swapExercise(alt);
+      if (swapPick) { swapPick.always = false; render(); }   // dijiste que no al aviso de series ya anotadas: vuelve a la lista
+      break;
+    }
+    case 'swap-confirm-no':
+      swapPick.confirm = null;
       render();
       break;
     case 'swap-to': {
@@ -8122,7 +8146,7 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
         const found = free(findExercise(g.name)) || free(mineFor(myGuideMap(), g.id));
         alt = { id: found ? found.id : uid(), name: found ? found.name : g.name, unit: found ? found.unit : dx.unit === 'lb' ? 'lb' : 'kg', guide: g.id };
       } else alt = [...(rex ? [altOf(rex), ...(rex.alts || [])] : [])].find(a => a.id === el.dataset.id);
-      if (alt) await swapExercise(alt);
+      if (alt) pickSwap(alt);
       break;
     }
     case 'swap-alt-del': {
