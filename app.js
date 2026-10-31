@@ -2134,6 +2134,13 @@ function viewAccount() {
       ${coachOn() ? '<a class="btn block center" href="#/alumnos" style="margin-top:0">Mis atletas</a>' : ''}
     </section>
 
+    <h2>Tus datos</h2>
+    <section class="card stack">
+      <p class="muted" style="margin:0">Descarga tu historial en un archivo que se abre en Excel o Google Sheets.</p>
+      <button class="btn block" data-action="export-workouts" style="margin-top:0">Descargar entrenamientos</button>
+      <button class="btn block" data-action="export-body" style="margin-top:0">Descargar peso y medidas</button>
+    </section>
+
     <h2>Ideas</h2>
     <section class="card stack">
       <p class="muted" style="margin:0">¿Qué le falta a Desdel? Mándame tu idea o cuéntame si algo no funciona.</p>
@@ -2489,6 +2496,45 @@ function workoutShareText(w, forChat = false) {
   const closing = ups ? `🔥 Superé mi récord en ${plural(ups, 'serie')}` : '✅ Entrenamiento completado';
   const text = `${title}\n${fmtLongDate(w.date)}\n\n${lines.join('\n')}\n\n${closing}`;
   return forChat ? text : `${text}\n\nDesdel · ${location.origin}${location.pathname}`;
+}
+
+// ---------- Descargar tus datos ----------
+const csvCell = v => { const t = v == null ? '' : typeof v === 'number' ? String(v).replace('.', ',') : String(v);
+  return /[;"\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
+function downloadCsv(name, rows) {
+  const file = new File(['\ufeff' + rows.map(r => r.map(csvCell).join(';')).join('\r\n')], name, { type: 'text/csv' });
+  // iPhone con la app instalada: no descarga, así que se abre el menú para guardarlo (Archivos, Drive, WhatsApp…)
+  if (navigator.standalone && navigator.canShare && navigator.canShare({ files: [file] })) { navigator.share({ files: [file] }).catch(() => {}); return; }
+  const url = URL.createObjectURL(file), a = document.createElement('a');
+  a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  showNote(`Descargado: ${name}`);
+}
+function exportWorkouts() {
+  if (!db.workouts.length) { notice('Todavía no tienes entrenamientos para descargar.'); return; }
+  const rows = [['Fecha', 'Rutina', 'Ejercicio', 'Serie', 'Peso', 'Unidad', 'Repeticiones', 'Repeticiones derecha (unilateral)', 'RIR', 'Nota']];
+  for (const w of db.workouts.slice().sort((a, b) => (a.date < b.date ? -1 : 1))) {
+    const day = dayKeyOf(w.date);
+    for (const ex of w.exercises) {
+      const unit = `${ex.unit}${ex.bw && ex.unit !== 'placas' ? ' (lastre)' : ''}`;
+      ex.sets.forEach((st, j) => {
+        rows.push([day, w.routineName || '', ex.name, j + 1, st.w, unit, st.r, ex.side ? st.r2 : null, st.rir, st.note || '']);
+        for (const dr of st.drops || []) rows.push([day, w.routineName || '', ex.name, `${j + 1} (bajada)`, dr.w, unit, dr.r, null, null, '']);
+      });
+    }
+  }
+  downloadCsv(`desdel-entrenamientos-${todayKey()}.csv`, rows);
+}
+function exportBody() {
+  const byDay = new Map(), at = d => byDay.get(d) || byDay.set(d, {}).get(d);
+  for (const e of db.bodyweight) Object.assign(at(e.date), { kg: e.kg, bf: e.bf });
+  for (const e of db.measures) Object.assign(at(e.date), e.m);
+  if (!byDay.size) { notice('Todavía no tienes peso ni medidas para descargar.'); return; }
+  const sites = MEASURE_SITES.filter(([k]) => db.measures.some(e => e.m[k] != null));
+  const rows = [['Fecha', 'Peso (kg)', '% de grasa', ...sites.map(([, label]) => `${label} (cm)`)]];
+  for (const d of [...byDay.keys()].sort()) { const e = byDay.get(d); rows.push([d, e.kg, e.bf, ...sites.map(([k]) => e[k])]); }
+  downloadCsv(`desdel-peso-y-medidas-${todayKey()}.csv`, rows);
 }
 
 // ---------- Modo coach ----------
@@ -3340,9 +3386,30 @@ function viewStudents() {
     ${planBarHtml()}
     ${students.length ? '' : codeBox}
     ${students.length ? '<a class="btn block center" href="#/asignar" style="margin:0 0 12px">Asignar rutina o programa</a>' : ''}
+    ${studentsLoaded ? coachAlertsHtml() : ''}
     ${!studentsLoaded ? '<p class="empty">Cargando…</p>' : list || '<p class="empty">Todavía no tienes atletas. Mándales tu código: en Desdel van a Social → Tengo coach.</p>'}
     ${students.length ? invite : ''}
     <p class="muted small" style="margin-top:20px">Para dejar de usar el modo coach, ve a Cuenta.</p>`;
+}
+
+// Arriba de Mis atletas: los que se están desconectando, para escribirles sin revisar uno por uno
+function coachAlertsHtml() {
+  const rows = students.filter(canSeeStudent).map(l => {
+    const sm = l.summary || {}, why = [];
+    if (sm.last) { const d = daysSince(sm.last.date); if (d >= 6) why.push(`no entrena hace ${d} días`); }
+    else if (l.since && daysSince(new Date(l.since).toISOString()) >= 3) why.push('todavía no anota entrenos');
+    if (sm.kgDate) { const wk = Math.floor(daysSince(sm.kgDate) / 7); if (wk >= 2) why.push(`no anota su peso hace ${wk} semanas`); }
+    if (!why.length) return '';
+    const name = esc(l.studentName || 'Atleta'), chatId = [user.uid, l.studentUid].sort().join('_');
+    const text = `<span class="grow"><strong>${name}</strong><span class="muted small">${why.join(' · ')}</span></span><span class="chev">›</span>`;
+    return chats.some(c => c.id === chatId)
+      ? `<a class="coach-alert-row" href="#/chat/${chatId}" aria-label="Escribirle a ${name}">${text}</a>`
+      : `<button class="coach-alert-row" data-action="student-view" data-uid="${esc(l.studentUid)}">${text}</button>`;
+  }).filter(Boolean);
+  return rows.length ? `<section class="card coach-alerts">
+      <div class="coach-alerts-title">Para escribirles</div>
+      ${rows.join('')}
+    </section>` : '';
 }
 
 // Tu plan, arriba de Mis atletas: cuántos ves, hasta cuándo, y renovar si está por vencer
@@ -8463,6 +8530,12 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       break;
     case 'share-workout':
       openShare('workout', el.dataset.id);
+      break;
+    case 'export-workouts':
+      exportWorkouts();
+      break;
+    case 'export-body':
+      exportBody();
       break;
     case 'share-program':
       openShare('program', el.dataset.id);
