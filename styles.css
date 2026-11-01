@@ -1282,7 +1282,7 @@ button.wk-day { font-family: inherit; border: 0; cursor: pointer; padding: 0; }
 
 /* Inicio: ícono de mensajes arriba a la derecha, con los sin leer */
 .bar .msg-btn { position: relative; display: grid; place-items: center; color: var(--text); background: none; border: 0; }
-.msg-count { position: absolute; bottom: 0; right: -4px; min-width: 24px; height: 24px; padding: 0 6px; border-radius: 12px; display: grid; place-items: center;
+.msg-count { position: absolute; bottom: -3px; right: -9px; min-width: 24px; height: 24px; padding: 0 6px; border-radius: 12px; display: grid; place-items: center;
   background: var(--danger); color: #fff; font-size: 13px; font-weight: 800; border: 2px solid var(--bg); }
 
 /* Mi perfil: la foto abre sus opciones */
