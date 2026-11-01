@@ -191,6 +191,11 @@ const GEAR = `<a class="icon gear" href="#/cuenta" aria-label="Cuenta y configur
   <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M19.4 13a7.6 7.6 0 0 0 0-2l2-1.6a.5.5 0 0 0 .1-.6l-1.9-3.3a.5.5 0 0 0-.6-.2l-2.4 1a7.3 7.3 0 0 0-1.7-1l-.4-2.6a.5.5 0 0 0-.5-.4h-3.8a.5.5 0 0 0-.5.4l-.4 2.6a7.3 7.3 0 0 0-1.7 1l-2.4-1a.5.5 0 0 0-.6.2L2.5 8.8a.5.5 0 0 0 .1.6l2 1.6a7.6 7.6 0 0 0 0 2l-2 1.6a.5.5 0 0 0-.1.6l1.9 3.3c.1.2.4.3.6.2l2.4-1c.5.4 1.1.7 1.7 1l.4 2.6c0 .2.3.4.5.4h3.8c.2 0 .5-.2.5-.4l.4-2.6c.6-.3 1.2-.6 1.7-1l2.4 1c.2.1.5 0 .6-.2l1.9-3.3a.5.5 0 0 0-.1-.6ZM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7Z"/></svg>
 </a>`;
 
+const msgBtn = () => { const n = chats.filter(isUnread).length;
+  return `<a class="icon msg-btn" href="#/social" aria-label="Mensajes${n ? ` (${n} sin leer)` : ''}">
+  <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M12 3C7 3 3 6.6 3 11.2c0 2.5 1.2 4.7 3.1 6.2V21l3-1.6c.9.2 1.9.4 2.9.4 5 0 9-3.6 9-8.2S17 3 12 3Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M7.6 13.4l3-3.1 2.3 1.8 3.5-3.4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  ${n ? `<span class="msg-count">${n > 9 ? '9+' : n}</span>` : ''}</a>`; };
+
 const bar = (value, goal) => `<div class="meter" role="progressbar" aria-valuemin="0" aria-valuemax="${goal}" aria-valuenow="${value}">
   <span style="width:${Math.min(100, goal ? (value / goal) * 100 : 0)}%"></span></div>`;
 
@@ -309,7 +314,7 @@ function viewHub() {
       <button class="btn primary" data-action="tour-open">Ver tutorial</button>
       <button class="icon small" data-action="tour-offer-no" aria-label="No mostrar">✕</button>
     </section>`;
-  return `${viewing ? '' : header('Desdel', { sub: 'Entrena. Anota. Supera.', right: GEAR })}
+  return `${viewing ? '' : header('Desdel', { sub: 'Entrena. Anota. Supera.', right: msgBtn() })}
     <div class="hub-wrap">
     ${tourOffer}
     ${viewing ? studentCheckinsCard() : socialCard()}
@@ -2406,7 +2411,7 @@ function viewHandoff() {
     <ol class="handoff-steps">
       <li>Toca <strong>Copiar código</strong>.</li>
       <li>Abre <strong>Desdel</strong> desde tu pantalla de inicio.</li>
-      <li>${handoffCoach ? 'En <strong>Social → Tengo coach</strong>' : handoffGymbro ? 'En <strong>Social → Agregar gymbro</strong>' : 'En <strong>Rutinas</strong> o en <strong>Nutrición → Mis dietas</strong>'} toca <strong>📋 Pegar código</strong>.</li>
+      <li>${handoffCoach ? 'En <strong>Mensajes → Tengo coach</strong> (el ícono de arriba a la derecha en Inicio)' : handoffGymbro ? 'En <strong>Mensajes → Agregar gymbro</strong> (el ícono de arriba a la derecha en Inicio)' : 'En <strong>Rutinas</strong> o en <strong>Nutrición → Mis dietas</strong>'} toca <strong>📋 Pegar código</strong>.</li>
     </ol>
     <p class="muted small">¿Todavía no tienes Desdel instalada? En Safari toca Compartir <span aria-hidden="true">⬆️</span> → <strong>Agregar a pantalla de inicio</strong>, ábrela desde ahí y pega el código.</p>
     <button class="btn ghost block" data-action="handoff-here">Seguir aquí en Safari</button>
@@ -2582,7 +2587,7 @@ const dataUid = () => (viewing ? viewing.uid : user.uid);
 const coachOn = () => !!me().body.coach;
 const coachLink = code => `${location.origin}${location.pathname}?k=${code}`;
 const coachInviteText = code => `Vincúlate conmigo como tu coach en Desdel 💪\n\nToca el link:\n${coachLink(code)}\n\n` +
-  `Si no se abre, abre Desdel y en Social → Tengo coach pega este código: ${fmtCode(code)}`;
+  `Si no se abre, abre Desdel, toca el ícono de mensajes (arriba a la derecha en Inicio) → Tengo coach y pega este código: ${fmtCode(code)}`;
 
 // Pantallas que se pueden mirar de un atleta; las de VIEW_EXIT te devuelven a tus datos
 const VIEW_OK = ['', 'chat', 'rutinas', 'rutina', 'programas', 'miprograma', 'listos', 'programa', 'dieta', 'objetivo', 'historial', 'sesion', 'progreso', 'ejercicio', 'peso', 'grasa', 'medidas', 'fotos', 'nutricion', 'sueno', 'agua'];
@@ -2896,7 +2901,7 @@ function onCoachEdits(list) {
     const ch = (r.changes || []).slice(0, 6), more = (r.changes || []).length - ch.length;
     return [r.text + (ch.length ? ':' : '.'), ...ch.map(x => `• ${x}`), ...(more > 0 ? [`• y ${plural(more, 'cambio')} más`] : [])].join('\n');
   });
-  notice(`${who} cambió tu entrenamiento\n\n${lines.join('\n\n')}\n\nLo ves también en Social → Mi coach.`);
+  notice(`${who} cambió tu entrenamiento\n\n${lines.join('\n\n')}\n\nLo ves también en Mensajes → Tu coach.`);
 }
 
 // Copia de los entrenos de cada atleta en este teléfono (IndexedDB), para bajar solo lo que cambió
@@ -3400,7 +3405,7 @@ function viewStudents() {
     ${students.length ? '' : codeBox}
     ${students.length ? '<a class="btn block center" href="#/asignar" style="margin:0 0 12px">Asignar rutina o programa</a>' : ''}
     ${studentsLoaded ? coachAlertsHtml() : ''}
-    ${!studentsLoaded ? '<p class="empty">Cargando…</p>' : list || '<p class="empty">Todavía no tienes atletas. Mándales tu código: en Desdel van a Social → Tengo coach.</p>'}
+    ${!studentsLoaded ? '<p class="empty">Cargando…</p>' : list || '<p class="empty">Todavía no tienes atletas. Mándales tu código: en Desdel tocan el ícono de mensajes (arriba a la derecha en Inicio) → Tengo coach.</p>'}
     ${students.length ? invite : ''}
     <p class="muted small" style="margin-top:20px">Para dejar de usar el modo coach, ve a Cuenta.</p>`;
 }
@@ -3535,7 +3540,7 @@ const inviteKey = () => `desdel-gymbro-${user.uid}`;
 const inviteCode = () => localStorage.getItem(inviteKey());
 const inviteLink = code => `${location.origin}${location.pathname}?g=${code}`;
 const inviteText = code => `Agrégame como gymbro en Desdel 💪\n\nToca el link:\n${inviteLink(code)}\n\n` +
-  `Si no se abre, copia este código, abre Desdel y en Social → Agregar gymbro toca "Pegar código": ${fmtCode(code)}`;
+  `Si no se abre, copia este código, abre Desdel, toca el ícono de mensajes (arriba a la derecha en Inicio) → Agregar gymbro → "Pegar código": ${fmtCode(code)}`;
 const autoPRKey = () => `desdel-avisar-pr-${user.uid}`;
 const autoPR = () => localStorage.getItem(autoPRKey()) !== '0';
 
@@ -3613,11 +3618,8 @@ function viewSocial() {
       ${isUnread(c) ? '<span class="dot-new" aria-label="Mensajes nuevos"></span>' : `<span class="muted small">${c.last ? fmtWhen(c.last.at) : ''}</span>`}
     </a>`;
   }).join('');
-  return `${header('Social', { sub: 'Chatea con tus gymbros' })}
-    <div class="social-top">
-      <a class="btn primary center" href="#/gymbro">+ Agregar gymbro</a>
-      <a class="btn center" href="#/perfil/yo">Mi perfil</a>
-    </div>
+  return `${header('Mensajes', { home: true, sub: 'Chatea con tus gymbros' })}
+    <a class="btn primary block center" href="#/gymbro" style="margin:0 0 12px">+ Agregar gymbro</a>
     ${coachRows()}
     ${!chatsLoaded ? '<p class="empty">Cargando…</p>'
       : chatsError && !chats.length ? '<p class="empty">No se pudieron cargar tus chats. Revisa tu internet y vuelve a abrir la app.</p>'
@@ -4578,8 +4580,9 @@ function viewProfile(arg) {
   else if (!p.data || (p.data.stats && p.data.stats.hidden)) body = `<p class="empty">${p.error ? 'No se pudo cargar el perfil. Revisa tu internet.' : `${esc(name)} todavía no comparte sus récords ni estadísticas.`}</p>`;
   else body = profileBody(p.data, me);
   if (me && !shareProfile()) body = '<p class="empty">No estás compartiendo tus récords ni estadísticas. Actívalo en Privacidad.</p>';
-  return `${header(me ? 'Mi perfil' : 'Perfil', { back: true, right: me ? '<a class="btn small-btn privacy-btn" href="#/privacidad">Privacidad</a>' : '' })}
+  return `${header(me ? 'Mi perfil' : 'Perfil', { back: !me, right: me ? `<a class="btn small-btn privacy-btn" href="#/privacidad">Privacidad</a>${GEAR}` : '' })}
     ${head}
+    ${me ? '<a class="btn block center" href="#/gymbro" style="margin:0 0 12px">+ Agregar gymbro</a>' : ''}
     ${body}
     ${me ? '' : sharedInChat(c)}
     ${me ? '' : '<button class="btn ghost block danger-text" data-action="gymbro-del" style="margin-top:24px">Eliminar gymbro</button>'}
@@ -5925,12 +5928,12 @@ function render() {
     historial: 'entreno', sesion: 'entreno', progreso: 'entreno', ejercicio: 'entreno',
     nutricion: 'nutricion', alimento: 'nutricion', dieta: 'nutricion', objetivo: 'nutricion',
     peso: 'cuerpo', grasa: 'cuerpo', pliegues: 'cuerpo', medidas: 'cuerpo', fotos: 'cuerpo',
-    social: 'social', gymbro: 'social', perfil: 'social', privacidad: 'social', alumnos: 'social', coach: 'social', asignar: 'social', planes: 'social',
+    social: 'inicio', gymbro: 'inicio', alumnos: 'inicio', coach: 'inicio', asignar: 'inicio', planes: 'inicio',
+    perfil: arg === 'yo' ? 'perfil' : 'inicio', privacidad: 'perfil', cuenta: 'perfil',
   };
   tab = ['entrenar', 'editar', 'chat'].includes(screen) ? null : NAV[screen] || 'inicio';
   $tabs.hidden = !tab;
   $tabs.querySelectorAll('a').forEach(a => { a.classList.toggle('active', a.dataset.tab === tab); a.toggleAttribute('aria-current', a.dataset.tab === tab); });
-  $tabs.querySelector('[data-tab="social"]').classList.toggle('dot', chats.some(isUnread));
   if (screen === 'progreso' && !arg && progressQuery) filterProgress();
   if (screen === 'nutricion' && arg === 'alimentos' && foodQuery) filterFoods();   // al volver, mantiene la búsqueda aplicada
   if (screen === 'gymbro') ensureInvite();
