@@ -1284,3 +1284,9 @@ button.wk-day { font-family: inherit; border: 0; cursor: pointer; padding: 0; }
 .bar .msg-btn { position: relative; display: grid; place-items: center; color: var(--text); background: none; border: 0; }
 .msg-count { position: absolute; bottom: 0; right: -4px; min-width: 24px; height: 24px; padding: 0 6px; border-radius: 12px; display: grid; place-items: center;
   background: var(--danger); color: #fff; font-size: 13px; font-weight: 800; border: 2px solid var(--bg); }
+
+/* Mi perfil: la foto abre sus opciones */
+.photo-me { display: grid; justify-items: center; gap: 6px; cursor: pointer; }
+.photo-menu { gap: 0; }
+.photo-menu .btn.block:first-child { margin-top: 0; }
+.photo-menu-pick { display: flex; align-items: center; justify-content: center; cursor: pointer; }

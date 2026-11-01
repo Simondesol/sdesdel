@@ -128,8 +128,8 @@ const repsText = s => `${fmtNum(s.r)}${isSideSet(s) ? ` / ${fmtNum(s.r2)}` : ''}
 const setStrength = x => epley((x.bw || 0) + toKg(x.w || 0, x.unit), repsMin(x) || 1, x.rir);
 // Con peso corporal, cada serie cuenta con lo que pesabas ese día (más peso tuyo con el mismo lastre = moviste más)
 function cmpSet(a, b) {
-  const diff = setStrength(a) - setStrength(b);
-  return Math.abs(diff) < 0.05 ? 0 : diff > 0 ? 1 : -1;
+  const sb = setStrength(b), diff = setStrength(a) - sb;
+  return Math.abs(diff) < Math.max(0.05, sb * 0.005) ? 0 : diff > 0 ? 1 : -1;
 }
 // Tu peso de ese día, solo en ejercicios con peso corporal
 const bwFor = (ex, dateIso) => (ex.unit !== 'placas' && isBwEx(ex) ? bwOn(dateIso) || 0 : 0);
@@ -152,6 +152,25 @@ function bestSets(exerciseId, before = db.workouts.length, unit = null, rid = nu
   }
   return best;
 }
+
+// Mejor bajada de cada serie (best[j][k]: bajada k de la serie j), igual que bestSets
+function bestDrops(exerciseId, before = db.workouts.length, unit = null, rid = null) {
+  const best = [];
+  for (let n = 0; n < before; n++) {
+    const w = db.workouts[n];
+    if ((rid && w.routineId !== rid) || w.deload) continue;
+    const ex = w.exercises.find(e => e.exerciseId === exerciseId);
+    if (!ex || (unit && unitKind(ex.unit) !== unitKind(unit))) continue;
+    const bw = bwFor(ex, w.date);
+    ex.sets.forEach((s, j) => (s.drops || []).forEach((x, k) => {
+      const c = { w: x.w, r: x.r, unit: ex.unit, bw };
+      best[j] ||= [];
+      if (!best[j][k] || cmpSet(c, best[j][k]) > 0) best[j][k] = c;
+    }));
+  }
+  return best;
+}
+const dropCmp = (x, ex, best) => liveCmp(x, { ...ex, rir: false, side: false }, best);
 
 // Compara lo que se está escribiendo con la mejor marca (null si no hay nada que comparar)
 function liveCmp(s, ex, best) {
@@ -1768,6 +1787,7 @@ function viewWorkout() {
   const gi = groupIndex(groups, d.pos), group = groups[gi], isLast = gi === groups.length - 1;
   const ridOf = ex => (ex.extra ? null : d.routineId);
   const bests = new Map(group.map(k => [k, d.deload ? [] : bestSets(d.exercises[k].exerciseId, before, d.exercises[k].unit, ridOf(d.exercises[k]))]));
+  const dropBests = new Map(group.map(k => [k, d.deload ? [] : bestDrops(d.exercises[k].exerciseId, before, d.exercises[k].unit, ridOf(d.exercises[k]))]));
 
   // "↓ drop" solo en ejercicios marcados como Dropset en la rutina (o que ya tienen bajadas, al editar uno guardado)
   // Fila de una serie, con sus bajadas de dropset debajo (label: "1", o "A1" en un superset)
@@ -1802,7 +1822,7 @@ function viewWorkout() {
         <span class="x">×</span>
         <input inputmode="numeric" enterkeyhint="next" data-bind="dr" data-i="${i}" data-j="${j}" data-k="${k}" value="${esc(x.r)}" placeholder="${esc(x.pr || 'reps')}" aria-label="Repeticiones bajada ${k + 1} de la serie ${label}">
         ${ex.rir ? '<span></span>' : ''}
-        <span></span>
+        <span class="mark-cell" data-mark="${i}-${j}-${k}">${markSpan(dropCmp(x, ex, (dropBests.get(i)[j] || [])[k]))}</span>
       </div>`).join('');
     const wPh = s.pw || (lastreEx(ex) ? '0' : ex.unit === 'placas' ? 'placas' : 'peso');
     const rPh = (pr, side) => repsFor(ex, j) || pr || side;
@@ -4141,6 +4161,7 @@ async function setMyPhoto(url) {
 const CROP_BOX = 240;
 let photoEdit = null;   // recorte de la foto de perfil (se guarda el cuadrado del círculo)
 let photoView = false;  // foto de perfil abierta en grande
+let photoMenu = false;  // opciones de tu foto de perfil (ver, cambiar, quitar)
 function newCrop(img, src, bw, bh) {
   const base = Math.max(bw / img.width, bh / img.height);   // la foto cubre todo el cuadro
   return { img, src, bw, bh, base, zoom: 1, ox: (bw - img.width * base) / 2, oy: (bh - img.height * base) / 2 };
@@ -4564,13 +4585,8 @@ function viewProfile(arg) {
   const bigPhoto = safePhoto(photo)
     ? `<button class="photo-open" data-action="photo-view" aria-label="Ver foto en grande">${avatarHtml(name, photo, 'big')}</button>` : '';
   const head = `<section class="profile-head">
-      ${me ? `${bigPhoto}
-        <label class="photo-pick" aria-label="${photo ? 'Cambiar foto de perfil' : 'Poner foto de perfil'}">
-          ${bigPhoto ? '' : avatarHtml(name, photo, 'big')}
-          <input type="file" accept="image/*" data-bind="photo" hidden>
-          <span class="small photo-hint">${photo ? 'Cambiar foto' : 'Poner foto'}</span>
-        </label>
-        ${photo ? '<button class="btn ghost small-btn" data-action="photo-del">Quitar foto</button>' : ''}`
+      ${me ? `<button class="photo-open photo-me" data-action="photo-menu" aria-label="${photo ? 'Foto de perfil: ver, cambiar o quitar' : 'Poner foto de perfil'}">
+          ${avatarHtml(name, photo, 'big')}${photo ? '' : '<span class="small photo-hint">Poner foto</span>'}</button>`
       : bigPhoto || avatarHtml(name, photo, 'big')}
       <h2>${esc(name)}</h2>
       ${me ? '' : `<span class="muted small">Gymbros desde el ${fmtLongDate(c.createdAt)}</span>`}
@@ -4587,6 +4603,15 @@ function viewProfile(arg) {
     ${me ? '' : sharedInChat(c)}
     ${me ? '' : '<button class="btn ghost block danger-text" data-action="gymbro-del" style="margin-top:24px">Eliminar gymbro</button>'}
     ${me ? photoEditorHtml() : ''}
+    ${me && photoMenu ? `<div class="modal-wrap">
+      <div class="modal-back" data-action="photo-menu-close"></div>
+      <section class="modal card photo-menu" role="dialog" aria-modal="true" aria-label="Foto de perfil">
+        ${safePhoto(photo) ? '<button class="btn block" data-action="photo-view">Ver foto</button>' : ''}
+        <label class="btn block center photo-menu-pick">${photo ? 'Cambiar foto' : 'Poner foto'}<input type="file" accept="image/*" data-bind="photo" hidden></label>
+        ${photo ? '<button class="btn block danger-text" data-action="photo-del">Quitar foto</button>' : ''}
+        <button class="btn ghost block" data-action="photo-menu-close">Cancelar</button>
+      </section>
+    </div>` : ''}
     ${photoView && safePhoto(photo) ? `<div class="modal-wrap photo-viewer" data-action="photo-close" role="dialog" aria-label="Foto de ${esc(name)}">
       <img src="${safePhoto(photo)}" alt="Foto de ${esc(name)}">
     </div>` : ''}`;
@@ -8665,11 +8690,20 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
     case 'auto-pr':
       localStorage.setItem(autoPRKey(), el.checked ? '1' : '0');
       break;
+    case 'photo-menu':
+      photoMenu = true;
+      render();
+      break;
+    case 'photo-menu-close':
+      photoMenu = false;
+      render();
+      break;
     case 'photo-del':
+      photoMenu = false; render();
       if (await ask('¿Quitar tu foto de perfil?')) setMyPhoto(null);
       break;
     case 'photo-view':
-      photoView = true;
+      photoMenu = false; photoView = true;
       render();
       break;
     case 'photo-close':
@@ -8825,6 +8859,7 @@ $app.addEventListener('change', async e => {
   }
   if (b === 'prog-file' && e.target.files && e.target.files[0]) { openProgressNew(e.target.files[0]); e.target.value = ''; return; }
   if (e.target.dataset.bind !== 'photo' || !e.target.files || !e.target.files[0]) return;
+  photoMenu = false;
   openPhotoEditor(e.target.files[0]);
   e.target.value = '';   // permite elegir la misma foto otra vez
 });
@@ -8962,7 +8997,12 @@ $app.addEventListener('input', e => {
     const wl = bind === 'w' && j === 0 && $app.querySelector(`[data-warm="${i}"]`);
     if (wl) wl.innerHTML = warmLine(d, i);
   }
-  else if (bind === 'dw' || bind === 'dr') cur().exercises[i].sets[j].drops[+el.dataset.k][bind === 'dw' ? 'w' : 'r'] = el.value;
+  else if (bind === 'dw' || bind === 'dr') {
+    const d = cur(), ex = d.exercises[i], k = +el.dataset.k, x = ex.sets[j].drops[k];
+    x[bind === 'dw' ? 'w' : 'r'] = el.value;
+    const cell = $app.querySelector(`[data-mark="${i}-${j}-${k}"]`);
+    if (cell && !d.deload) cell.innerHTML = markSpan(dropCmp(x, ex, (bestDrops(ex.exerciseId, beforeIndex(d), ex.unit, ex.extra ? null : d.routineId)[j] || [])[k]));
+  }
   else if (bind === 'snote') cur().exercises[i].sets[j].note = el.value;
   else if (bind === 'note') {
     const exId = cur().exercises[i].exerciseId, text = el.value.trim();
