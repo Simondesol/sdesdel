@@ -193,7 +193,7 @@ const GEAR = `<a class="icon gear" href="#/cuenta" aria-label="Cuenta y configur
 
 const msgBtn = () => { const n = chats.filter(isUnread).length;
   return `<a class="icon msg-btn" href="#/social" aria-label="Mensajes${n ? ` (${n} sin leer)` : ''}">
-  <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><path d="M4.7 4.5h14.6a1.3 1.3 0 0 1 1.1 1.95l-7.1 12.8a1.3 1.3 0 0 1-2.4-.3L9.9 12.3 3.9 6.7a1.3 1.3 0 0 1 .8-2.2z"/><path d="M9.9 12.3l6.4-4.6"/></svg>
+  <svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"><path d="M4.7 4.5h14.6a1.3 1.3 0 0 1 1.1 1.95l-7.1 12.8a1.3 1.3 0 0 1-2.4-.3L9.9 12.3 3.9 6.7a1.3 1.3 0 0 1 .8-2.2z"/><path d="M9.9 12.3l6.4-4.6"/></svg>
   ${n ? `<span class="msg-count">${n > 9 ? '9+' : n}</span>` : ''}</a>`; };
 
 const bar = (value, goal) => `<div class="meter" role="progressbar" aria-valuemin="0" aria-valuemax="${goal}" aria-valuenow="${value}">
