@@ -4002,7 +4002,7 @@ function sendOut(text) {
 }
 function shareSheetHtml() {
   const sh = shareSheet;
-  const what = { workout: 'entrenamiento', routine: 'rutina', diet: 'dieta', program: 'programa' }[sh.kind];
+  const what = { workout: 'entrenamiento', routine: 'rutina', diet: 'dieta', program: 'split' }[sh.kind];
   const when = c => (c.last ? c.last.at : c.createdAt || 0);
   const rows = chats.slice().sort((a, b) => when(b) - when(a)).map(c => {
     const name = gymbroName(c), sent = sh.sent.includes(c.id);
