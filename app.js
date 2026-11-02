@@ -3057,6 +3057,17 @@ const POV = n => [
   [/la rutina que te toca en tu$/, 'la rutina que le toca en su'], [/^\(o la que entrenaste\), o la de descanso\./, '(o la que entrenó), o la de descanso.'],
   [/^Desdel incluye \d+ alimentos comunes.*$/, ''],
   [/según cómo cambie tu peso/, 'según cómo cambie su peso'],
+  // Pantallas vacías y ayudas que le hablaban al atleta (ahora hablan de él)
+  [/^Todavía no anotas tu (.+)\. Empieza hoy arriba 👆$/, `${n} todavía no anota su $1.`],
+  [/^Cuando guardes tus primeras medidas verás aquí su evolución\.$/, `Cuando ${n} anote sus primeras medidas, aquí verás su evolución.`],
+  [/^Cuando guardes entrenamientos, aquí verás tu progreso en cada ejercicio\.$/, `Cuando ${n} guarde entrenamientos, aquí verás su progreso en cada ejercicio.`],
+  [/^Récord = superar tu mejor 1ª serie \(en cualquier rutina\), o tu mejor 2ª, 3ª… serie en esta rutina\.$/, 'Récord = superar su mejor 1ª serie (en cualquier rutina), o su mejor 2ª, 3ª… serie en esta rutina.'],
+  [/^O arma tu propia rutina: escribe su nombre abajo\.$/, 'O ármale una rutina: escribe su nombre abajo.'],
+  [/^Arma un programa con tus rutinas para usarlo como tu plan o enviárselo a un gymbro\.$/, `Arma un programa con las rutinas de ${n} para usarlo como su plan.`],
+  [/^Arma tu dieta en 3 pasos:$/, `Arma la dieta de ${n} en 3 pasos:`], [/^Arma tu dieta$/, 'Arma su dieta'], [/^Calcula tus kcal objetivo$/, 'Calcula sus kcal objetivo'],
+  [/debe tener tu dieta/, 'debe tener su dieta'], [/^Revisa tus alimentos$/, 'Revisa sus alimentos'], [/o crea los tuyos con su etiqueta/, 'o crea los suyos con su etiqueta'],
+  [/^Entrenas fuerte a diario o tu trabajo es físico$/, 'Entrena fuerte a diario o su trabajo es físico'],
+  [/^tu (peso|estatura|año de nacimiento|sexo)$/, 'su $1'], [/^Si anotas tu % de grasa en$/, 'Si anota su % de grasa en'], [/^, basta con tu peso\.$/, ', basta con su peso.'],
 ];
 function povTexts() {
   const rules = POV(viewing.name), walk = document.createTreeWalker($app, NodeFilter.SHOW_TEXT);
@@ -4917,13 +4928,13 @@ function ffmiInfo() {
 
 // "tu estatura, tu sexo y tu % de grasa": lo que falta para calcular el FFMI
 function ffmiMissing() {
-  const miss = [];
-  if (!db.body.heightCm) miss.push('tu estatura');
-  if (!db.body.sex) miss.push('tu sexo');
-  if (currentBf() == null) miss.push('tu % de grasa (anótalo aquí arriba)');
-  if (!db.bodyweight.length) miss.push('tu peso');
+  const miss = [], su = viewing ? 'su' : 'tu';   // mirando a un atleta: "su estatura" y sin decirle dónde se anota
+  if (!db.body.heightCm) miss.push(`${su} estatura`);
+  if (!db.body.sex) miss.push(`${su} sexo`);
+  if (currentBf() == null) miss.push(viewing ? 'su % de grasa' : 'tu % de grasa (anótalo aquí arriba)');
+  if (!db.bodyweight.length) miss.push(`${su} peso`);
   const list = miss.length > 1 ? `${miss.slice(0, -1).join(', ')} y ${miss[miss.length - 1]}` : miss[0];
-  return `${list}.${!db.body.heightCm || !db.body.sex ? ' La estatura y el sexo se ponen en <a href="#/cuenta">⚙️ Cuenta → Mis datos</a>' : ''}`;
+  return `${list}.${!viewing && (!db.body.heightCm || !db.body.sex) ? ' La estatura y el sexo se ponen en <a href="#/cuenta">⚙️ Cuenta → Mis datos</a>' : ''}`;
 }
 
 function bodyweightCard() {
@@ -5077,7 +5088,7 @@ function viewBodyFat() {
       </div>`).join('')}</div>
       <p class="muted small" style="margin:0">Mide cuánta masa magra tienes para tu estatura. A diferencia del IMC, no confunde músculo con grasa.</p>
     </section>`
-    : `<p class="muted card">Para ver tu FFMI falta ${ffmiMissing()}</p>`;
+    : `<p class="muted card">Para ver ${viewing ? `el FFMI de ${esc(viewing.name)}` : 'tu FFMI'} falta ${ffmiMissing()}</p>`;
 
   return `${header('Cuerpo', {})}${bodyTabs('grasa')}
     <section class="card stack">${bfForm}</section>
