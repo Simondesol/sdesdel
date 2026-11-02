@@ -34,6 +34,8 @@ const UNITS = ['kg', 'lb', 'placas'];
 const unitShort = u => (u === 'placas' ? 'pl.' : u);
 const unitKind = u => (u === 'placas' ? 'placas' : 'peso');
 const openHistory = new Set();   // ejercicios con el historial desplegado
+const HIST_FIRST = 5;
+const histShown = new Map();   // cuántos entrenos del historial se ven por ejercicio (al entrenar)
 let editingNote = null;          // ejercicio cuya nota se está editando
 let editBuf = null;              // copia de un entrenamiento guardado que se está editando
 let justFinished = null;         // entrenamiento recién guardado (para mostrar el resumen)
@@ -1870,11 +1872,17 @@ function viewWorkout() {
       ${noteHtml(ex.exerciseId, i)}
       ${compact || d.deload || bests.get(i).length ? '' : '<p class="prev">Primera vez</p>'}`;
   };
-  const historyHtml = ex => historyFor(ex.exerciseId, d.editOf).map(({ w, ex: pex }) => `
+  // Historial al entrenar: los últimos 5 entrenos; "Ver más" muestra 10 más cada vez
+  const historyHtml = ex => {
+    const all = historyFor(ex.exerciseId, d.editOf), n = histShown.get(ex.exerciseId) || HIST_FIRST;
+    if (!all.length) return '<p class="muted">Aún no hay historial de este ejercicio.</p>';
+    return all.slice(0, n).map(({ w, ex: pex }) => `
       <div class="hist-item">
         <div class="muted">${fmtDate(w.date)}${w.routineName ? ` · ${esc(w.routineName)}` : ''}</div>
         ${setsChips(pex)}
-      </div>`).join('') || '<p class="muted">Aún no hay historial de este ejercicio.</p>';
+      </div>`).join('')
+      + (all.length > n ? `<button class="btn ghost block hist-more" data-action="hist-more" data-id="${esc(ex.exerciseId)}">Ver más (${all.length - n} ${all.length - n === 1 ? 'entreno' : 'entrenos'} más)</button>` : '');
+  };
   // pre: letra del ejercicio en un superset ("A "), para saber de cuál es cada descanso
   const restBtn = (i, pre = '') => (!editing && d.exercises[i].rest
     ? `<button class="btn ghost" data-action="rest" data-i="${i}" data-rest="${i}" data-pre="${pre}">Rest ${pre}${fmtRest(d.exercises[i].rest)}</button>` : '');
@@ -8085,6 +8093,10 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       });
       break;
     }
+    case 'hist-more':
+      histShown.set(id, (histShown.get(id) || HIST_FIRST) + 10);
+      render();
+      break;
     case 'toggle-history': {
       // En un superset se abren o cierran los historiales de todos sus ejercicios
       const d = cur(), ids = (el.dataset.group ? groupsOf(d).find(g => g.includes(i)) : [i]).map(k => d.exercises[k].exerciseId);

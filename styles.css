@@ -1290,3 +1290,4 @@ button.wk-day { font-family: inherit; border: 0; cursor: pointer; padding: 0; }
 .photo-menu { gap: 0; }
 .photo-menu .btn.block:first-child { margin-top: 0; }
 .photo-menu-pick { display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.hist .hist-more { margin: 6px 0 2px; }
