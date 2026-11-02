@@ -462,7 +462,7 @@ function dietLinksHtml(diet) {
   return `<section class="card stack diet-links">
       <strong>Usar esta dieta los días de</strong>
       <div class="link-chips">${chips}</div>
-      <span class="muted small">Cada día la app elige sola la dieta de la rutina que te toca en tu <a href="#/programas">programa activo</a> (o la que entrenaste), o la de descanso.${db.plan ? '' : ' Para saber qué días son de descanso, elige un programa.'}</span>
+      <span class="muted small">Cada día la app elige sola la dieta de la rutina que te toca en tu <a href="#/programas">split activo</a> (o la que entrenaste), o la de descanso.${db.plan ? '' : ' Para saber qué días son de descanso, elige un split.'}</span>
     </section>`;
 }
 
@@ -490,7 +490,7 @@ function setTodayLog(dietId, done) {
 }
 
 // Cuerpo: Peso · % Grasa · Medidas · Fotos (como las pestañas de Nutrición)
-const entrenoTabs = active => `<div class="range" role="tablist">${[['rutinas', 'Rutinas'], ['programas', 'Programas'], ['historial', 'Historial'], ['progreso', 'Progreso']]
+const entrenoTabs = active => `<div class="range" role="tablist">${[['rutinas', 'Rutinas'], ['programas', 'Split'], ['historial', 'Historial'], ['progreso', 'Progreso']]
   .map(([k, label]) => `<a class="${k === active ? 'on' : ''}" href="#/${k}" role="tab">${label}</a>`).join('')}</div>`;
 const bodyTabs = active => `<div class="range" role="tablist">${[['peso', 'Peso'], ['grasa', '% Grasa'], ['medidas', 'Medidas'], ['fotos', 'Fotos']]
   .map(([k, label]) => `<a class="${k === active ? 'on' : ''}" href="#/${k}" role="tab">${label}</a>`).join('')}</div>`;
@@ -1466,7 +1466,7 @@ function viewHome() {
         <strong>¿Vas a entrenar ahora?</strong>
         <span class="muted small">Anota tus ejercicios a medida que los haces, sin armar nada antes.</span>
         <button class="btn primary block" data-action="start-free">Entrenar sin rutina</button>
-        <a class="btn block center" href="#/programas">Elegir un programa</a>
+        <a class="btn block center" href="#/programas">Elegir un split</a>
       </section>`;
   return `${header('Entreno', {})}${entrenoTabs('rutinas')}
     ${resume}
@@ -2276,7 +2276,7 @@ let importOpen = false;   // formulario "Importar con código" visible
 const PENDING_IMPORT = 'desdel-importar';
 const shareLink = code => `${location.origin}${location.pathname}?r=${code}`;
 const shareText = ({ name, code, kind }) => kind === 'program'
-  ? `Te comparto el programa "${name}" en Desdel 📅\n\nTócalo para usarlo:\n${shareLink(code)}\n\n` +
+  ? `Te comparto el split "${name}" en Desdel 📅\n\nTócalo para usarlo:\n${shareLink(code)}\n\n` +
     `Si no se abre, copia este código, abre Desdel y en Rutinas toca "Pegar código": ${fmtCode(code)}`
   : kind === 'diet'
   ? `Te comparto la dieta "${name}" en Desdel 🥗\n\nTócalo para agregarla:\n${shareLink(code)}\n\n` +
@@ -2636,7 +2636,7 @@ const viewAllowed = action => VIEW_SAFE.has(action) || action === 'student-del'
   || (['programas', 'miprograma', 'listos', 'programa'].includes(routeParts()[0]) && VIEW_PROGRAM.has(action))
   || (['nutricion', 'dieta', 'objetivo'].includes(routeParts()[0]) && VIEW_NUTRI.has(action))
   || (routeParts()[0] === '' && (action === 'deload-on' || action === 'deload-off'));
-const viewOnlyMsg = () => `Estás viendo los datos de ${viewing.name}. Puedes ver todo y cambiar sus rutinas, programas y dieta, pero no anotar ni borrar sus registros.`;
+const viewOnlyMsg = () => `Estás viendo los datos de ${viewing.name}. Puedes ver todo y cambiar sus rutinas, splits y dieta, pero no anotar ni borrar sus registros.`;
 const viewBarHtml = () => `<div class="view-bar"><span class="grow"><span class="muted small">Modo coach</span><strong>${esc(viewing.name)}</strong></span>
   ${chats.some(c => c.id === [user.uid, viewing.uid].sort().join('_')) ? `<a class="btn small-btn" href="#/chat/${[user.uid, viewing.uid].sort().join('_')}">Chat</a>` : ''}
   <button class="btn small-btn" data-action="view-exit">Salir</button></div>`;
@@ -2776,7 +2776,7 @@ function routineChanges(o, n) {
 // Un cambio del coach: { routine } | { program } | { plan } | { deleted, kind }.
 // Se guarda con el id de la rutina, 'prog_' + id del programa, o 'plan' (el programa activo)
 const editKind = ed => ed.kind || ['program', 'plan', 'diet', 'nutri', 'target', 'deload'].find(k => k in ed) || 'routine';
-const KIND_ORDER = { routine: 0, program: 1, plan: 2, diet: 3, nutri: 4, target: 5, deload: 6 };   // primero las rutinas, que el programa usa
+const KIND_ORDER = { routine: 0, program: 1, plan: 2, diet: 3, nutri: 4, target: 5, deload: 6 };   // primero las rutinas, que el split usa
 // Objetivo de calorías (Nutrición → Objetivo): ritmo y actividad
 const targetOf = b => ({ paceMonth: b.paceMonth ?? null, pace: b.pace ?? null, paceAmt: b.paceAmt ?? null, activity: b.activity ?? null });
 const dietFood = (d, id) => (d.nutrition.foods.find(f => f.id === id) || BASE_BY_ID.get(id) || {}).name || 'un alimento';
@@ -2816,7 +2816,7 @@ function remapExercises(d, old, r) {
   }) };
 }
 const byKind = (a, b) => KIND_ORDER[editKind(a)] - KIND_ORDER[editKind(b)] || (a.at || 0) - (b.at || 0);
-const progName = (d, id) => ((d.programs.find(x => x.id === id) || {}).name || 'un programa');
+const progName = (d, id) => ((d.programs.find(x => x.id === id) || {}).name || 'un split');
 function programChanges(d, o, n) {
   if (!o) return [];
   const rn = id => (id ? (d.routines.find(r => r.id === id) || {}).name || 'una rutina' : 'Descanso');
@@ -2875,8 +2875,8 @@ function applyEditTo(d, ed) {
     const before = d.plan && d.plan.prog;
     if (stable(d.plan || null) === stable(ed.plan || null)) return null;
     d.plan = ed.plan || null;
-    if (!d.plan) return before ? { text: 'Dejó de usar tu programa activo' } : null;
-    return d.plan.prog && d.plan.prog !== before ? { text: `Activó el programa ${progName(d, d.plan.prog)}` } : null;   // los días ya se avisan en el programa
+    if (!d.plan) return before ? { text: 'Dejó de usar tu split activo' } : null;
+    return d.plan.prog && d.plan.prog !== before ? { text: `Activó el split ${progName(d, d.plan.prog)}` } : null;   // los días ya se avisan en el split
   }
   if (kind === 'program') {
     const pid = ed.id.replace(/^prog_/, ''), k = d.programs.findIndex(x => x.id === pid);
@@ -2884,13 +2884,13 @@ function applyEditTo(d, ed) {
       if (k < 0) return null;
       const name = d.programs[k].name;
       d.programs.splice(k, 1);
-      return { text: `Eliminó el programa ${name}` };
+      return { text: `Eliminó el split ${name}` };
     }
     if (!ed.program) return null;
     if (k >= 0 && stable(d.programs[k]) === stable(ed.program)) return null;   // ya estaba así
     const changes = programChanges(d, k < 0 ? null : d.programs[k], ed.program);
     if (k < 0) d.programs.push(ed.program); else d.programs[k] = ed.program;
-    return { text: k < 0 ? `Te creó el programa ${ed.program.name || ''} (${plural(myProgDays(ed.program.days), 'día')} por semana)` : `Cambió el programa ${ed.program.name || ''}`, changes };
+    return { text: k < 0 ? `Te creó el split ${ed.program.name || ''} (${plural(myProgDays(ed.program.days), 'día')} por semana)` : `Cambió el split ${ed.program.name || ''}`, changes };
   }
   const k = d.routines.findIndex(r => r.id === ed.id);
   if (ed.deleted) {
@@ -3035,7 +3035,7 @@ function pushCoachEdits() {
 const POV = n => [
   [/^Hoy te toca:/, `Hoy a ${n} le toca:`], [/^Hoy ya entrenaste /, `Hoy ya entrenó `], [/^Hoy: descanso$/, `Hoy ${n} descansa`],
   [/^Entrenaste$/, 'Entrenó'], [/^Te toca$/, 'Le toca'], [/^Tu semana$/, `Semana de ${n}`], [/^Tu peso de hoy · último (.*)$/, 'Último peso: $1'], [/^Tu peso de hoy$/, 'Todavía no anota su peso'],
-  [/^Mis programas$/i, `Programas de ${n}`], [/^Mis dietas$/, 'Dietas'], [/^Mis alimentos$/, 'Alimentos'],
+  [/^Mis splits$/i, `Splits de ${n}`], [/^Mis dietas$/, 'Dietas'], [/^Mis alimentos$/, 'Alimentos'],
   [/^Es el que estás usando: lo que cambies aquí se aplica a tu semana\.$/, `Es el que ${n} está usando: lo que cambies aquí se aplica a su semana.`],
   [/^Tu dieta tiene/, 'Su dieta tiene'], [/que tu objetivo/, 'que su objetivo'], [/^Tus kcal objetivo$/, `Kcal objetivo de ${n}`],
   [/^Referencia para armar tu dieta$/, 'Referencia para armar su dieta'], [/^Para mantener tu peso$/, 'Para mantener su peso'],
@@ -3044,12 +3044,12 @@ const POV = n => [
   [/^Todavía no tienes fotos\..*$/, `${n} todavía no tiene fotos de progreso.`],
   [/^Para ver tu FFMI falta tu % de grasa.*$/, 'Para ver su FFMI falta su % de grasa.'],
   [/^Todavía no agregas alimentos propios\..*$/, `${n} no tiene alimentos propios.`],
-  [/^Cada día la app elige sola la dieta de la rutina que te toca en tu programa activo \(o la que entrenaste\), o la de descanso\.$/,
-    'Cada día la app elige sola la dieta de la rutina que le toca en su programa activo (o la que entrenó), o la de descanso.'],
+  [/^Cada día la app elige sola la dieta de la rutina que te toca en tu split activo \(o la que entrenaste\), o la de descanso\.$/,
+    'Cada día la app elige sola la dieta de la rutina que le toca en su split activo (o la que entrenó), o la de descanso.'],
   [/^Aquí armas la rutina:.*$/, `Aquí armas la rutina de ${n}: ejercicios, series y repeticiones. Los pesos de cada serie los anota al entrenar.`],
-  [/^Elige tu nivel y cuántos días puedes entrenar\..*$/, `Elige el nivel y los días. Lo que añadas queda en los programas de ${n}.`],
-  [/^Añadir a mis programas$/, 'Añadir a sus programas'],
-  [/^Queda en Mis programas:.*$/, `Queda en los programas de ${n}. Cada ejercicio trae sus series, repeticiones, RIR, descanso y guía de técnica.`],
+  [/^Elige tu nivel y cuántos días puedes entrenar\..*$/, `Elige el nivel y los días. Lo que añadas queda en los splits de ${n}.`],
+  [/^Añadir a mis splits$/, 'Añadir a sus splits'],
+  [/^Queda en Mis splits:.*$/, `Queda en los splits de ${n}. Cada ejercicio trae sus series, repeticiones, RIR, descanso y guía de técnica.`],
   [/toca ✓ cuando comas/i, 'lo que marcó hoy'], [/^Lo que comas fuera de tu dieta se suma al día\.$/, 'Lo que comió fuera de su dieta.'],
   [/^Todavía no tienes dietas\..*$/, `${n} todavía no tiene dietas. Toca "+ Crear dieta" para armarle una.`],
   [/^Medidas de hoy con huincha.*$/, ''], [/^Hoy ya mediste con huincha.*$/, ''],
@@ -3063,7 +3063,7 @@ const POV = n => [
   [/^Cuando guardes entrenamientos, aquí verás tu progreso en cada ejercicio\.$/, `Cuando ${n} guarde entrenamientos, aquí verás su progreso en cada ejercicio.`],
   [/^Récord = superar tu mejor 1ª serie \(en cualquier rutina\), o tu mejor 2ª, 3ª… serie en esta rutina\.$/, 'Récord = superar su mejor 1ª serie (en cualquier rutina), o su mejor 2ª, 3ª… serie en esta rutina.'],
   [/^O arma tu propia rutina: escribe su nombre abajo\.$/, 'O ármale una rutina: escribe su nombre abajo.'],
-  [/^Arma un programa con tus rutinas para usarlo como tu plan o enviárselo a un gymbro\.$/, `Arma un programa con las rutinas de ${n} para usarlo como su plan.`],
+  [/^Elige uno listo o arma el tuyo con tus rutinas, para usarlo como tu plan o enviárselo a un gymbro\.$/, `Elige uno listo o ármale uno con las rutinas de ${n}, para usarlo como su plan.`],
   [/^Arma tu dieta en 3 pasos:$/, `Arma la dieta de ${n} en 3 pasos:`], [/^Arma tu dieta$/, 'Arma su dieta'], [/^Calcula tus kcal objetivo$/, 'Calcula sus kcal objetivo'],
   [/debe tener tu dieta/, 'debe tener su dieta'], [/^Revisa tus alimentos$/, 'Revisa sus alimentos'], [/o crea los tuyos con su etiqueta/, 'o crea los suyos con su etiqueta'],
   [/^Entrenas fuerte a diario o tu trabajo es físico$/, 'Entrena fuerte a diario o su trabajo es físico'],
@@ -3161,7 +3161,7 @@ async function assignToStudents(btn) {
   if (!job || !list.length) return;
   const names = list.map(x => x.studentName || 'Atleta');
   const prog = assignSel.kind === 'p';
-  if (!await ask(`¿Asignar ${prog ? 'el programa' : 'la rutina'} "${job.name}" a ${joinNames(names)}?${prog && assignActivate ? '\n\nQueda como su programa activo.' : ''}\n\nSi ya se lo habías asignado, se actualiza.`, 'Asignar')) return;
+  if (!await ask(`¿Asignar ${prog ? 'el split' : 'la rutina'} "${job.name}" a ${joinNames(names)}?${prog && assignActivate ? '\n\nQueda como su split activo.' : ''}\n\nSi ya se lo habías asignado, se actualiza.`, 'Asignar')) return;
   await busy(btn, 'Enviando…', async () => {
     const at = Date.now();
     try {
@@ -3179,13 +3179,13 @@ function viewAssign() {
       <input type="radio" name="asg" data-action="assign-pick" data-kind="${kind}" data-id="${esc(id)}" ${assignSel && assignSel.kind === kind && assignSel.id === id ? 'checked' : ''}>
       <span class="grow">${esc(name || '(sin nombre)')}<br><span class="muted small">${sub}</span></span></label>`;
   const ready = assignSel && assignTo.size;
-  return `${header('Asignar', { back: true, sub: 'Una rutina o un programa tuyo' })}
+  return `${header('Asignar', { back: true, sub: 'Una rutina o un split tuyo' })}
     <h2>Qué asignar</h2>
-    ${progs.length ? `<section class="card profile-fields"><span class="muted small">Programas</span>${progs.map(x => opt('p', x.id, x.name, plural(myProgDays(x.days), 'día') + ' por semana')).join('')}</section>` : ''}
+    ${progs.length ? `<section class="card profile-fields"><span class="muted small">Splits</span>${progs.map(x => opt('p', x.id, x.name, plural(myProgDays(x.days), 'día') + ' por semana')).join('')}</section>` : ''}
     ${routines.length ? `<section class="card profile-fields"><span class="muted small">Rutinas</span>${routines.map(r => opt('r', r.id, r.name, plural(r.exercises.length, 'ejercicio'))).join('')}</section>`
-      : '<p class="muted card">Primero crea tus rutinas o programas en Entreno: después los asignas aquí.</p>'}
+      : '<p class="muted card">Primero crea tus rutinas o splits en Entreno: después los asignas aquí.</p>'}
     ${assignSel && assignSel.kind === 'p' ? `<label class="card toggle-row"><input type="checkbox" data-action="assign-act" ${assignActivate ? 'checked' : ''}>
-      <span class="grow">Dejarlo como su programa activo<br><span class="muted small">En su Inicio verá qué le toca cada día.</span></span></label>` : ''}
+      <span class="grow">Dejarlo como su split activo<br><span class="muted small">En su Inicio verá qué le toca cada día.</span></span></label>` : ''}
     <h2>A quién</h2>
     ${students.length ? `<section class="card profile-fields">${students.filter(canSeeStudent).map(x => `<label class="toggle-row small-toggle">
       <input type="checkbox" data-action="assign-to" data-uid="${esc(x.studentUid)}" ${assignTo.has(x.studentUid) ? 'checked' : ''}>
@@ -3326,7 +3326,7 @@ async function linkCoach(code, cc, showError) {
   if (cc.ownerUid === user.uid) return showError('Ese es tu propio código de coach. Mándaselo a tus atletas.');
   if (myCoach && myCoach.coachUid === cc.ownerUid) { go('#/coach'); return; }
   if (myCoach && !await ask(`Ya tienes como coach a ${myCoach.coachName || 'otra persona'}. ¿Cambiar a ${name}?`, 'Cambiar')) return;
-  if (!await ask(`¿Vincular a ${name} como tu coach?\n\n${name} podrá ver todos tus datos: entrenamientos, peso, medidas, nutrición y fotos de progreso. También podrá cambiar tus rutinas, programas y dieta, y crearte nuevos.\n\nPuedes desvincularlo cuando quieras.`, 'Vincular')) return;
+  if (!await ask(`¿Vincular a ${name} como tu coach?\n\n${name} podrá ver todos tus datos: entrenamientos, peso, medidas, nutrición y fotos de progreso. También podrá cambiar tus rutinas, splits y dieta, y crearte nuevos.\n\nPuedes desvincularlo cuando quieras.`, 'Vincular')) return;
   try {
     if (myCoach) await withTimeout(clearCoachLink());
     await withTimeout(cloud.createCoachLink(user.uid, {
@@ -3387,7 +3387,7 @@ function viewStudents() {
         <strong>Sigue a tus atletas en Desdel</strong>
         <ul class="guide-ul">
           <li>Ve sus entrenamientos serie por serie, su progreso, peso, medidas, nutrición y fotos.</li>
-          <li>Cambia sus rutinas, programas y dieta, o créales nuevos: les llegan solos a su app.</li>
+          <li>Cambia sus rutinas, splits y dieta, o créales nuevos: les llegan solos a su app.</li>
           <li>Comenta sus entrenos y recibe su check-in semanal.</li>
           <li>Ve de un vistazo quién entrenó esta semana y quién no.</li>
           <li>Tus atletas se vinculan con tu código de coach y pueden desvincularse cuando quieran.</li>
@@ -3445,7 +3445,7 @@ function viewStudents() {
   return `${header('Mis atletas', { back: true, sub: 'Modo coach' })}
     ${planBarHtml()}
     ${students.length ? '' : codeBox}
-    ${students.length ? '<a class="btn block center" href="#/asignar" style="margin:0 0 12px">Asignar rutina o programa</a>' : ''}
+    ${students.length ? '<a class="btn block center" href="#/asignar" style="margin:0 0 12px">Asignar rutina o split</a>' : ''}
     ${studentsLoaded ? coachAlertsHtml() : ''}
     ${!studentsLoaded ? '<p class="empty">Cargando…</p>' : list || '<p class="empty">Todavía no tienes atletas. Mándales tu código: en Desdel tocan el ícono de mensajes (arriba a la derecha en Inicio) → Tengo coach.</p>'}
     ${students.length ? invite : ''}
@@ -3547,14 +3547,14 @@ function viewMyCoach() {
         ${chats.some(c => c.id === chatId) ? `<a class="btn primary block center" href="#/chat/${chatId}">Escribirle a ${esc(name)}</a>` : ''}
       </section>
       <h2>Lo que hizo tu coach</h2>
-      <section class="card">${log || '<p class="muted" style="margin:0">Cuando tu coach te cambie o cree una rutina o un programa, aparecerá aquí. Los cambios te llegan solos.</p>'}</section>
-      <p class="muted small" style="margin:24px 0 8px">${esc(name)} puede ver tus entrenamientos, peso, medidas, nutrición y fotos de progreso, y cambiar tus rutinas, programas y dieta.</p>
+      <section class="card">${log || '<p class="muted" style="margin:0">Cuando tu coach te cambie o cree una rutina o un split, aparecerá aquí. Los cambios te llegan solos.</p>'}</section>
+      <p class="muted small" style="margin:24px 0 8px">${esc(name)} puede ver tus entrenamientos, peso, medidas, nutrición y fotos de progreso, y cambiar tus rutinas, splits y dieta.</p>
       <button class="btn ghost block danger-text" data-action="coach-unlink">Desvincular coach</button>`;
   }
   return `${header('Tengo coach', { back: true })}
     <section class="card stack">
       <p style="margin:0">Pídele a tu coach su <strong>código de coach</strong> y escríbelo aquí.</p>
-      <p class="muted small" style="margin:0">Tu coach podrá ver todos tus datos (entrenamientos, peso, medidas, nutrición y fotos) y cambiar tus rutinas, programas y dieta. Puedes desvincularlo cuando quieras.</p>
+      <p class="muted small" style="margin:0">Tu coach podrá ver todos tus datos (entrenamientos, peso, medidas, nutrición y fotos) y cambiar tus rutinas, splits y dieta. Puedes desvincularlo cuando quieras.</p>
       <form class="stack" data-form="coach-code" novalidate>
         <div class="add-row">
           <input name="code" placeholder="Código (ej. K7P-9XQ)" autocomplete="off" autocapitalize="characters" maxlength="9" aria-label="Código de coach">
@@ -3826,9 +3826,9 @@ function msgBody(m, mine) {
     case 'workout':
       return `<div class="msg-card"><span class="muted small">💪 Entrenamiento</span><div class="pre">${esc(m.text)}</div></div>`;
     case 'program':
-      return `<div class="msg-card"><span class="muted small">📅 Programa</span><strong>${esc(m.program.name)}</strong>
+      return `<div class="msg-card"><span class="muted small">📅 Split</span><strong>${esc(m.program.name)}</strong>
         <span class="muted small">${plural(payloadDays(m.program), 'día')} por semana${m.program.weeks > 1 ? ` · se repite cada ${m.program.weeks} semanas` : ''}</span>
-        <span class="muted small">${esc(payloadWeekLine(m.program))}</span>${add('Añadir a mis programas')}</div>`;
+        <span class="muted small">${esc(payloadWeekLine(m.program))}</span>${add('Añadir a mis splits')}</div>`;
     case 'pr':
       return `<div class="msg-card"><span class="muted small">🔥 ¡Nuevo PR!</span><div class="pre">${esc(m.text)}</div></div>`;
     default:
@@ -3855,7 +3855,7 @@ function attachPanel() {
       <button class="btn block" data-action="attach-pick" data-kind="diet">🥗 Enviar una dieta</button>
       <button class="btn block" data-action="attach-pick" data-kind="routine">🏋️ Enviar una rutina</button>
       <button class="btn block" data-action="attach-pick" data-kind="workout">💪 Enviar un entrenamiento</button>
-      <button class="btn block" data-action="attach-pick" data-kind="program">📅 Enviar un programa</button>
+      <button class="btn block" data-action="attach-pick" data-kind="program">📅 Enviar un split</button>
       <button class="btn ghost block" data-action="attach-close">Cancelar</button>
     </section>`;
   }
@@ -3866,9 +3866,9 @@ function attachPanel() {
     : attach === 'routine'
       ? db.routines.filter(r => r.exercises.length).map(r => [r.id, r.name || '(sin nombre)', plural(r.exercises.length, 'ejercicio')])
       : db.workouts.slice(-20).reverse().map(w => [w.id, w.routineName, fmtDate(w.date)]);
-  const title = { diet: '¿Qué dieta?', routine: '¿Qué rutina?', workout: '¿Qué entrenamiento?', program: '¿Qué programa?' }[attach];
+  const title = { diet: '¿Qué dieta?', routine: '¿Qué rutina?', workout: '¿Qué entrenamiento?', program: '¿Qué split?' }[attach];
   const none = { diet: 'Todavía no tienes dietas.', routine: 'Todavía no tienes rutinas con ejercicios.', workout: 'Todavía no tienes entrenamientos guardados.',
-    program: 'Todavía no tienes programas. Créalos en Entreno → Programas.' }[attach];
+    program: 'Todavía no tienes splits. Créalos en Entreno → Split.' }[attach];
   return `<section class="card attach">
       <div class="muted small">${title}</div>
       ${items.map(([id, name, sub]) => `<button class="btn block attach-item" data-action="attach-send" data-id="${id}">
@@ -3923,7 +3923,7 @@ function saveMsgEdit(text) {
 }
 
 function shareMsg(kind, id) {   // [mensaje, vista previa] o null si no hay nada que mandar
-  if (kind === 'program') { const p = db.programs.find(x => x.id === id), pr = p && checkSendable(p); return pr ? [{ type: 'program', program: pr }, `📅 Programa: ${pr.name}`] : null; }
+  if (kind === 'program') { const p = db.programs.find(x => x.id === id), pr = p && checkSendable(p); return pr ? [{ type: 'program', program: pr }, `📅 Split: ${pr.name}`] : null; }
   if (kind === 'diet') { const d = dietById(id); return d ? [{ type: 'diet', diet: dietPayload(d) }, `🥗 Dieta: ${d.name}`] : null; }
   if (kind === 'routine') { const r = db.routines.find(x => x.id === id); return r ? [{ type: 'routine', routine: routinePayload(r) }, `🏋️ Rutina: ${r.name}`] : null; }
   const w = db.workouts.find(x => x.id === id); return w ? [{ type: 'workout', text: workoutShareText(w, true) }, `💪 Entrenamiento: ${w.routineName}`] : null;
@@ -4033,7 +4033,7 @@ const msgPreview = m => ({
   routine: () => `🏋️ Rutina: ${m.routine.name}`,
   workout: () => '💪 Entrenamiento',
   pr: () => '🔥 Nuevo PR',
-  program: () => `📅 Programa: ${m.program.name}`,
+  program: () => `📅 Split: ${m.program.name}`,
 }[m.type] || (() => m.text || ''))().slice(0, 120);
 
 // Borra un mensaje tuyo para los dos; si era el último, la lista de chats muestra el anterior
@@ -5590,7 +5590,7 @@ const tourSeen = () => { try { return !!localStorage.getItem(tourKey()); } catch
 function setTourSeen() { try { localStorage.setItem(tourKey(), 'done'); } catch (e) { /* sin almacenamiento */ } }
 const TOUR = [
   { icon: '💪', title: 'Bienvenido a Desdel', text: 'Anota tu entreno y mira si de verdad estás progresando. Gratis y con todo en un solo lugar.' },
-  { icon: '📅', title: 'Rutinas y programas', text: 'Elige un programa listo según los días que tienes y tu nivel, o arma tu propia rutina. Si prefieres, también puedes entrenar sin rutina.' },
+  { icon: '📅', title: 'Rutinas y splits', text: 'Elige un split listo según los días que tienes y tu nivel, o arma tu propia rutina. Si prefieres, también puedes entrenar sin rutina.' },
   { icon: '🏋️', title: 'Entrenar', text: 'Toca Empezar y anota el peso y las repeticiones de cada serie. Te muestra lo que hiciste la vez anterior para que lo superes, y en el descanso te hace preguntas para aprender.' },
   { icon: '📈', title: 'Progreso', text: 'Mira el gráfico de cada ejercicio y tus récords: así sabes si estás subiendo o si te estancaste.' },
   { icon: '🧩', title: 'Todo lo demás', text: 'Peso, medidas, % de grasa y fotos. Dieta, agua y sueño. Y tus gymbros: chat, rutinas compartidas y récords. Todo está en el inicio.' },
@@ -5610,7 +5610,7 @@ function tourHtml() {
       <div class="tour-dots" aria-hidden="true">${TOUR.map((_, k) => `<span class="${k === tourStep ? 'on' : ''}"></span>`).join('')}</div>
       ${last ? `
         <button class="btn primary block" data-action="tour-go" data-to="free">Entrenar sin rutina</button>
-        <button class="btn block" data-action="tour-go" data-to="#/listos">Elegir un programa</button>
+        <button class="btn block" data-action="tour-go" data-to="#/listos">Elegir un split</button>
         <button class="btn ghost block" data-action="tour-close">Explorar la app</button>`
       : `<div class="tour-nav">
           ${tourStep ? '<button class="btn" data-action="tour-prev">‹ Atrás</button>' : '<span></span>'}
@@ -5624,9 +5624,9 @@ function closeTour() { tourOpen = false; setTourSeen(); render(); }
 
 // Consejo la primera vez que entras a una sección (se cierra con ✕ y no vuelve a salir)
 const TIPS = {
-  rutinas: 'Toca una rutina para editarla y Empezar para entrenarla. Si tienes un programa activo, la que te toca hoy aparece marcada.',
+  rutinas: 'Toca una rutina para editarla y Empezar para entrenarla. Si tienes un split activo, la que te toca hoy aparece marcada.',
   entrenar: 'En gris está el peso de la vez anterior y tu objetivo de repeticiones. Si anotas solo el peso o solo las repeticiones, lo otro se completa con lo de la vez anterior. Una serie en la que no anotas nada no se guarda, como si no la hubieras hecho. Al lado de cada serie, un gráfico chico: sube si superaste tu mejor serie, plano si la igualaste, baja si quedaste bajo.',
-  programas: 'Los programas listos traen la semana armada según tus días y nivel. El programa activo es el que te dice qué rutina te toca cada día.',
+  programas: 'Los splits listos traen la semana armada según tus días y nivel. El split activo es el que te dice qué rutina te toca cada día.',
   historial: 'Toca un día del calendario para ver lo que entrenaste. Desde cada entreno lo puedes editar o compartir.',
   progreso: 'Toca un ejercicio para ver su gráfico y tus récords.',
   peso: 'Pésate en ayunas, varias veces por semana: el promedio de la semana dice más que un día suelto.',
@@ -5636,7 +5636,7 @@ const TIPS = {
   nutricion: 'Arma tu dieta con alimentos y cantidades, y marca cada día las comidas que te comiste. Las calorías y proteínas se suman solas.',
   agua: 'Toca los botones para sumar lo que tomas. La meta se calcula con tu peso, y la puedes cambiar.',
   sueno: 'Anota cuántas horas dormiste. Cada mañana, al abrir la app, te lo pregunta.',
-  social: 'Con tus gymbros pueden chatear, mandarse rutinas, dietas y programas, y ver sus récords. Para sumar a otro, toca "Agregar gymbro" y mándale tu link.',
+  social: 'Con tus gymbros pueden chatear, mandarse rutinas, dietas y splits, y ver sus récords. Para sumar a otro, toca "Agregar gymbro" y mándale tu link.',
 };
 function tipsClosed() { try { return JSON.parse(localStorage.getItem(tipsKey())) || []; } catch (e) { return []; } }
 function closeTip(k) { try { localStorage.setItem(tipsKey(), JSON.stringify([...new Set([...tipsClosed(), k])])); } catch (e) { /* sin almacenamiento */ } }
@@ -6399,7 +6399,7 @@ function programPayload(p) {
   const days = p.days.slice(0, p.weeks);
   const ids = [...new Set(days.flatMap(w => w.r).filter(id => id && db.routines.some(r => r.id === id && r.exercises.length)))];
   return {
-    pid: p.id, name: p.name || 'Programa', weeks: days.length,
+    pid: p.id, name: p.name || 'Split', weeks: days.length,
     routines: ids.map(id => routinePayload(db.routines.find(r => r.id === id))),
     days: days.map(w => ({ r: w.r.map(id => { const k = ids.indexOf(id); return k >= 0 ? k : null; }) })),
   };
@@ -6410,10 +6410,10 @@ const payloadDays = pr => ((pr.days[0] || {}).r || []).filter(k => k != null).le
 // Programa recibido (por chat o código): agrega sus rutinas y queda en Mis programas.
 // Si ya tenías una versión anterior, se reemplaza (y si era tu programa activo, sigue activo con los cambios).
 async function useSharedProgram(pr, from) {
-  if (!pr || !Array.isArray(pr.routines) || !Array.isArray(pr.days) || !pr.routines.length) { notice('Este programa no trae rutinas.'); return; }
+  if (!pr || !Array.isArray(pr.routines) || !Array.isArray(pr.days) || !pr.routines.length) { notice('Este split no trae rutinas.'); return; }
   const prev = db.routines.filter(r => r.prog && r.prog === pr.pid);
   if ((prev.length || db.programs.some(p => p.id === pr.pid))
-    && !await ask(`Ya tienes "${pr.name}" en Mis programas. ¿Reemplazarlo por esta versión${from ? ` de ${from}` : ''}?\n\nTu historial se mantiene.`)) return;
+    && !await ask(`Ya tienes "${pr.name}" en Mis splits. ¿Reemplazarlo por esta versión${from ? ` de ${from}` : ''}?\n\nTu historial se mantiene.`)) return;
   const before = { routines: clone(db.routines), plan: db.plan ? clone(db.plan) : null, programs: clone(db.programs) };
   const oldEx = new Map();
   for (const r of prev) for (const ex of r.exercises) oldEx.set(guideKey(ex.name), ex);
@@ -6437,11 +6437,11 @@ async function useSharedProgram(pr, from) {
   const prog = { id: pr.pid, name: pr.name, weeks: days.length || 1, days: days.length ? days : [{ r: Array(7).fill(null) }], ...(from ? { from } : {}) };
   db.programs = db.programs.filter(p => p.id !== pr.pid);
   db.programs.push(prog);
-  planFromProgram(prog);   // si era tu programa activo, tu semana se actualiza
+  planFromProgram(prog);   // si era tu split activo, tu semana se actualiza
   save();
   go('#/miprograma/' + prog.id);
   // Después de cambiar de pantalla (al cambiar de pantalla se esconden los avisos)
-  setTimeout(() => showUndo(prev.length ? `"${pr.name}" actualizado` : `Añadido a Mis programas con ${plural(ids.length, 'rutina')}`, () => {
+  setTimeout(() => showUndo(prev.length ? `"${pr.name}" actualizado` : `Añadido a Mis splits con ${plural(ids.length, 'rutina')}`, () => {
     db.routines = before.routines; db.plan = before.plan; db.programs = before.programs;
     save();
     history.back();
@@ -6450,7 +6450,7 @@ async function useSharedProgram(pr, from) {
 
 // El programa activo ES tu plan: db.plan.prog = id del programa. Lo que cambias en uno se ve en el otro.
 const activeProgram = () => (db.plan && db.plan.prog && db.programs.find(p => p.id === db.plan.prog)) || null;
-const planIsLoose = () => !!(db.plan && !activeProgram() && db.plan.days.some(w => w.r.some(Boolean)));   // plan sin programa guardado
+const planIsLoose = () => !!(db.plan && !activeProgram() && db.plan.days.some(w => w.r.some(Boolean)));   // plan sin split guardado
 const validDays = days => days.map(w => ({ r: w.r.map(id => (id && db.routines.some(r => r.id === id) ? id : null)) }));
 function activateProgram(p) {
   const start = db.plan && db.plan.start ? db.plan.start : dayKeyOf(mondayOf(new Date()));
@@ -6462,7 +6462,7 @@ function planFromProgram(p) {
   db.plan.weeks = p.weeks;
   db.plan.days = validDays(clone(p.days));
 }
-const nextProgramName = () => { let n = db.programs.length + 1; while (db.programs.some(p => sameName(p.name, `Programa ${n}`))) n++; return `Programa ${n}`; };
+const nextProgramName = () => { let n = db.programs.length + 1; while (db.programs.some(p => sameName(p.name, `Split ${n}`))) n++; return `Split ${n}`; };
 // Quien ya tenía su plan armado (antes de existir los programas): se guarda solo como programa activo
 // Una alternativa elegida de la lista (se llama igual que la guía) que quedó separada de tu ejercicio con esa misma
 // técnica ("Prensa de piernas" nuevo, cuando ya tenías "Prensa"): pasa a ser tu ejercicio y sus series se juntan con su historial
@@ -6640,8 +6640,8 @@ function backfillWorkoutGuides() {
 }
 function migrateLoosePlan() {
   if (!planIsLoose()) return;
-  let name = 'Mi programa';
-  for (let n = 2; db.programs.some(x => sameName(x.name, name)); n++) name = `Mi programa ${n}`;
+  let name = 'Mi split';
+  for (let n = 2; db.programs.some(x => sameName(x.name, name)); n++) name = `Mi split ${n}`;
   const p = { id: uid(), name, weeks: db.plan.weeks, days: clone(db.plan.days) };
   db.programs.push(p);
   db.plan.prog = p.id;
@@ -6652,16 +6652,16 @@ function migrateLoosePlan() {
 async function useMyProgram(p) {
   if (!myProgDays(p.days)) { notice('Elige al menos una rutina en algún día.'); return; }
   const act = activeProgram();
-  if (!await ask(`¿Usar "${p.name || 'este programa'}" como tu programa activo?${act ? `\n\nDejarás de usar "${act.name || 'tu programa actual'}" (no se borra, sigue en Mis programas).` : ''}`)) return;
+  if (!await ask(`¿Usar "${p.name || 'este split'}" como tu split activo?${act ? `\n\nDejarás de usar "${act.name || 'tu split actual'}" (no se borra, sigue en Mis splits).` : ''}`)) return;
   const before = db.plan ? clone(db.plan) : null;
   activateProgram(p);
   save(); render();
-  showUndo(`"${p.name || 'Programa'}" es tu programa activo`, () => { db.plan = before; save(); render(); });
+  showUndo(`"${p.name || 'Split'}" es tu split activo`, () => { db.plan = before; save(); render(); });
 }
 
 function checkSendable(p) {
   const pr = programPayload(p);
-  if (!pr.routines.length) { notice('El programa no tiene rutinas con ejercicios. Elige qué rutina va cada día.'); return null; }
+  if (!pr.routines.length) { notice('El split no tiene rutinas con ejercicios. Elige qué rutina va cada día.'); return null; }
   return pr;
 }
 
@@ -6678,14 +6678,14 @@ function viewMyProgram(id) {
       </label>`).join('')}
     </section>`).join('');
   const active = activeProgram() === p;
-  return `${header('Programa', { back: true, sub: `${plural(myProgDays(p.days), 'día')} por semana` })}
+  return `${header('Split', { back: true, sub: `${plural(myProgDays(p.days), 'día')} por semana` })}
     ${active
-      ? `<section class="card active-prog"><strong>Programa activo</strong><span class="muted small">Es el que estás usando: lo que cambies aquí se aplica a tu semana.</span>
+      ? `<section class="card active-prog"><strong>Split activo</strong><span class="muted small">Es el que estás usando: lo que cambies aquí se aplica a tu semana.</span>
           <button class="link small" data-action="myprog-stop" style="justify-self:start">Dejar de usar</button></section>`
-      : '<button class="btn primary block" data-action="myprog-use" style="margin:0 0 14px">Usar este programa</button>'}
+      : '<button class="btn primary block" data-action="myprog-use" style="margin:0 0 14px">Usar este split</button>'}
     ${p.from ? `<p class="muted small" style="margin:0 0 8px">Te lo envió ${esc(p.from)}</p>` : ''}
-    <label class="field"><span>Nombre del programa</span>
-      <input data-bind="myprog-name" value="${esc(p.name)}" placeholder="ej. Programa Juan" autocomplete="off"></label>
+    <label class="field"><span>Nombre del split</span>
+      <input data-bind="myprog-name" value="${esc(p.name)}" placeholder="ej. Split Juan" autocomplete="off"></label>
     <section class="card stack">
       <div class="pace-sentence">
         <span>Se repite cada</span>
@@ -6696,8 +6696,8 @@ function viewMyProgram(id) {
     </section>
     ${db.routines.length ? weeks : '<p class="empty">Primero crea tus rutinas en la pestaña Rutinas; después eliges qué día va cada una.</p>'}
     ${(v => volumeHtml(v.planned, v.missing))(myProgVolume(p))}
-    ${viewing ? '' : `<button class="btn block" data-action="share-program" data-id="${p.id}" style="margin-top:20px">Compartir programa</button>`}
-    <button class="btn ghost block danger-text" data-action="myprog-del" ${viewing ? 'style="margin-top:20px"' : ''}>Eliminar programa</button>`;
+    ${viewing ? '' : `<button class="btn block" data-action="share-program" data-id="${p.id}" style="margin-top:20px">Compartir split</button>`}
+    <button class="btn ghost block danger-text" data-action="myprog-del" ${viewing ? 'style="margin-top:20px"' : ''}>Eliminar split</button>`;
 }
 
 // ---------- Calentamiento ----------
@@ -6792,11 +6792,12 @@ function viewPrograms() {
         <span class="muted small prog-week">${esc(myWeekLine(p)) || 'Sin días todavía'}</span></div>
       <span class="chev">›</span></a>`).join('');
   return `${header('Entreno', {})}${entrenoTabs('programas')}
-    <h2>Mis programas</h2>
-    ${mine || '<p class="muted small" style="margin:0 0 8px">Arma un programa con tus rutinas para usarlo como tu plan o enviárselo a un gymbro.</p>'}
+    <h2>Mis splits</h2>
+    <p class="muted small split-help">Qué rutina toca cada día</p>
+    ${mine || '<p class="muted small" style="margin:0 0 8px">Elige uno listo o arma el tuyo con tus rutinas, para usarlo como tu plan o enviárselo a un gymbro.</p>'}
     <div class="prog-actions">
-      <button class="btn" data-action="myprog-new">+ Crear programa</button>
-      <a class="btn primary" href="#/listos">Programas listos</a>
+      <button class="btn" data-action="myprog-new">+ Crear split</button>
+      <a class="btn primary" href="#/listos">Splits listos</a>
     </div>`;
 }
 
@@ -6804,8 +6805,8 @@ function viewPrograms() {
 function viewReadyPrograms() {
   const list = PROGRAMS.filter(p => !progDays || p.days === progDays);
   const days = [...new Set(PROGRAMS.map(p => p.days))].sort((a, b) => a - b);
-  return `${header('Programas listos', { back: true, sub: 'Hechos por un coach' })}
-    <p class="muted" style="margin:0 0 12px">Elige tu nivel y cuántos días puedes entrenar. Añádelo a Mis programas para usarlo como tu plan, o cámbialo y envíaselo a un atleta.</p>
+  return `${header('Splits listos', { back: true, sub: 'Hechos por un coach' })}
+    <p class="muted" style="margin:0 0 12px">Elige tu nivel y cuántos días puedes entrenar. Añádelo a Mis splits para usarlo como tu plan, o cámbialo y envíaselo a un atleta.</p>
     ${levelToggle()}
     <div class="skin-views">${[0, ...days].map(n => `<button class="chip toggle ${n === progDays ? 'on' : ''}" data-action="prog-days" data-n="${n}">${n ? `${n} días` : 'Todos'}</button>`).join('')}</div>
     ${list.map(p => `<a class="card prog-item" href="#/programa/${p.id}">
@@ -6833,13 +6834,13 @@ function viewProgram(id) {
     <p class="muted" style="margin:0 0 12px">${esc(p.desc)}</p>
     ${levelToggle()}
     ${week}
-    <button class="btn primary block" data-action="prog-add" style="margin:0 0 16px">Añadir a mis programas</button>
+    <button class="btn primary block" data-action="prog-add" style="margin:0 0 16px">Añadir a mis splits</button>
     ${(() => { const planned = new Map();
       for (const k of lv.week) if (k) for (const [gid, sets] of lv.routines[k].ex) addTo(planned, GUIDE_BY_ID.get(gid).zone, sets);
       return volumeHtml(planned); })()}
     ${routines}
     <p class="muted small">Queda en Mis programas: desde ahí lo usas como tu plan, o lo cambias y se lo envías a un atleta. Cada ejercicio trae sus series, repeticiones, RIR, descanso y guía de técnica.</p>
-    <button class="btn primary block" data-action="prog-add">Añadir a mis programas</button>`;
+    <button class="btn primary block" data-action="prog-add">Añadir a mis splits</button>`;
 }
 
 // Copia una rutina del programa a tus rutinas (si ya hiciste ese ejercicio, se usa el tuyo para mantener tu historial)
@@ -6888,10 +6889,10 @@ function addReadyProgram(p) {
     const act = activeProgram();
     if (await ask(`¿Empezar a usar "${name}" ahora?
 
-Dejarás de usar "${(act && act.name) || 'tu programa actual'}" (no se borra, sigue en Mis programas).`, 'Usar este')) {
+Dejarás de usar "${(act && act.name) || 'tu split actual'}" (no se borra, sigue en Mis splits).`, 'Usar este')) {
       activateProgram(prog); save(); render();
-      showUndo(`"${name}" es tu programa activo`, undo);
-    } else showUndo(`Añadido a Mis programas con ${plural(keys.length, 'rutina')}`, undo);
+      showUndo(`"${name}" es tu split activo`, undo);
+    } else showUndo(`Añadido a Mis splits con ${plural(keys.length, 'rutina')}`, undo);
   }, 100);
 }
 
@@ -8186,7 +8187,7 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       break;
     }
     case 'myprog-stop':
-      if (!await ask('¿Dejar de usar este programa? No se borra; sigue en Mis programas. Mientras no tengas uno activo, la app no te dirá qué te toca cada día.')) return;
+      if (!await ask('¿Dejar de usar este split? No se borra; sigue en Mis splits. Mientras no tengas uno activo, la app no te dirá qué te toca cada día.')) return;
       db.plan = null;
       save(); render();
       break;
@@ -8197,9 +8198,9 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
     }
     case 'myprog-del': {
       const p = db.programs.find(x => x.id === routeParts()[1]);
-      if (!p || !await ask(`¿Eliminar el programa "${p.name || '(sin nombre)'}"? Tus rutinas y tu plan no se borran.`)) return;
+      if (!p || !await ask(`¿Eliminar el split "${p.name || '(sin nombre)'}"? Tus rutinas y tu plan no se borran.`)) return;
       db.programs = db.programs.filter(x => x !== p);
-      if (db.plan && db.plan.prog === p.id) delete db.plan.prog;   // tu plan sigue igual, pero ya no es de un programa
+      if (db.plan && db.plan.prog === p.id) delete db.plan.prog;   // tu plan sigue igual, pero ya no es de un split
       save();
       location.replace('#/programas');
       break;

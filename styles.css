@@ -1294,3 +1294,6 @@ button.wk-day { font-family: inherit; border: 0; cursor: pointer; padding: 0; }
 
 /* Mirando a un atleta: sin "¿Vas a entrenar ahora?" (no puedes entrenar por él) */
 body.viewing .free-start { display: none; }
+
+/* Split: la ayuda debajo de "Mis splits" */
+.split-help { margin: -6px 0 10px; }
