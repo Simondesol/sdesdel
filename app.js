@@ -1559,7 +1559,7 @@ const repsByBlock = (ex, i) => (ex.goalSets && ex.rir
 const INFO = {
   rm: '1RM = el peso máximo que podrías levantar 1 vez. Desdel lo estima con tu 1ª serie (peso y repeticiones), así ves si te estás haciendo más fuerte aunque cambies las repeticiones.',
   rir: 'RIR = repeticiones en reserva: cuántas más podrías haber hecho con buena técnica. RIR 2 es que te quedaban 2; RIR 0, que no podías hacer otra. No es lo mismo que el fallo: al fallo intentas otra repetición y no la completas.',
-  opts: 'RIR: al entrenar anotas cuántas repeticiones te quedaban en cada serie (y puedes ponerle un RIR objetivo). Peso corporal: para dominadas, fondos y similares; lo que anotas es el lastre. Unilateral: anotas las repeticiones de cada lado. Calentamiento: al entrenar, arriba de tus series aparecen las series de aproximación con su peso, calculadas desde tu primera serie: el primer ejercicio de cada músculo lleva calentamiento completo y, si el músculo ya trabajó antes en la rutina, una sola aproximación. En dominadas y fondos con lastre, primero sin lastre y después con la mitad. Apágalo en los ejercicios donde no lo quieras.',
+  opts: 'RIR: al entrenar anotas cuántas repeticiones te quedaban en cada serie (y puedes ponerle un RIR objetivo). Peso corporal: para dominadas, fondos y similares; lo que anotas es el lastre. Unilateral: anotas las repeticiones de cada lado. Calentamiento: al entrenar, arriba de tus series aparecen las series de aproximación con su peso, calculadas desde tu primera serie: el primer ejercicio de cada músculo lleva calentamiento completo y, si el músculo ya trabajó antes en la rutina, una sola aproximación. Si tu primera serie es pesada (1 a 5 repeticiones) lleva una aproximación más y más cerca del peso; si es larga (11 o más), una menos. En dominadas y fondos con lastre, primero sin lastre y después con la mitad. Apágalo en los ejercicios donde no lo quieras.',
 };
 const infoOpen = new Set();
 const infoBtn = k => `<button class="info-btn ${infoOpen.has(k) ? 'on' : ''}" data-action="info" data-k="${k}" aria-label="¿Qué es?" aria-expanded="${infoOpen.has(k)}">ⓘ</button>`;
@@ -6690,8 +6690,12 @@ function viewMyProgram(id) {
 // Series de aproximación antes de la primera serie efectiva. Solo se muestran: no se anotan, no se guardan ni cuentan.
 // Automático: completo en el primer ejercicio de cada músculo en la rutina (mientras más peso, más series); si ese
 // músculo ya trabajó antes, una sola aproximación. Dominadas, fondos…: con lastre, primero sin lastre y después la mitad.
-// ex.warm: 'never' = apagado (sin = automático)
+// Según las repeticiones de tu 1.ª serie: pesada (1 a 5) lleva una aproximación más y llega más cerca, con menos
+// repeticiones; larga (11 o más) lleva una menos y llega solo al 80%. ex.warm: 'never' = apagado (sin = automático)
 const WARM_SCHEMES = [[], [[0.6, 8]], [[0.5, 8], [0.75, 4]], [[0.5, 8], [0.7, 5], [0.85, 2]], [[0.4, 8], [0.6, 5], [0.75, 3], [0.9, 1]]];
+const WARM_HEAVY = [[], [[0.6, 5], [0.85, 2]], [[0.5, 5], [0.75, 3], [0.9, 1]], [[0.45, 5], [0.65, 3], [0.8, 2], [0.92, 1]],
+  [[0.42, 5], [0.58, 3], [0.71, 2], [0.83, 1], [0.92, 1]]];
+const WARM_LONG = [[], [[0.6, 8]], [[0.6, 8]], [[0.5, 8], [0.75, 4]], [[0.5, 8], [0.67, 5], [0.8, 3]]];
 function warmupFor(d, i) {
   const ex = d.exercises[i];
   const bw = lastreEx(ex);   // lo anotado es el lastre (con placas es una máquina asistida: sin calentamiento)
@@ -6700,11 +6704,13 @@ function warmupFor(d, i) {
   const W = Number.isFinite(num(s0.w)) && num(s0.w) > 0 ? num(s0.w) : num(s0.pw);   // lo que anotaste, o lo de la vez pasada
   if (!(W > 0)) return [];
   const plates = ex.unit === 'placas', kg = ex.unit === 'lb' ? W / 2.2 : W;
+  // Repeticiones de tu 1.ª serie: las que anotaste, las de la vez pasada o las del objetivo (sin nada: 8)
+  const reps = [s0.r, s0.pr, (String(repsFor(ex, 0)).match(/\d+/) || [])[0]].map(num).find(x => x > 0) || 8;
   const zone = zoneOf(ex);
   const warmed = !!zone && d.exercises.slice(0, i).some(e => zoneOf(e) === zone);
   const scheme = bw ? (warmed ? [[0, 4]] : kg >= 30 ? [[0, 5], [0.5, 3], [0.75, 2]] : [[0, 5], [0.5, 3]])
     : warmed ? [[0.7, 4]]
-    : WARM_SCHEMES[plates ? (W <= 3 ? 1 : W <= 8 ? 2 : 3) : kg < 15 ? 1 : kg < 50 ? 2 : kg < 100 ? 3 : 4];
+    : (reps <= 5 ? WARM_HEAVY : reps >= 11 ? WARM_LONG : WARM_SCHEMES)[plates ? (W <= 3 ? 1 : W <= 8 ? 2 : 3) : kg < 15 ? 1 : kg < 50 ? 2 : kg < 100 ? 3 : 4];
   const step = plates ? 1 : ex.unit === 'lb' ? 5 : 2.5;
   const out = [];
   for (const [pct, r] of scheme) {
@@ -9006,7 +9012,7 @@ $app.addEventListener('input', e => {
     ex.sets[j][bind] = el.value;
     const cell = $app.querySelector(`[data-mark="${i}-${j}"]`);
     if (cell && !d.deload) cell.innerHTML = markSpan(liveCmp(ex.sets[j], ex, bestSets(ex.exerciseId, beforeIndex(d), ex.unit, ex.extra ? null : d.routineId)[j]));
-    const wl = bind === 'w' && j === 0 && $app.querySelector(`[data-warm="${i}"]`);
+    const wl = (bind === 'w' || bind === 'r') && j === 0 && $app.querySelector(`[data-warm="${i}"]`);
     if (wl) wl.innerHTML = warmLine(d, i);
   }
   else if (bind === 'dw' || bind === 'dr') {
