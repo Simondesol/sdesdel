@@ -1881,7 +1881,10 @@ function viewWorkout() {
         <div class="muted">${fmtDate(w.date)}${w.routineName ? ` · ${esc(w.routineName)}` : ''}</div>
         ${setsChips(pex)}
       </div>`).join('')
-      + (all.length > n ? `<button class="btn ghost block hist-more" data-action="hist-more" data-id="${esc(ex.exerciseId)}">Ver más (${all.length - n} ${all.length - n === 1 ? 'entreno' : 'entrenos'} más)</button>` : '');
+      + (all.length > n || n > HIST_FIRST ? `<div class="hist-btns">
+        ${all.length > n ? `<button class="btn ghost hist-more" data-action="hist-more" data-id="${esc(ex.exerciseId)}">Ver más (${all.length - n})</button>` : ''}
+        ${n > HIST_FIRST ? `<button class="btn ghost hist-less" data-action="hist-less" data-id="${esc(ex.exerciseId)}">Ver menos</button>` : ''}
+      </div>` : '');
   };
   // pre: letra del ejercicio en un superset ("A "), para saber de cuál es cada descanso
   const restBtn = (i, pre = '') => (!editing && d.exercises[i].rest
@@ -8103,11 +8106,15 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       histShown.set(id, (histShown.get(id) || HIST_FIRST) + 10);
       render();
       break;
+    case 'hist-less':   // vuelve a los últimos 5
+      histShown.delete(id);
+      render();
+      break;
     case 'toggle-history': {
       // En un superset se abren o cierran los historiales de todos sus ejercicios
       const d = cur(), ids = (el.dataset.group ? groupsOf(d).find(g => g.includes(i)) : [i]).map(k => d.exercises[k].exerciseId);
       const open = ids.some(x => openHistory.has(x));
-      ids.forEach(x => (open ? openHistory.delete(x) : openHistory.add(x)));
+      ids.forEach(x => { if (open) { openHistory.delete(x); histShown.delete(x); } else openHistory.add(x); });   // al cerrarlo, la próxima vez parte en 5
       render();
       break;
     }
