@@ -1297,3 +1297,18 @@ body.viewing .free-start { display: none; }
 
 /* Split: la ayuda debajo de "Mis splits" */
 .split-help { margin: -6px 0 10px; }
+
+/* Estadísticas de Desdel (solo Simón) */
+.stats-link { display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--text); }
+.stats-link .grow { display: grid; gap: 2px; }
+.stats-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.stats-grid .stat { padding: 10px; }
+.sbars { display: grid; grid-template-columns: repeat(30, minmax(0, 1fr)); align-items: end; gap: 2px; height: 150px; }
+.sbar { position: relative; display: grid; grid-template-rows: 1fr auto; height: 100%; align-items: end; }
+.sbar i { display: block; width: 100%; min-height: 2px; background: var(--accent); border-radius: 3px 3px 0 0; align-self: end; }
+.sbar-d { height: 14px; font-size: 10px; color: var(--muted); text-align: center; white-space: nowrap; overflow: visible; }
+.stats-card { padding: 4px 12px; overflow-x: auto; }
+.stats-table { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
+.stats-table th { padding: 8px 4px; color: var(--muted); font-weight: 600; font-size: 12px; text-align: right; }
+.stats-table td { padding: 8px 4px; border-top: 1px solid var(--border); text-align: right; }
+.stats-table th:first-child, .stats-table td:first-child { text-align: left; }

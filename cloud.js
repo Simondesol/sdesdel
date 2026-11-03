@@ -245,6 +245,8 @@ export function listenPlan(uid, cb, onError = () => {}) {
 export const coachSync = () => httpsCallable(fns, 'coachSync')().then(r => r.data);
 // Link de pago de Mercado Pago para un plan ('coach' | 'pro') y período ('mes' | 'anual')
 export const mpCheckout = (plan, period) => httpsCallable(fns, 'mpCheckout')({ plan, period }).then(r => r.data);
+// Estadísticas de Desdel (solo la cuenta de Simón). probe: solo pregunta si esta cuenta puede verlas
+export const adminStats = (probe = false) => httpsCallable(fns, 'adminStats')(probe ? { probe: true } : {}).then(r => r.data);
 export const putCoachEdit = (uid, id, data) => setDoc(doc(editsRef(uid), id), data);
 export const deleteCoachEdit = (uid, id) => deleteDoc(doc(editsRef(uid), id));
 export async function listCoachEdits(uid) {

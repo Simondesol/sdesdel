@@ -2175,6 +2175,10 @@ function viewAccount() {
       ${coachOn() ? '<a class="btn block center" href="#/alumnos" style="margin-top:0">Mis atletas</a>' : ''}
     </section>
 
+    ${(probeAdmin(), localStorage.getItem(adminKey()) === '1') ? `<h2>Desdel</h2>
+    <a class="card prog-row stats-link" href="#/estadisticas"><span class="grow"><strong>Estadísticas</strong>
+      <span class="muted small">Usuarios, quién entrena y cuántos entrenos. Solo tú ves esto.</span></span><span class="chev">›</span></a>` : ''}
+
     <h2>Tus datos</h2>
     <section class="card stack">
       <p class="muted" style="margin:0">Descarga tu historial en un archivo que se abre en Excel o Google Sheets.</p>
@@ -2539,6 +2543,59 @@ function workoutShareText(w, forChat = false) {
   return forChat ? text : `${text}\n\nDesdel · ${location.origin}${location.pathname}`;
 }
 
+// ---------- Estadísticas de Desdel (solo para la cuenta de Simón; las calcula el servidor) ----------
+const adminKey = () => `desdel-admin-${user.uid}`;   // '1' = puede verlas; '0:<ms>' = no (se vuelve a preguntar en 7 días)
+let adminProbing = false;
+function probeAdmin() {
+  const v = localStorage.getItem(adminKey());
+  if (v === '1' || adminProbing || viewing || (v && Date.now() - +v.slice(2) < 7 * 864e5)) return;
+  adminProbing = true;
+  cloud.adminStats(true).then(() => { localStorage.setItem(adminKey(), '1'); refresh(); },
+    e => { if (/permission-denied$/.test(e.code || '')) localStorage.setItem(adminKey(), `0:${Date.now()}`); })
+    .finally(() => { adminProbing = false; });
+}
+let stats = { data: null, busy: false, error: '' };
+function loadStats() {
+  stats = { ...stats, busy: true, error: '' };
+  cloud.adminStats().then(d => { stats = { data: d, busy: false, error: '' }; refresh(); }, e => {
+    const c = e.code || '';
+    stats = { ...stats, busy: false, error: /permission-denied$/.test(c) ? 'Esta pantalla es solo para el administrador de Desdel.'
+      : /unavailable|network/.test(c) || !navigator.onLine ? 'Se necesita internet para ver las estadísticas.' : 'No se pudieron cargar. Intenta de nuevo en un rato.' };
+    refresh();
+  });
+}
+function viewStats() {
+  if (!stats.data && !stats.busy && !stats.error) loadStats();
+  const s = stats.data;
+  const head = header('Estadísticas', { back: true, sub: s ? `Actualizado a las ${hhmm(s.at)}` : 'Solo tú ves esta pantalla' });
+  if (!s) {
+    return `${head}<p class="empty">${stats.error ? esc(stats.error) : 'Cargando…'}</p>
+      ${stats.error ? '<button class="btn block" data-action="stats-reload">Reintentar</button>' : ''}`;
+  }
+  const t = s.totals, tile = (n, label) => `<div class="stat"><span class="muted">${label}</span><strong>${n}</strong></div>`;
+  const max = Math.max(1, ...s.days.map(d => d.entrenaron)), last = s.days.length - 1;
+  const bars = s.days.map((d, k) => `<div class="sbar" title="${fmtDMY(d.key)}: ${plural(d.entrenaron, 'persona')}">
+      <i style="height:${(d.entrenaron / max) * 100}%"></i>
+      <span class="sbar-d">${k === last ? 'Hoy' : (last - k) % 7 === 0 ? +d.key.slice(8) : ''}</span></div>`).join('');
+  const avg = s.days.reduce((a, d) => a + d.entrenaron, 0) / s.days.length;
+  const monthName = k => { const x = new Date(`${k}-15T12:00:00`).toLocaleDateString('es', { month: 'short', year: 'numeric' }).replace('.', ''); return x[0].toUpperCase() + x.slice(1); };
+  const weekName = k => new Date(`${k}T12:00:00`).toLocaleDateString('es', { day: 'numeric', month: 'short' });
+  const table = (rows, label, name) => `<table class="stats-table"><thead><tr><th>${label}</th><th>Nuevos</th><th>Entrenaron</th><th>Entrenos</th></tr></thead>
+      <tbody>${rows.slice().reverse().map(r => `<tr><td>${name(r.key)}</td><td>${r.nuevos}</td><td>${r.entrenaron}</td><td>${r.entrenos}</td></tr>`).join('')}</tbody></table>`;
+  return `${head}
+    <div class="stats stats-grid">${tile(t.usuarios, 'Usuarios')}${tile(t.activos7, 'Activos 7 días')}${tile(t.activos30, 'Activos 30 días')}
+      ${tile(t.entrenaronAlgunaVez, 'Han entrenado')}${tile(t.entrenos, 'Entrenos')}${tile(t.atletas, 'Con coach')}</div>
+    <h2>Personas que entrenaron · 30 días</h2>
+    <section class="card"><div class="sbars">${bars}</div>
+      <p class="muted small" style="margin:8px 0 0">Hoy: ${plural(s.days[last].entrenaron, 'persona')} · Promedio: ${fmtNum(round1(avg))} por día</p></section>
+    <h2>Por mes</h2>
+    <section class="card stats-card">${table(s.months, 'Mes', monthName)}</section>
+    <h2>Por semana</h2>
+    <section class="card stats-card">${table(s.weeks, 'Semana del', weekName)}</section>
+    <p class="muted small">Nuevos: cuentas creadas. Entrenaron: personas que guardaron al menos un entreno. Activos: abrieron Desdel con su sesión.</p>
+    <button class="btn block" data-action="stats-reload">Actualizar</button>`;
+}
+
 // ---------- Descargar tus datos ----------
 const csvCell = v => { const t = v == null ? '' : typeof v === 'number' ? String(v).replace('.', ',') : String(v);
   return /[;"\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
@@ -2622,7 +2679,7 @@ const coachInviteText = code => `Vincúlate conmigo como tu coach en Desdel 💪
 
 // Pantallas que se pueden mirar de un atleta; las de VIEW_EXIT te devuelven a tus datos
 const VIEW_OK = ['', 'chat', 'rutinas', 'rutina', 'programas', 'miprograma', 'listos', 'programa', 'dieta', 'objetivo', 'historial', 'sesion', 'progreso', 'ejercicio', 'peso', 'grasa', 'medidas', 'fotos', 'nutricion', 'sueno', 'agua'];
-const VIEW_EXIT = ['social', 'gymbro', 'perfil', 'privacidad', 'cuenta', 'alumnos', 'coach', 'asignar'];
+const VIEW_EXIT = ['social', 'gymbro', 'perfil', 'privacidad', 'cuenta', 'alumnos', 'coach', 'asignar', 'estadisticas'];
 // Lo que se puede tocar mirando a un atleta, y lo extra en el editor de rutinas
 const VIEW_SAFE = new Set(['back', 'view-exit', 'vid-toggle', 'info', 'toggle-sec', 'range', 'toggle-history', 'hist-month', 'hist-day', 'skin-view', 'measure-view',
   'prog-open', 'prog-close', 'prog-filter', 'prog-retry', 'week-sum', 'week-day', 'guide-view', 'guide-close', 'explore-zone', 'explore-open', 'explore-back', 'explore-close', 'go-ex', 'prev-ex', 'next-ex', 'prog-rid', 'thumb-play']);
@@ -5908,6 +5965,7 @@ function render() {
     case 'sesion': html = viewSession(arg); break;
     case 'ejercicio': html = viewExercise(decodeURIComponent(arg)); break;
     case 'cuenta': html = viewAccount(); break;
+    case 'estadisticas': html = viewStats(); break;
     case 'agua': html = viewWater(); break;
     case 'rutinas': html = viewHome(); tab = 'rutinas'; break;
     case 'peso': html = viewBodyweight(); break;
@@ -5976,7 +6034,7 @@ function render() {
     nutricion: 'nutricion', alimento: 'nutricion', dieta: 'nutricion', objetivo: 'nutricion',
     peso: 'cuerpo', grasa: 'cuerpo', pliegues: 'cuerpo', medidas: 'cuerpo', fotos: 'cuerpo',
     social: 'inicio', gymbro: 'inicio', alumnos: 'inicio', coach: 'inicio', asignar: 'inicio', planes: 'inicio',
-    perfil: arg === 'yo' ? 'perfil' : 'inicio', privacidad: 'perfil', cuenta: 'perfil',
+    perfil: arg === 'yo' ? 'perfil' : 'inicio', privacidad: 'perfil', cuenta: 'perfil', estadisticas: 'perfil',
   };
   tab = ['entrenar', 'editar', 'chat'].includes(screen) ? null : NAV[screen] || 'inicio';
   $tabs.hidden = !tab;
@@ -8689,6 +8747,10 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
     case 'deload-no':
       db.body.deloadAsk = dayKeyOf(new Date(Date.now() + 14 * 864e5));
       save(); render();
+      break;
+    case 'stats-reload':
+      stats = { data: stats.data, busy: false, error: '' };
+      loadStats(); render();
       break;
     case 'export-workouts':
       exportWorkouts();
