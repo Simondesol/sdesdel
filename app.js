@@ -2584,12 +2584,58 @@ function viewStats() {
   const weekName = k => new Date(`${k}T12:00:00`).toLocaleDateString('es', { day: 'numeric', month: 'short' });
   const table = (rows, label, name) => `<table class="stats-table"><thead><tr><th>${label}</th><th>Nuevos</th><th>Entrenaron</th><th>Entrenos</th></tr></thead>
       <tbody>${rows.slice().reverse().map(r => `<tr><td>${name(r.key)}</td><td>${r.nuevos}</td><td>${r.entrenaron}</td><td>${r.entrenos}</td></tr>`).join('')}</tbody></table>`;
+  // Cuántos vuelven, cuándo entrenan, qué usan y cómo crece (si el servidor ya lo manda)
+  const pct = x => (x && x.base ? Math.round((x.hit / x.base) * 100) : null);
+  const ret = (label, x, sub) => `<div class="ret-row"><span class="grow"><strong>${label}</strong>
+      <span class="muted small">${x && x.base ? `${x.hit} de ${x.base}${sub ? ` ${sub}` : ''}` : 'Todavía no hay suficientes usuarios'}</span></span>
+      <span class="ret-pct">${pct(x) == null ? '–' : `${pct(x)}%`}</span></div>`;
+  const r = s.retention, nv = s.never;
+  const retention = r ? `<h2>Cuántos vuelven</h2>
+    <section class="card">
+      ${ret('Entrenaron su 1.ª semana', r.semana1, 'de los que llevan 7 días o más')}
+      ${ret('Volvieron la 2.ª semana', r.semana2, 'de los que llevan 14 días o más')}
+      ${ret('Siguen al mes (5.ª semana)', r.semana5, 'de los que llevan 35 días o más')}
+      ${ret('Entrenaron los últimos 30 días', r.siguen, 'de los que llevan más de un mes')}
+      ${nv ? `<p class="muted small" style="margin:10px 0 2px">${nv.total ? `${plural(nv.total, 'cuenta')} nunca ${nv.total === 1 ? 'ha' : 'han'} guardado un entreno${nv.semana ? ` (${nv.semana} ${nv.semana === 1 ? 'se creó' : 'se crearon'} esta semana)` : ''}.` : 'Todas las cuentas han guardado al menos un entreno.'}</p>` : ''}
+    </section>` : '';
+  const hbars = (rows, max) => rows.map(([label, n]) => `<div class="hrow"><span>${label}</span><span class="htrack"><i style="width:${max ? (n / max) * 100 : 0}%"></i></span><span class="hn">${n}</span></div>`).join('');
+  const DAY_NAMES_FULL = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo'];
+  const wn = s.when, slotName = ([a, b]) => `${a}:00 y las ${b === 24 ? '0' : b}:00`;
+  const when = wn ? (() => {
+    const tw = wn.weekdays.reduce((a, b) => a + b, 0), wmax = Math.max(...wn.weekdays), hmax = Math.max(...wn.hours);
+    if (!tw) return '<h2>Cuándo entrenan</h2><section class="card"><p class="muted small" style="margin:0">Todavía no hay entrenos en los últimos 90 días.</p></section>';
+    const topDay = DAY_NAMES_FULL[wn.weekdays.indexOf(wmax)], topSlot = wn.slots[wn.hours.indexOf(hmax)];
+    return `<h2>Cuándo entrenan · ${wn.days} días</h2>
+    <section class="card">
+      <p style="margin:0 0 10px">Más entrenos el <strong>${topDay}</strong>, entre las <strong>${slotName(topSlot)}</strong>.</p>
+      <span class="muted small">Día de la semana</span>
+      ${hbars(wn.weekdays.map((n, k) => [DAY_NAMES_FULL[k][0].toUpperCase() + DAY_NAMES_FULL[k].slice(1, 3), n]), wmax)}
+      <span class="muted small" style="display:block;margin-top:10px">Hora (Chile)</span>
+      ${hbars(wn.slots.map((sl, k) => [`${sl[0]}–${sl[1] === 24 ? 24 : sl[1]} h`, wn.hours[k]]), hmax)}
+    </section>`;
+  })() : '';
+  const u = s.usage, ofAll = n => (t.usuarios ? Math.round((n / t.usuarios) * 100) : 0);
+  const usage = u ? `<h2>Qué usan</h2>
+    <section class="card">
+      ${hbars([['Dieta', u.dieta], ['Split activo', u.split], ['Chat', u.gymbros], ['Fotos', u.fotos], ['Coach', u.coaches]], t.usuarios)}
+      <p class="muted small" style="margin:8px 0 0">De ${plural(t.usuarios, 'usuario')}: dieta ${ofAll(u.dieta)}% · split ${ofAll(u.split)}% · chat ${ofAll(u.gymbros)}% · fotos ${ofAll(u.fotos)}%.
+        Chat: tienen al menos un gymbro o su coach. Coach: tienen al menos un atleta.</p>
+    </section>` : '';
+  const gmax = Math.max(1, ...s.months.map(m => m.total || 0));
+  const growth = s.months[0] && s.months[0].total != null ? `<h2>Crecimiento</h2>
+    <section class="card"><div class="gbars">${s.months.map(m => `<div class="gbar"><span class="gbar-n">${m.total}</span>
+        <i style="height:${(m.total / gmax) * 100}%"></i><span class="gbar-d">${monthName(m.key).slice(0, 3)}</span></div>`).join('')}</div>
+      <p class="muted small" style="margin:8px 0 0">Total de usuarios al final de cada mes${s.months.length > 1 ? ` · este mes +${s.months.at(-1).nuevos}` : ''}.</p></section>` : '';
   return `${head}
     <div class="stats stats-grid">${tile(t.usuarios, 'Usuarios')}${tile(t.activos7, 'Activos 7 días')}${tile(t.activos30, 'Activos 30 días')}
       ${tile(t.entrenaronAlgunaVez, 'Han entrenado')}${tile(t.entrenos, 'Entrenos')}${tile(t.atletas, 'Con coach')}</div>
     <h2>Personas que entrenaron · 30 días</h2>
     <section class="card"><div class="sbars">${bars}</div>
       <p class="muted small" style="margin:8px 0 0">Hoy: ${plural(s.days[last].entrenaron, 'persona')} · Promedio: ${fmtNum(round1(avg))} por día</p></section>
+    ${retention}
+    ${when}
+    ${usage}
+    ${growth}
     <h2>Por mes</h2>
     <section class="card stats-card">${table(s.months, 'Mes', monthName)}</section>
     <h2>Por semana</h2>
