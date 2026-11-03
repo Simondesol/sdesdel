@@ -1299,8 +1299,6 @@ body.viewing .free-start { display: none; }
 .split-help { margin: -6px 0 10px; }
 
 /* Estadísticas de Desdel (solo Simón) */
-.stats-link { display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--text); }
-.stats-link .grow { display: grid; gap: 2px; }
 .stats-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .stats-grid .stat { padding: 10px; }
 .sbars { display: grid; grid-template-columns: repeat(30, minmax(0, 1fr)); align-items: end; gap: 2px; height: 150px; }

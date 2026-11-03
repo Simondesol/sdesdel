@@ -2175,9 +2175,11 @@ function viewAccount() {
       ${coachOn() ? '<a class="btn block center" href="#/alumnos" style="margin-top:0">Mis atletas</a>' : ''}
     </section>
 
-    ${(probeAdmin(), localStorage.getItem(adminKey()) === '1') ? `<h2>Desdel</h2>
-    <a class="card prog-row stats-link" href="#/estadisticas"><span class="grow"><strong>Estadísticas</strong>
-      <span class="muted small">Usuarios, quién entrena y cuántos entrenos. Solo tú ves esto.</span></span><span class="chev">›</span></a>` : ''}
+    ${(probeAdmin(), localStorage.getItem(adminKey()) === '1') ? `<h2>Estadísticas de Desdel</h2>
+    <section class="card stack">
+      <p class="muted" style="margin:0">Usuarios, quién entrena y cuántos entrenos. Solo tú ves esto.</p>
+      <a class="btn block center stats-link" href="#/estadisticas" style="margin-top:0">Ver estadísticas</a>
+    </section>` : ''}
 
     <h2>Tus datos</h2>
     <section class="card stack">
