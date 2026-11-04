@@ -2828,7 +2828,7 @@ function coachSummary() {
     last: last ? { date: last.date, name: last.routineName || '' } : null,
     week: wk.done, planned: wk.planned ?? null,
     month: db.workouts.filter(w => Date.parse(w.date) >= since).length,
-    kg: bw ? bw.kg : null, kgDate: bw ? bw.date : null,
+    kg: bw ? bw.kg : null, kgDate: bw ? bw.date : null, kgN: db.bodyweight.length,
     log: coachLog,
     lastCheckin: lastCheckin || lastCheckinAt() || null,
   };
@@ -3558,18 +3558,25 @@ function viewStudents() {
 }
 
 // Arriba de Mis atletas: los que se están desconectando, para escribirles sin revisar uno por uno
+// "Ya le escribí": ese atleta sale del cuadro por 7 días (en este teléfono); si sigue igual, vuelve a aparecer
+const ALERT_PAUSE = 7 * 864e5;
+const alertOkKey = () => `desdel-aviso-ok-${user.uid}`;
+const alertOk = () => { try { return JSON.parse(localStorage.getItem(alertOkKey())) || {}; } catch (e) { return {}; } };
 function coachAlertsHtml() {
-  const rows = students.filter(canSeeStudent).map(l => {
+  const ok = alertOk();
+  const rows = students.filter(canSeeStudent).filter(l => !(Date.now() - (ok[l.studentUid] || 0) < ALERT_PAUSE)).map(l => {
     const sm = l.summary || {}, why = [];
     if (sm.last) { const d = daysSince(sm.last.date); if (d >= 6) why.push(`no entrena hace ${d} días`); }
     else if (l.since && daysSince(new Date(l.since).toISOString()) >= 3) why.push('todavía no anota entrenos');
-    if (sm.kgDate) { const wk = Math.floor(daysSince(sm.kgDate) / 7); if (wk >= 2) why.push(`no anota su peso hace ${wk} semanas`); }
+    // Peso: solo si se pesaba seguido (3 veces o más) y dejó de hacerlo
+    if (sm.kgDate && (sm.kgN || 0) >= 3) { const wk = Math.floor(daysSince(sm.kgDate) / 7); if (wk >= 2) why.push(`no anota su peso hace ${wk} semanas`); }
     if (!why.length) return '';
     const name = esc(l.studentName || 'Atleta'), chatId = [user.uid, l.studentUid].sort().join('_');
-    const text = `<span class="grow"><strong>${name}</strong><span class="muted small">${why.join(' · ')}</span></span><span class="chev">›</span>`;
-    return chats.some(c => c.id === chatId)
-      ? `<a class="coach-alert-row" href="#/chat/${chatId}" aria-label="Escribirle a ${name}">${text}</a>`
-      : `<button class="coach-alert-row" data-action="student-view" data-uid="${esc(l.studentUid)}">${text}</button>`;
+    const text = `<span class="grow"><strong>${name}</strong><span class="muted small">${why.join(' · ')}</span></span>`;
+    const go = chats.some(c => c.id === chatId)
+      ? `<a class="coach-alert-go" href="#/chat/${chatId}" aria-label="Escribirle a ${name}">${text}</a>`
+      : `<button class="coach-alert-go" data-action="student-view" data-uid="${esc(l.studentUid)}">${text}</button>`;
+    return `<div class="coach-alert-row">${go}<button class="btn small-btn" data-action="alert-ok" data-uid="${esc(l.studentUid)}">Ya le escribí</button></div>`;
   }).filter(Boolean);
   return rows.length ? `<section class="card coach-alerts">
       <div class="coach-alerts-title">Para escribirles</div>
@@ -8927,6 +8934,15 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       stats = { data: stats.data, busy: false, error: '' };
       loadStats(); render();
       break;
+    case 'alert-ok': {
+      const ok = alertOk();
+      ok[el.dataset.uid] = Date.now();
+      localStorage.setItem(alertOkKey(), JSON.stringify(ok));
+      const st = students.find(x => x.studentUid === el.dataset.uid);
+      render();
+      showNote(`${(st && st.studentName) || 'Tu atleta'} no aparecerá en el cuadro por 7 días.`);
+      break;
+    }
     case 'export-workouts':
       exportWorkouts();
       break;

@@ -1348,3 +1348,6 @@ body.viewing .free-start { display: none; }
 .str-limits strong { font-size: 15px; font-variant-numeric: tabular-nums; }
 .str-limits .on { background: var(--accent); }
 .str-limits .on span, .str-limits .on strong { color: var(--accent-ink); }
+.coach-alert-row { padding: 8px 0; cursor: default; }
+.coach-alert-go { flex: 1; display: flex; min-width: 0; padding: 0; border: 0; background: none; color: var(--text); font: inherit; text-align: left; text-decoration: none; cursor: pointer; }
+.coach-alert-row .small-btn { flex: none; }
