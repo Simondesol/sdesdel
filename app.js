@@ -1807,8 +1807,8 @@ function viewWorkout() {
       <div class="set-pop" role="menu" aria-label="Opciones de la serie ${label}">
         ${s.note && s.note.trim() ? `<button class="set-pop-item" role="menuitem" data-action="set-note-del" data-i="${i}" data-j="${j}">Quitar nota</button>`
           : `<button class="set-pop-item" role="menuitem" data-action="set-note" data-i="${i}" data-j="${j}">Agregar nota</button>`}
-        <button class="set-pop-item" role="menuitem" data-action="add-drop" data-i="${i}" data-j="${j}">${(s.drops || []).length ? 'Agregar otra bajada' : 'Agregar dropset'}</button>
-        ${(s.drops || []).length ? `<button class="set-pop-item" role="menuitem" data-action="del-drop" data-i="${i}" data-j="${j}" data-k="${s.drops.length - 1}">Quitar bajada</button>` : ''}
+        <button class="set-pop-item" role="menuitem" data-action="add-drop" data-i="${i}" data-j="${j}">${(s.drops || []).length ? 'Agregar otro dropset' : 'Agregar dropset'}</button>
+        ${(s.drops || []).length ? `<button class="set-pop-item" role="menuitem" data-action="del-drop" data-i="${i}" data-j="${j}" data-k="${s.drops.length - 1}">Quitar dropset</button>` : ''}
         <button class="set-pop-item danger" role="menuitem" data-action="del-set" data-i="${i}" data-j="${j}">${TRASH_ICON}Borrar serie</button>
       </div>
     </div>` : '');
