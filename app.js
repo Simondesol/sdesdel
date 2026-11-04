@@ -4764,30 +4764,38 @@ const est1rm = (w, r, rir = 0) => { const n = (r || 1) + (rir || 0); return n <=
 const rmPct = n => (n <= 1 ? 1 : n <= 10 ? (37 - n) / 36 : 1 / (1 + n / 30));   // parte del 1RM que podrías mover n veces
 const e1rmOf = s => est1rm(s.w, repsMin(s) || 1, s.rir);
 // ---------- Nivel de fuerza: estándares de Strength Level (usados con su permiso) ----------
-// Por ejercicio y sexo: 1RM en kg de cada nivel según el peso corporal (bw) y según la edad (age): [fila, princ., novato, interm., avanz., élite]
+// Las tablas están en niveles.js (se cargan al abrir el Progreso de un ejercicio). Aquí: qué guía usa cuál
 const STR_NAMES = ['Principiante', 'Novato', 'Intermedio', 'Avanzado', 'Élite'];
 const STR_SHORT = ['Princ.', 'Novato', 'Interm.', 'Avanz.', 'Élite'];
-const STR_DATA = {"press-banca":{"h":{"bw":[[50,27,41,58,78,101],[55,32,47,65,87,110],[60,37,53,72,95,119],[65,42,59,79,102,128],[70,47,64,85,110,136],[75,51,70,92,117,144],[80,56,75,98,124,151],[85,60,80,104,130,158],[90,65,85,109,137,165],[95,69,90,115,143,172],[100,73,95,120,149,179],[105,77,99,125,155,185],[110,81,104,131,160,191],[115,85,108,135,166,197],[120,89,113,140,171,203],[125,93,117,145,176,209],[130,97,121,150,181,214],[135,100,125,154,186,220],[140,104,129,158,191,225]],"age":[[15,41,60,82,108,137],[20,47,68,94,124,156],[25,49,70,96,127,160],[30,49,70,96,127,160],[35,49,70,96,127,160],[40,49,70,96,127,160],[45,46,66,91,120,152],[50,43,62,85,112,142],[55,40,57,79,104,131],[60,36,52,72,95,120],[65,33,47,65,86,108],[70,29,42,59,77,97],[75,26,38,52,69,87],[80,24,34,47,62,78],[85,21,31,42,56,70],[90,19,27,38,50,63]]},"m":{"bw":[[40,10,19,33,49,68],[45,12,22,36,54,74],[50,14,25,40,58,79],[55,17,28,44,62,84],[60,19,31,47,66,88],[65,21,33,50,70,92],[70,22,36,53,74,96],[75,24,38,56,77,100],[80,26,40,59,80,104],[85,28,43,61,83,107],[90,30,45,64,86,111],[95,31,47,66,89,114],[100,33,49,69,92,117],[105,35,51,71,94,120],[110,36,53,73,97,123],[115,38,54,75,99,126],[120,39,56,77,102,128]],"age":[[15,17,28,43,62,82],[20,19,32,49,70,94],[25,19,33,51,72,97],[30,19,33,51,72,97],[35,19,33,51,72,97],[40,19,33,51,72,97],[45,18,31,48,68,91],[50,17,29,45,64,86],[55,16,27,41,59,79],[60,14,24,38,54,72],[65,13,22,34,49,65],[70,12,20,31,44,59],[75,11,18,28,39,53],[80,9,16,25,35,47],[85,8,14,22,32,42],[90,8,13,20,28,38]]}},"sentadilla":{"h":{"bw":[[50,36,55,78,106,137],[55,43,63,88,118,150],[60,49,71,98,129,162],[65,56,79,107,139,174],[70,62,86,116,149,185],[75,69,94,124,159,196],[80,75,101,132,168,206],[85,81,108,140,177,216],[90,87,115,148,186,226],[95,93,121,156,194,235],[100,98,128,163,203,244],[105,104,134,170,211,253],[110,109,140,177,218,261],[115,115,147,184,226,270],[120,120,152,191,233,278],[125,125,158,197,240,285],[130,130,164,203,247,293],[135,135,169,209,254,300],[140,140,175,215,261,307]],"age":[[15,56,81,112,148,186],[20,64,93,128,169,213],[25,66,95,131,173,219],[30,66,95,131,173,219],[35,66,95,131,173,219],[40,66,95,131,173,219],[45,62,90,124,164,207],[50,58,84,116,153,194],[55,54,78,107,141,179],[60,49,71,98,129,163],[65,45,64,89,117,148],[70,40,58,80,105,133],[75,36,52,71,94,119],[80,32,46,64,84,107],[85,29,42,57,76,96],[90,26,37,51,68,86]]},"m":{"bw":[[40,19,34,53,76,102],[45,23,38,58,82,110],[50,26,42,63,88,116],[55,29,46,68,94,123],[60,32,49,72,99,129],[65,35,53,76,104,134],[70,37,56,80,109,140],[75,40,59,84,113,145],[80,42,62,88,117,149],[85,45,65,91,121,154],[90,47,68,94,125,158],[95,49,71,98,129,162],[100,52,74,101,132,166],[105,54,76,104,136,170],[110,56,79,107,139,174],[115,58,81,109,142,177],[120,60,83,112,145,181]],"age":[[15,28,44,65,90,117],[20,32,50,74,102,134],[25,32,51,76,105,137],[30,32,51,76,105,137],[35,32,51,76,105,137],[40,32,51,76,105,137],[45,31,49,72,100,130],[50,29,45,67,93,122],[55,26,42,62,86,112],[60,24,38,57,78,103],[65,22,35,51,71,93],[70,20,31,46,64,84],[75,18,28,41,57,75],[80,16,25,37,51,67],[85,14,22,33,46,60],[90,13,20,30,41,54]]}},"peso-muerto":{"h":{"bw":[[50,46,68,96,129,164],[55,54,77,107,141,178],[60,61,86,117,153,191],[65,68,95,127,164,204],[70,75,103,137,175,216],[75,82,111,146,186,228],[80,89,119,155,196,239],[85,96,127,164,205,250],[90,102,134,172,215,260],[95,108,141,180,224,270],[100,114,148,188,232,279],[105,120,155,195,241,289],[110,126,161,203,249,298],[115,132,168,210,257,306],[120,137,174,217,265,315],[125,143,180,224,272,323],[130,148,186,231,280,331],[135,153,192,237,287,339],[140,159,198,243,294,346]],"age":[[15,68,96,131,172,216],[20,78,110,150,196,246],[25,80,113,154,202,253],[30,80,113,154,202,253],[35,80,113,154,202,253],[40,80,113,154,202,253],[45,75,107,146,191,240],[50,71,100,136,179,224],[55,65,92,126,165,207],[60,59,84,115,150,189],[65,54,76,104,136,171],[70,48,69,94,123,154],[75,43,62,84,110,138],[80,39,55,75,98,123],[85,35,49,67,88,111],[90,31,44,60,79,99]]},"m":{"bw":[[40,26,43,65,92,121],[45,30,48,71,99,129],[50,34,52,76,105,136],[55,37,56,81,111,143],[60,40,60,86,116,149],[65,43,64,90,121,155],[70,46,68,95,126,160],[75,49,71,99,131,166],[80,52,74,102,135,170],[85,54,77,106,139,175],[90,57,80,109,143,180],[95,59,83,113,147,184],[100,61,86,116,151,188],[105,64,89,119,154,192],[110,66,91,122,158,196],[115,68,94,125,161,200],[120,70,96,128,164,203]],"age":[[15,35,54,77,105,136],[20,40,61,89,120,155],[25,41,63,91,124,160],[30,41,63,91,124,160],[35,41,63,91,124,160],[40,41,63,91,124,160],[45,39,60,86,117,151],[50,37,56,80,109,141],[55,34,52,74,101,130],[60,31,47,68,92,119],[65,28,43,61,83,108],[70,25,38,55,75,97],[75,23,34,50,67,87],[80,20,31,44,60,78],[85,18,28,40,54,70],[90,16,25,36,48,63]]}},"press-militar":{"h":{"bw":[[50,15,24,36,51,67],[55,18,28,41,56,73],[60,21,32,45,62,79],[65,24,35,50,67,85],[70,27,39,54,72,90],[75,30,43,58,76,96],[80,33,46,62,81,101],[85,36,49,66,85,106],[90,38,53,70,90,111],[95,41,56,74,94,115],[100,44,59,77,98,120],[105,47,62,81,102,124],[110,49,65,84,105,128],[115,52,68,87,109,132],[120,54,71,90,113,136],[125,56,73,94,116,140],[130,59,76,97,119,144],[135,61,79,100,123,147],[140,63,81,102,126,151]],"age":[[15,25,37,53,71,91],[20,29,43,61,82,104],[25,29,44,62,84,107],[30,29,44,62,84,107],[35,29,44,62,84,107],[40,29,44,62,84,107],[45,28,42,59,79,102],[50,26,39,55,74,95],[55,24,36,51,68,88],[60,22,33,46,62,80],[65,20,30,42,57,72],[70,18,27,38,51,65],[75,16,24,34,46,58],[80,14,21,30,41,52],[85,13,19,27,37,47],[90,12,17,24,33,42]]},"m":{"bw":[[40,7,13,22,33,45],[45,9,15,24,36,48],[50,10,17,27,38,51],[55,11,19,29,41,54],[60,12,20,31,43,57],[65,14,22,32,45,59],[70,15,23,34,47,62],[75,16,25,36,49,64],[80,17,26,37,51,66],[85,18,27,39,53,68],[90,19,28,40,54,70],[95,20,30,42,56,72],[100,21,31,43,58,74],[105,22,32,45,59,75],[110,23,33,46,61,77],[115,24,34,47,62,79],[120,24,35,48,64,80]],"age":[[15,11,18,28,39,52],[20,13,21,32,45,60],[25,13,21,33,46,61],[30,13,21,33,46,61],[35,13,21,33,46,61],[40,13,21,33,46,61],[45,12,20,31,44,58],[50,11,19,29,41,54],[55,11,18,27,38,50],[60,10,16,24,34,46],[65,9,14,22,31,41],[70,8,13,20,28,37],[75,7,12,18,25,33],[80,6,10,16,23,30],[85,6,9,14,20,27],[90,5,8,13,18,24]]}}};
-// Valores de una tabla para x (peso o edad), entre dos filas; fuera de la tabla, la fila más cercana
-function strRow(rows, x) {
-  if (x <= rows[0][0]) return rows[0].slice(1);
-  for (let k = 1; k < rows.length; k++) {
-    const [a, b] = [rows[k - 1], rows[k]];
-    if (x <= b[0]) { const t = (x - a[0]) / (b[0] - a[0]); return a.slice(1).map((v, n) => v + (b[n + 1] - v) * t); }
+const STR_GUIDES = {"press-banca":"bench-press", "press-inclinado-barra":"incline-bench-press", "press-inclinado-mancuernas":"incline-dumbbell-bench-press", "press-mancuernas":"dumbbell-bench-press", "aperturas":"dumbbell-fly", "cruces-polea":"cable-fly", "press-maquina-pecho":"chest-press", "pec-deck":"machine-chest-fly", "aperturas-maquina":"machine-chest-fly", "press-declinado":"decline-bench-press", "press-banca-smith":"smith-machine-bench-press", "press-cerrado":"close-grip-bench-press", "jalon-pecho":"lat-pulldown", "jalon-cerrado":"close-grip-lat-pulldown", "jalon-supino":"reverse-grip-lat-pulldown", "remo-barra":"bent-over-row", "remo-mancuerna":"dumbbell-row", "remo-polea":"seated-cable-row", "remo-maquina":"machine-row", "remo-barra-t":"t-bar-row", "peso-muerto":"deadlift", "peso-muerto-rumano":"romanian-deadlift", "peso-muerto-sumo":"sumo-deadlift", "peso-muerto-hexagonal":"hex-bar-deadlift", "rack-pull":"rack-pull", "encogimientos":"barbell-shrug", "encogimientos-mancuernas":"dumbbell-shrug", "press-militar":"military-press", "press-militar-sentado":"seated-shoulder-press", "press-hombros-mancuernas":"seated-dumbbell-shoulder-press", "press-hombros-mancuernas-pie":"dumbbell-shoulder-press", "press-hombros-maquina":"machine-shoulder-press", "elevaciones-laterales":"dumbbell-lateral-raise", "laterales-polea":"cable-lateral-raise", "elevaciones-frontales":"dumbbell-front-raise", "remo-menton":"upright-row", "press-arnold":"arnold-press", "face-pull":"face-pull", "pajaros":"dumbbell-reverse-fly", "curl-barra":"barbell-curl", "curl-mancuernas":"dumbbell-curl", "curl-martillo":"hammer-curl", "curl-predicador":"preacher-curl", "curl-barra-z":"ez-bar-curl", "curl-inclinado":"incline-dumbbell-curl", "curl-polea":"cable-bicep-curl", "curl-concentrado":"dumbbell-concentration-curl", "curl-maquina":"machine-bicep-curl", "curl-muneca":"wrist-curl", "triceps-polea":"tricep-pushdown", "triceps-cuerda":"tricep-rope-pushdown", "press-frances":"lying-tricep-extension", "press-frances-barra-z":"lying-tricep-extension", "triceps-sobre-cabeza":"dumbbell-tricep-extension", "patada-triceps":"dumbbell-tricep-kickback", "jm-press":"jm-press", "sentadilla":"squat", "sentadilla-frontal":"front-squat", "sentadilla-bulgara":"dumbbell-bulgarian-split-squat", "prensa":"sled-leg-press", "hack":"hack-squat", "sentadilla-goblet":"goblet-squat", "sentadilla-smith":"smith-machine-squat", "zancadas":"dumbbell-lunge", "zancadas-barra":"barbell-lunge", "curl-femoral-acostado":"lying-leg-curl", "curl-femoral-sentado":"seated-leg-curl", "extension-cuadriceps":"leg-extension", "hip-thrust":"hip-thrust", "abductores":"hip-abduction", "aductores":"hip-adduction", "pantorrillas-pie":"machine-calf-raise", "pantorrillas-sentado":"seated-calf-raise", "buenos-dias":"good-morning", "sentadilla-sumo":"sumo-squat"};
+// Máquinas y poleas: el peso cambia entre gimnasios (el nivel es más aproximado)
+const STR_MACHINE = /machine|cable|pulldown|pushdown|leg-press|leg-curl|leg-extension|hip-ab|hip-ad|calf|hack|smith|face-pull|chest-press|chest-fly/;
+let strMod = null, strLoading = false;
+function strTables(gid) {
+  if (!STR_GUIDES[gid]) return null;
+  if (!strMod) {
+    if (!strLoading) { strLoading = true; import('./niveles.js').then(m => { strMod = m; refresh(); }, () => { strLoading = false; }); }
+    return undefined;   // cargando
   }
-  return rows[rows.length - 1].slice(1);
+  return strMod.STR_DATA[STR_GUIDES[gid]];
+}
+// Valores para x (peso o edad) entre dos filas de la tabla (filas de 5 en 5 desde `start`); fuera de la tabla, la fila más cercana
+function strRow(rows, start, x) {
+  const p = Math.min(Math.max((x - start) / 5, 0), rows.length - 1), a = Math.floor(p), b = Math.min(a + 1, rows.length - 1), t = p - a;
+  return rows[a].map((v, n) => v + (rows[b][n] - v) * t);
 }
 // Límites de cada nivel (kg) para tu peso corporal, ajustados a tu edad (la tabla de edad, comparada con la mejor edad)
-function strLimits(t, bw, age) {
-  const byBw = strRow(t.bw, bw);
+function strLimits(T, sex, bw, age) {
+  const byBw = strRow(T[sex], sex === 'm' ? 40 : 50, bw);
   if (!age) return byBw;
-  const byAge = strRow(t.age, age), peak = t.age.reduce((m, r) => r.slice(1).map((v, n) => Math.max(m[n], v)), [0, 0, 0, 0, 0]);
+  const ages = T[`${sex}a`], byAge = strRow(ages, 15, age), peak = ages.reduce((m, r) => r.map((v, n) => Math.max(m[n], v)), [0, 0, 0, 0, 0]);
   return byBw.map((v, n) => v * (byAge[n] / peak[n]));
 }
 function strengthCard(gid, rm, unit) {
-  const L = STR_DATA[gid];
-  if (!L || unit === 'placas') return '';
-  const title = viewing ? `Nivel de ${esc(viewing.name)}` : 'Tu nivel';
+  if (unit === 'placas') return '';
+  const T = strTables(gid), title = viewing ? `Nivel de ${esc(viewing.name)}` : 'Tu nivel';
+  if (T === null) return '';
+  if (T === undefined) return `<h2>${title}</h2><section class="card"><p class="muted small" style="margin:0">Cargando…</p></section>`;
   const sex = db.body.sex, bw = bwOn(new Date().toISOString());
   if (!bw || !sex) {
     const miss = viewing ? `${esc(viewing.name)} todavía no anota ${!bw ? 'su peso' : 'su sexo'}.`
@@ -4795,7 +4803,7 @@ function strengthCard(gid, rm, unit) {
     return `<h2>${title}</h2><section class="card"><p class="muted small" style="margin:0">${miss}</p></section>`;
   }
   const age = db.body.birthYear ? new Date().getFullYear() - db.body.birthYear : null;
-  const lim = strLimits(L[sex === 'm' ? 'm' : 'h'], bw, age), kg = toKg(rm, unit), ratio = kg / bw;
+  const lim = strLimits(T, sex === 'm' ? 'm' : 'h', bw, age), kg = toKg(rm, unit), ratio = kg / bw;
   let k = 0;
   for (let n = 0; n < 5; n++) if (kg >= lim[n]) k = n;
   const inUnit = x => (unit === 'lb' ? x / 0.45359237 : x), step = unit === 'lb' ? 1 : 0.5;
@@ -4807,7 +4815,7 @@ function strengthCard(gid, rm, unit) {
       <p class="muted small" style="margin:0">${viewing ? 'Su' : 'Tu'} 1RM de ${fmtNum(rm)} ${unitShort(unit)} es ${fmtNum(Math.round(ratio * 100) / 100)} veces ${su} peso corporal (${fmtNum(bw)} kg).${k < 4 ? ` Para ${STR_NAMES[k + 1]} ${viewing ? 'le' : 'te'} faltan ${fmtNum(missing)} ${unitShort(unit)}.` : ''}</p>
       <div class="str-limits">${lim.map((x, n) => `<div class="${n === k ? 'on' : ''}"><span>${STR_SHORT[n]}</span><strong>${fmtNum(Math.round(inUnit(x)))}</strong></div>`).join('')}</div>
       <p class="muted small" style="margin:0">Para ${sex === 'm' ? 'mujeres' : 'hombres'} de ${fmtNum(bw)} kg${age ? ` y ${age} años` : ''}, en ${unitShort(unit)}, con ${su} mejor 1RM del período.${age ? '' : ` Pon ${su} año de nacimiento en Cuenta → Mis datos para ajustarlo a ${su} edad.`}
-        Niveles: Strength Level.</p>
+        ${STR_MACHINE.test(STR_GUIDES[gid]) ? `En máquinas y poleas el peso cambia de un gimnasio a otro: tómalo como referencia.` : ''}${/dumbbell|goblet/.test(STR_GUIDES[gid]) ? 'Con el peso de una mancuerna.' : ''} Niveles: Strength Level.</p>
     </section>`;
 }
 
