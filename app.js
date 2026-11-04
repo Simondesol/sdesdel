@@ -127,7 +127,7 @@ const isSideSet = s => s.r2 !== undefined;
 const repsMin = s => { if (!isSideSet(s)) return s.r;
   const v = [s.r, s.r2].filter(x => x != null && x !== '').map(Number); return v.length ? Math.min(...v) : null; };
 const repsText = s => `${fmtNum(s.r)}${isSideSet(s) ? ` / ${fmtNum(s.r2)}` : ''}`;
-const setStrength = x => epley((x.bw || 0) + toKg(x.w || 0, x.unit), repsMin(x) || 1, x.rir);
+const setStrength = x => est1rm((x.bw || 0) + toKg(x.w || 0, x.unit), repsMin(x) || 1, x.rir);
 // Con peso corporal, cada serie cuenta con lo que pesabas ese día (más peso tuyo con el mismo lastre = moviste más)
 function cmpSet(a, b) {
   const sb = setStrength(b), diff = setStrength(a) - sb;
@@ -2729,7 +2729,7 @@ const coachInviteText = code => `Vincúlate conmigo como tu coach en Desdel 💪
 const VIEW_OK = ['', 'chat', 'rutinas', 'rutina', 'programas', 'miprograma', 'listos', 'programa', 'dieta', 'objetivo', 'historial', 'sesion', 'progreso', 'ejercicio', 'peso', 'grasa', 'medidas', 'fotos', 'nutricion', 'sueno', 'agua'];
 const VIEW_EXIT = ['social', 'gymbro', 'perfil', 'privacidad', 'cuenta', 'alumnos', 'coach', 'asignar', 'estadisticas'];
 // Lo que se puede tocar mirando a un atleta, y lo extra en el editor de rutinas
-const VIEW_SAFE = new Set(['back', 'view-exit', 'vid-toggle', 'info', 'toggle-sec', 'range', 'toggle-history', 'hist-month', 'hist-day', 'skin-view', 'measure-view',
+const VIEW_SAFE = new Set(['back', 'view-exit', 'rm-calc', 'rm-unit', 'vid-toggle', 'info', 'toggle-sec', 'range', 'toggle-history', 'hist-month', 'hist-day', 'skin-view', 'measure-view',
   'prog-open', 'prog-close', 'prog-filter', 'prog-retry', 'week-sum', 'week-day', 'guide-view', 'guide-close', 'explore-zone', 'explore-open', 'explore-back', 'explore-close', 'go-ex', 'prev-ex', 'next-ex', 'prog-rid', 'thumb-play']);
 const VIEW_ROUTINE = new Set(['reps-by', 'toggle-drop', 'toggle-bw', 'toggle-ss', 'toggle-rir', 'toggle-unit', 'move', 'ex-open', 'ex-close', 'del-ex', 'dup-routine', 'del-routine',
   'guide-pick', 'guide-change', 'guide-set', 'guide-pick-close', 'explore-list', 'explore-add', 'explore-add-custom']);
@@ -4759,8 +4759,16 @@ const round1 = n => Math.round(n * 10) / 10;
 
 // Récord estimado (1RM) con Epley + RIR: peso × (1 + (reps + RIR) / 30). Las reps en reserva cuentan como reps que
 // podrías haber hecho; sin RIR anotado se toma como al fallo (RIR 0). Con 1 rep al fallo es el mismo peso.
-const epley = (w, r, rir = 0) => { const n = (r || 1) + (rir || 0); return n > 1 ? w * (1 + n / 30) : w; };
-const e1rmOf = s => epley(s.w, repsMin(s) || 1, s.rir);
+// 1RM estimado: Brzycki hasta 10 repeticiones (más exacta con pocas) y Epley desde 11; el RIR suma las que te quedaban
+const est1rm = (w, r, rir = 0) => { const n = (r || 1) + (rir || 0); return n <= 1 ? w : n <= 10 ? (w * 36) / (37 - n) : w * (1 + n / 30); };
+const rmPct = n => (n <= 1 ? 1 : n <= 10 ? (37 - n) / 36 : 1 / (1 + n / 30));   // parte del 1RM que podrías mover n veces
+const e1rmOf = s => est1rm(s.w, repsMin(s) || 1, s.rir);
+// Tabla de cargas: cuánto podrías mover para cada cantidad de repeticiones
+function rmTable(rm, unit) {
+  const step = unit === 'kg' ? 0.5 : 1;
+  return `<table class="stats-table rm-table"><thead><tr><th>Repeticiones</th><th>Peso</th><th>% del 1RM</th></tr></thead><tbody>${[1, 2, 3, 4, 5, 6, 8, 10, 12, 15]
+    .map(n => `<tr><td>${n}</td><td>${fmtNum(Math.round((rm * rmPct(n)) / step) * step)} ${unitShort(unit)}</td><td>${Math.round(rmPct(n) * 100)}%</td></tr>`).join('')}</tbody></table>`;
+}
 
 // Ejercicios con peso corporal (dominadas, dips…): lo que anotas es el lastre.
 // Se marca en la rutina; vale también para tu historial de ese ejercicio.
@@ -4778,7 +4786,7 @@ function e1rmEx(ex, s, dateIso) {
     let bw = bwOn(dateIso);
     if (bw != null) {
       if (ex.unit === 'lb') bw /= 0.45359237;
-      return epley(bw + (s.w || 0), repsMin(s) || 1, s.rir) - bw;
+      return est1rm(bw + (s.w || 0), repsMin(s) || 1, s.rir) - bw;
     }
   }
   return e1rmOf(s);
@@ -4877,6 +4885,7 @@ function viewProgress() {
   }
   if (!byId.size) {
     return `${header('Entreno', {})}${entrenoTabs('progreso')}
+      ${rmCalcHtml()}
       <p class="empty">Cuando guardes entrenamientos, aquí verás tu progreso en cada ejercicio.</p>`;
   }
 
@@ -4908,11 +4917,34 @@ function viewProgress() {
       <span class="chev">›</span>
     </a>`;
   return `${header('Entreno', {})}${entrenoTabs('progreso')}
+    ${rmCalcHtml()}
     <input class="search" type="search" data-bind="progress-search" value="${esc(progressQuery)}"
       placeholder="🔍 Buscar ejercicio…" autocomplete="off" aria-label="Buscar ejercicio">
     ${groups.map(g => `<section class="prog-group"><h2>${esc(g.name)}</h2>${g.items.map(item).join('')}</section>`).join('')}
     <p class="empty" data-no-results hidden>Ningún ejercicio coincide con la búsqueda.</p>`;
 }
+
+// Calculadora de 1RM: peso, repeticiones y RIR de una serie → 1RM estimado y tabla de cargas
+let rmCalc = null;   // abierta: { w, r, rir, unit }
+function rmCalcOut() {
+  const c = rmCalc, w = num(c.w), r = num(c.r), rir = num(c.rir) || 0;
+  if (!(w > 0) || !(r >= 1) || r > 30) return '<p class="muted small" style="margin:0">Escribe el peso y las repeticiones de una serie.</p>';
+  const rm = est1rm(w, Math.round(r), Math.max(0, Math.round(rir)));
+  return `<div class="rm-result"><span class="muted">1RM estimado</span><strong>${fmtNum(round1(rm))} ${c.unit}</strong></div>
+    ${rmTable(rm, c.unit)}
+    <p class="muted small" style="margin:8px 0 0">Calculado con Brzycki hasta 10 repeticiones y Epley desde 11. Con más de 12 repeticiones es menos exacto.</p>`;
+}
+const rmCalcHtml = () => (!rmCalc ? '<button class="btn block rm-open" data-action="rm-calc">Calculadora de 1RM</button>'
+  : `<section class="card rm-calc">
+      <div class="guide-head"><strong>Calculadora de 1RM</strong><button class="icon small" data-action="rm-calc" aria-label="Cerrar calculadora">✕</button></div>
+      <div class="rm-fields">
+        <label>Peso<input data-bind="rm-w" inputmode="decimal" value="${esc(rmCalc.w)}" placeholder="100" autocomplete="off"></label>
+        <label>Repeticiones<input data-bind="rm-r" inputmode="numeric" value="${esc(rmCalc.r)}" placeholder="8" autocomplete="off"></label>
+        <label>RIR<input data-bind="rm-rir" inputmode="numeric" value="${esc(rmCalc.rir)}" placeholder="0" autocomplete="off"></label>
+      </div>
+      <div class="rm-units" role="group" aria-label="Unidad">${['kg', 'lb'].map(u => `<button class="chip toggle ${rmCalc.unit === u ? 'on' : ''}" data-action="rm-unit" data-v="${u}" aria-pressed="${rmCalc.unit === u}">${u}</button>`).join('')}</div>
+      <div data-rm-out>${rmCalcOut()}</div>
+    </section>`);
 
 // Filtra la lista mientras escribes (sin redibujar, para no cerrar el teclado)
 function filterProgress() {
@@ -5911,8 +5943,11 @@ function viewProgressExercise(id) {
       <div class="tip" hidden></div>
     </section>
     <p class="muted hint">${bwEx
-      ? 'Es el lastre máximo que podrías levantar 1 vez, calculado con la 1ª serie y tu peso de ese día.<br>Ej: pesando 90 kg, 30 kg × 7 ≈ +58 kg de lastre'
+      ? 'Es el lastre máximo que podrías levantar 1 vez, calculado con la 1ª serie y tu peso de ese día.<br>Ej: pesando 90 kg, 30 kg × 7 ≈ +54 kg de lastre'
       : 'Es una estimación del peso máximo que podrías levantar, calculada con la 1ª serie.<br>Ej: 100 kg × 8 con RIR 2 ≈ 133 kg'}</p>
+    ${bwEx ? '' : `<h2>Tabla de cargas</h2>
+    <section class="card stats-card">${rmTable(max.y, unit)}
+      <p class="muted small" style="margin:6px 0 8px">Con tu mejor 1RM del período (${fmtNum(max.y)} ${unitShort(unit)}): cuánto podrías mover para cada cantidad de repeticiones.</p></section>`}
     <h2>Sesiones</h2>
     <section class="card">${table}</section>`;
 }
@@ -8016,6 +8051,15 @@ $app.addEventListener('click', async e => {
       if (goal) undoDel('Meta borrada', () => { db.body.goal = goal; });
       break;
     }
+    case 'rm-calc':
+      rmCalc = rmCalc ? null : { w: '', r: '', rir: '', unit: 'kg' };
+      render();
+      if (rmCalc) $app.querySelector('[data-bind="rm-w"]').focus();
+      break;
+    case 'rm-unit':
+      rmCalc.unit = el.dataset.v;
+      render();
+      break;
     case 'prog-rid':
       progressRid.r = el.dataset.r;
       render();
@@ -9015,6 +9059,12 @@ $app.addEventListener('input', e => {
   const el = e.target, bind = el.dataset.bind;
   if (!bind) return;
   if (bind === 'progress-search') { progressQuery = el.value; filterProgress(); return; }
+  if (rmCalc && (bind === 'rm-w' || bind === 'rm-r' || bind === 'rm-rir')) {
+    rmCalc[bind.slice(3)] = el.value;
+    const out = $app.querySelector('[data-rm-out]');
+    if (out) out.innerHTML = rmCalcOut();
+    return;
+  }
   if (bind === 'food-search') { foodQuery = el.value; filterFoods(); return; }
   if (bind === 'free-q') {
     freeQ = el.value;

@@ -1323,3 +1323,15 @@ body.viewing .free-start { display: none; }
 .gbar i { display: block; min-height: 2px; background: var(--accent); border-radius: 4px 4px 0 0; align-self: end; }
 .gbar-n { font-size: 13px; font-weight: 700; }
 .gbar-d { font-size: 12px; color: var(--muted); padding-top: 4px; }
+
+/* Calculadora de 1RM y tabla de cargas */
+.rm-open { margin: 0 0 12px; }
+.rm-calc { display: grid; gap: 10px; margin-bottom: 12px; }
+.rm-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.rm-fields label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+.rm-fields input { min-width: 0; text-align: center; font-size: 18px; }
+.rm-units { display: flex; gap: 6px; }
+.rm-units .chip { flex: 1; justify-content: center; }
+.rm-result { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 4px 0 8px; }
+.rm-result strong { font-size: 28px; color: var(--accent); font-variant-numeric: tabular-nums; }
+.rm-table td:first-child, .rm-table th:first-child { text-align: left; }
