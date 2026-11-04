@@ -1335,3 +1335,16 @@ body.viewing .free-start { display: none; }
 .rm-result { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 4px 0 8px; }
 .rm-result strong { font-size: 28px; color: var(--accent); font-variant-numeric: tabular-nums; }
 .rm-table td:first-child, .rm-table th:first-child { text-align: left; }
+
+/* Nivel de fuerza (Progreso de press banca, sentadilla, peso muerto y press militar) */
+.str-card { display: grid; gap: 10px; }
+.str-top { display: flex; align-items: center; gap: 12px; }
+.str-top strong { font-size: 24px; }
+.str-stars { color: #f5c518; font-size: 24px; letter-spacing: 2px; }
+.str-stars span { color: var(--surface2); }
+.str-limits { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; }
+.str-limits div { display: grid; gap: 2px; padding: 8px 2px; text-align: center; border-radius: 10px; background: var(--surface2); }
+.str-limits span { font-size: 11px; color: var(--muted); }
+.str-limits strong { font-size: 15px; font-variant-numeric: tabular-nums; }
+.str-limits .on { background: var(--accent); }
+.str-limits .on span, .str-limits .on strong { color: var(--accent-ink); }

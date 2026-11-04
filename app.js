@@ -4763,6 +4763,40 @@ const round1 = n => Math.round(n * 10) / 10;
 const est1rm = (w, r, rir = 0) => { const n = (r || 1) + (rir || 0); return n <= 1 ? w : n <= 10 ? (w * 36) / (37 - n) : w * (1 + n / 30); };
 const rmPct = n => (n <= 1 ? 1 : n <= 10 ? (37 - n) / 36 : 1 / (1 + n / 30));   // parte del 1RM que podrías mover n veces
 const e1rmOf = s => est1rm(s.w, repsMin(s) || 1, s.rir);
+// ---------- Nivel de fuerza: niveles propios de Desdel (criterio de coach), en veces tu peso corporal, por sexo ----------
+const STR_NAMES = ['Principiante', 'Novato', 'Intermedio', 'Avanzado', 'Élite'];
+const STR_SHORT = ['Princ.', 'Novato', 'Interm.', 'Avanz.', 'Élite'];
+const STR_LEVELS = {   // guía de técnica → límites de cada nivel (1RM ÷ peso corporal) para hombres (h) y mujeres (m)
+  'press-banca': { h: [0.5, 0.75, 1, 1.5, 2], m: [0.25, 0.5, 0.75, 1, 1.25] },
+  sentadilla: { h: [0.75, 1, 1.5, 2, 2.5], m: [0.5, 0.75, 1.1, 1.5, 1.9] },
+  'peso-muerto': { h: [1, 1.25, 1.75, 2.5, 3], m: [0.6, 0.9, 1.25, 1.75, 2.25] },
+  'press-militar': { h: [0.35, 0.5, 0.7, 0.9, 1.1], m: [0.2, 0.35, 0.5, 0.65, 0.8] },
+};
+function strengthCard(gid, rm, unit) {
+  const L = STR_LEVELS[gid];
+  if (!L || unit === 'placas') return '';
+  const title = viewing ? `Nivel de ${esc(viewing.name)}` : 'Tu nivel';
+  const sex = db.body.sex, bw = bwOn(new Date().toISOString());
+  if (!bw || !sex) {
+    const miss = viewing ? `${esc(viewing.name)} todavía no anota ${!bw ? 'su peso' : 'su sexo'}.`
+      : `${!bw ? 'Anota tu peso en Cuerpo' : 'Pon tu sexo en Cuenta → Mis datos'} para ver tu nivel en este ejercicio.`;
+    return `<h2>${title}</h2><section class="card"><p class="muted small" style="margin:0">${miss}</p></section>`;
+  }
+  const lim = L[sex === 'm' ? 'm' : 'h'], ratio = toKg(rm, unit) / bw;
+  let k = 0;
+  for (let n = 0; n < 5; n++) if (ratio >= lim[n]) k = n;
+  const inUnit = kg => (unit === 'lb' ? kg / 0.45359237 : kg), step = unit === 'lb' ? 1 : 0.5;
+  const missing = k < 4 ? Math.ceil((inUnit(lim[k + 1] * bw) - rm) / step) * step : 0;
+  const su = viewing ? 'su' : 'tu';
+  return `<h2>${title}</h2>
+    <section class="card str-card">
+      <div class="str-top"><span class="str-stars" aria-label="${k + 1} de 5 estrellas">${'★'.repeat(k + 1)}<span>${'★'.repeat(4 - k)}</span></span><strong>${STR_NAMES[k]}</strong></div>
+      <p class="muted small" style="margin:0">${viewing ? 'Su' : 'Tu'} 1RM de ${fmtNum(rm)} ${unitShort(unit)} es ${fmtNum(Math.round(ratio * 100) / 100)} veces ${su} peso corporal (${fmtNum(bw)} kg).${k < 4 ? ` Para ${STR_NAMES[k + 1]} ${viewing ? 'le' : 'te'} faltan ${fmtNum(missing)} ${unitShort(unit)}.` : ''}</p>
+      <div class="str-limits">${lim.map((x, n) => `<div class="${n === k ? 'on' : ''}"><span>${STR_SHORT[n]}</span><strong>${fmtNum(Math.round(inUnit(x * bw)))}</strong></div>`).join('')}</div>
+      <p class="muted small" style="margin:0">Niveles de Desdel para ${sex === 'm' ? 'mujeres' : 'hombres'} de ${fmtNum(bw)} kg, en ${unitShort(unit)}. Se calculan con ${su} mejor 1RM del período.</p>
+    </section>`;
+}
+
 // Tabla de cargas: cuánto podrías mover para cada cantidad de repeticiones
 function rmTable(rm, unit) {
   const step = unit === 'kg' ? 0.5 : 1;
@@ -5945,6 +5979,7 @@ function viewProgressExercise(id) {
     <p class="muted hint">${bwEx
       ? 'Es el lastre máximo que podrías levantar 1 vez, calculado con la 1ª serie y tu peso de ese día.<br>Ej: pesando 90 kg, 30 kg × 7 ≈ +54 kg de lastre'
       : 'Es una estimación del peso máximo que podrías levantar, calculada con la 1ª serie.<br>Ej: 100 kg × 8 con RIR 2 ≈ 133 kg'}</p>
+    ${bwEx ? '' : strengthCard((guideFor(name, (rows.find(r => r.ex.guide) || { ex: {} }).ex.guide) || {}).id, max.y, unit)}
     ${bwEx ? '' : `<h2>Tabla de cargas</h2>
     <section class="card stats-card">${rmTable(max.y, unit)}
       <p class="muted small" style="margin:6px 0 8px">Con tu mejor 1RM del período (${fmtNum(max.y)} ${unitShort(unit)}): cuánto podrías mover para cada cantidad de repeticiones.</p></section>`}
