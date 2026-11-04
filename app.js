@@ -4767,7 +4767,9 @@ const e1rmOf = s => est1rm(s.w, repsMin(s) || 1, s.rir);
 // Las tablas están en niveles.js (se cargan al abrir el Progreso de un ejercicio). Aquí: qué guía usa cuál
 const STR_NAMES = ['Principiante', 'Novato', 'Intermedio', 'Avanzado', 'Élite'];
 const STR_SHORT = ['Princ.', 'Novato', 'Interm.', 'Avanz.', 'Élite'];
-const STR_GUIDES = {"press-banca":"bench-press", "press-inclinado-barra":"incline-bench-press", "press-inclinado-mancuernas":"incline-dumbbell-bench-press", "press-mancuernas":"dumbbell-bench-press", "aperturas":"dumbbell-fly", "cruces-polea":"cable-fly", "press-maquina-pecho":"chest-press", "pec-deck":"machine-chest-fly", "aperturas-maquina":"machine-chest-fly", "press-declinado":"decline-bench-press", "press-banca-smith":"smith-machine-bench-press", "press-cerrado":"close-grip-bench-press", "jalon-pecho":"lat-pulldown", "jalon-cerrado":"close-grip-lat-pulldown", "jalon-supino":"reverse-grip-lat-pulldown", "remo-barra":"bent-over-row", "remo-mancuerna":"dumbbell-row", "remo-polea":"seated-cable-row", "remo-maquina":"machine-row", "remo-barra-t":"t-bar-row", "peso-muerto":"deadlift", "peso-muerto-rumano":"romanian-deadlift", "peso-muerto-sumo":"sumo-deadlift", "peso-muerto-hexagonal":"hex-bar-deadlift", "rack-pull":"rack-pull", "encogimientos":"barbell-shrug", "encogimientos-mancuernas":"dumbbell-shrug", "press-militar":"military-press", "press-militar-sentado":"seated-shoulder-press", "press-hombros-mancuernas":"seated-dumbbell-shoulder-press", "press-hombros-mancuernas-pie":"dumbbell-shoulder-press", "press-hombros-maquina":"machine-shoulder-press", "elevaciones-laterales":"dumbbell-lateral-raise", "laterales-polea":"cable-lateral-raise", "elevaciones-frontales":"dumbbell-front-raise", "remo-menton":"upright-row", "press-arnold":"arnold-press", "face-pull":"face-pull", "pajaros":"dumbbell-reverse-fly", "curl-barra":"barbell-curl", "curl-mancuernas":"dumbbell-curl", "curl-martillo":"hammer-curl", "curl-predicador":"preacher-curl", "curl-barra-z":"ez-bar-curl", "curl-inclinado":"incline-dumbbell-curl", "curl-polea":"cable-bicep-curl", "curl-concentrado":"dumbbell-concentration-curl", "curl-maquina":"machine-bicep-curl", "curl-muneca":"wrist-curl", "triceps-polea":"tricep-pushdown", "triceps-cuerda":"tricep-rope-pushdown", "press-frances":"lying-tricep-extension", "press-frances-barra-z":"lying-tricep-extension", "triceps-sobre-cabeza":"dumbbell-tricep-extension", "patada-triceps":"dumbbell-tricep-kickback", "jm-press":"jm-press", "sentadilla":"squat", "sentadilla-frontal":"front-squat", "sentadilla-bulgara":"dumbbell-bulgarian-split-squat", "prensa":"sled-leg-press", "hack":"hack-squat", "sentadilla-goblet":"goblet-squat", "sentadilla-smith":"smith-machine-squat", "zancadas":"dumbbell-lunge", "zancadas-barra":"barbell-lunge", "curl-femoral-acostado":"lying-leg-curl", "curl-femoral-sentado":"seated-leg-curl", "extension-cuadriceps":"leg-extension", "hip-thrust":"hip-thrust", "abductores":"hip-abduction", "aductores":"hip-adduction", "pantorrillas-pie":"machine-calf-raise", "pantorrillas-sentado":"seated-calf-raise", "buenos-dias":"good-morning", "sentadilla-sumo":"sumo-squat"};
+const STR_GUIDES = {"press-banca":"bench-press", "press-inclinado-barra":"incline-bench-press", "press-inclinado-mancuernas":"incline-dumbbell-bench-press", "press-mancuernas":"dumbbell-bench-press", "aperturas":"dumbbell-fly", "cruces-polea":"cable-fly", "press-maquina-pecho":"chest-press", "pec-deck":"machine-chest-fly", "aperturas-maquina":"machine-chest-fly", "press-declinado":"decline-bench-press", "press-banca-smith":"smith-machine-bench-press", "press-cerrado":"close-grip-bench-press", "jalon-pecho":"lat-pulldown", "jalon-cerrado":"close-grip-lat-pulldown", "jalon-supino":"reverse-grip-lat-pulldown", "remo-barra":"bent-over-row", "remo-mancuerna":"dumbbell-row", "remo-polea":"seated-cable-row", "remo-maquina":"machine-row", "remo-barra-t":"t-bar-row", "peso-muerto":"deadlift", "peso-muerto-rumano":"romanian-deadlift", "peso-muerto-sumo":"sumo-deadlift", "peso-muerto-hexagonal":"hex-bar-deadlift", "rack-pull":"rack-pull", "encogimientos":"barbell-shrug", "encogimientos-mancuernas":"dumbbell-shrug", "press-militar":"military-press", "press-militar-sentado":"seated-shoulder-press", "press-hombros-mancuernas":"seated-dumbbell-shoulder-press", "press-hombros-mancuernas-pie":"dumbbell-shoulder-press", "press-hombros-maquina":"machine-shoulder-press", "elevaciones-laterales":"dumbbell-lateral-raise", "laterales-polea":"cable-lateral-raise", "elevaciones-frontales":"dumbbell-front-raise", "remo-menton":"upright-row", "press-arnold":"arnold-press", "face-pull":"face-pull", "pajaros":"dumbbell-reverse-fly", "curl-barra":"barbell-curl", "curl-mancuernas":"dumbbell-curl", "curl-martillo":"hammer-curl", "curl-predicador":"preacher-curl", "curl-barra-z":"ez-bar-curl", "curl-inclinado":"incline-dumbbell-curl", "curl-polea":"cable-bicep-curl", "curl-concentrado":"dumbbell-concentration-curl", "curl-maquina":"machine-bicep-curl", "curl-muneca":"wrist-curl", "triceps-polea":"tricep-pushdown", "triceps-cuerda":"tricep-rope-pushdown", "press-frances":"lying-tricep-extension", "press-frances-barra-z":"lying-tricep-extension", "triceps-sobre-cabeza":"dumbbell-tricep-extension", "patada-triceps":"dumbbell-tricep-kickback", "jm-press":"jm-press", "sentadilla":"squat", "sentadilla-frontal":"front-squat", "sentadilla-bulgara":"dumbbell-bulgarian-split-squat", "prensa":"sled-leg-press", "hack":"hack-squat", "sentadilla-goblet":"goblet-squat", "sentadilla-smith":"smith-machine-squat", "zancadas":"dumbbell-lunge", "zancadas-barra":"barbell-lunge", "curl-femoral-acostado":"lying-leg-curl", "curl-femoral-sentado":"seated-leg-curl", "extension-cuadriceps":"leg-extension", "hip-thrust":"hip-thrust", "abductores":"hip-abduction", "aductores":"hip-adduction", "pantorrillas-pie":"machine-calf-raise", "pantorrillas-sentado":"seated-calf-raise", "buenos-dias":"good-morning", "sentadilla-sumo":"sumo-squat", "peso-muerto-deficit":"deficit-deadlift", "peso-muerto-unilateral":"single-leg-romanian-deadlift", "puente-gluteo":"barbell-glute-bridge", "patada-gluteo":"cable-kickback", "laterales-maquina":"machine-lateral-raise", "pec-deck-invertido":"machine-reverse-fly", "posterior-polea":"cable-reverse-fly", "elevaciones-y":"dumbbell-incline-y-raise", "press-landmine":"landmine-press", "remo-menton-mancuernas":"dumbbell-upright-row", "remo-menton-polea":"cable-upright-row", "encogimientos-polea":"cable-shrug", "aperturas-inclinadas":"incline-dumbbell-fly", "pullover-mancuerna":"dumbbell-pullover", "pullover-polea":"straight-arm-pulldown", "remo-pecho-apoyado":"chest-supported-dumbbell-row", "jalon-unilateral":"one-arm-lat-pulldown", "remo-dos-mancuernas":"bent-over-dumbbell-row", "remo-polea-unilateral":"one-arm-seated-cable-row", "press-banca-ancho":"wide-grip-bench-press", "curl-arana":"spider-curl", "curl-zottman":"zottman-curl", "curl-invertido":"reverse-barbell-curl", "curl-muneca-mancuernas":"dumbbell-wrist-curl", "curl-predicador-unilateral":"one-arm-dumbbell-preacher-curl", "triceps-maquina":"machine-tricep-extension", "triceps-sobre-cabeza-polea":"cable-overhead-tricep-extension", "press-frances-mancuernas":"lying-dumbbell-tricep-extension", "fondos-maquina":"seated-dip-machine", "sentadilla-cinturon":"belt-squat", "split-squat":"dumbbell-split-squat", "zancada-inversa-barra":"barbell-reverse-lunge", "curl-femoral-pie":"standing-leg-curl", "pantorrillas-prensa":"sled-press-calf-raise", "dominadas":"pull-ups", "dominadas-supinas":"chin-ups", "dominadas-neutras":"neutral-grip-pull-ups", "fondos":"dips", "flexiones":"push-ups", "flexiones-diamante":"diamond-push-ups", "flexiones-cerradas":"close-grip-push-up", "fondos-banco":"bench-dips", "hiperextensiones":"back-extension", "nordico":"nordic-hamstring-curl", "glute-ham-raise":"glute-ham-raise", "remo-invertido":"inverted-row"};
+// Cómo se mide cada uno (si no está aquí: 1RM en kg)
+const STR_KIND = {"back-extension":"reps", "bench-dips":"reps", "chin-ups":"lastre", "close-grip-push-up":"reps", "diamond-push-ups":"reps", "dips":"lastre", "glute-ham-raise":"reps", "inverted-row":"reps", "neutral-grip-pull-ups":"reps", "nordic-hamstring-curl":"reps", "pull-ups":"lastre", "push-ups":"reps"};
 // Máquinas y poleas: el peso cambia entre gimnasios (el nivel es más aproximado)
 const STR_MACHINE = /machine|cable|pulldown|pushdown|leg-press|leg-curl|leg-extension|hip-ab|hip-ad|calf|hack|smith|face-pull|chest-press|chest-fly/;
 let strMod = null, strLoading = false;
@@ -4784,39 +4786,61 @@ function strRow(rows, start, x) {
   const p = Math.min(Math.max((x - start) / 5, 0), rows.length - 1), a = Math.floor(p), b = Math.min(a + 1, rows.length - 1), t = p - a;
   return rows[a].map((v, n) => v + (rows[b][n] - v) * t);
 }
-// Límites de cada nivel (kg) para tu peso corporal, ajustados a tu edad (la tabla de edad, comparada con la mejor edad)
-function strLimits(T, sex, bw, age) {
+// Límites de cada nivel para tu peso corporal, ajustados a tu edad (la tabla de edad, comparada con la mejor edad).
+// En kg y repeticiones se ajusta en proporción; el lastre (que puede ser negativo) se ajusta sumando la diferencia
+function strLimits(T, sex, bw, age, kind = 'kg') {
   const byBw = strRow(T[sex], sex === 'm' ? 40 : 50, bw);
   if (!age) return byBw;
-  const ages = T[`${sex}a`], byAge = strRow(ages, 15, age), peak = ages.reduce((m, r) => r.map((v, n) => Math.max(m[n], v)), [0, 0, 0, 0, 0]);
-  return byBw.map((v, n) => v * (byAge[n] / peak[n]));
+  const ages = T[`${sex}a`], byAge = strRow(ages, 15, age), peak = ages.reduce((m, r) => r.map((v, n) => Math.max(m[n], v)), [-1e9, -1e9, -1e9, -1e9, -1e9]);
+  return byBw.map((v, n) => (kind === 'lastre' || !(peak[n] > 0) ? v + (byAge[n] - peak[n]) : v * (byAge[n] / peak[n])));
 }
-function strengthCard(gid, rm, unit) {
-  if (unit === 'placas') return '';
-  const T = strTables(gid), title = viewing ? `Nivel de ${esc(viewing.name)}` : 'Tu nivel';
-  if (T === null) return '';
-  if (T === undefined) return `<h2>${title}</h2><section class="card"><p class="muted small" style="margin:0">Cargando…</p></section>`;
-  const sex = db.body.sex, bw = bwOn(new Date().toISOString());
+// Tarjeta "Tu nivel". kg: con tu mejor 1RM; lastre: con tu lastre máximo estimado; reps: con tu mejor serie sin peso extra
+function strengthCard(gid, { rm = null, unit = 'kg', rows = [], days = 90 } = {}) {
+  const key = STR_GUIDES[gid], kind = STR_KIND[key] || 'kg';
+  if (!key || unit === 'placas' || (kind !== 'reps' && rm == null)) return '';
+  const T = strTables(gid), title = viewing ? `Nivel de ${esc(viewing.name)}` : 'Tu nivel', card = body => `<h2>${title}</h2><section class="card str-card">${body}</section>`;
+  const note = text => card(`<p class="muted small" style="margin:0">${text}</p>`);
+  if (T === undefined) return note('Cargando…');
+  if (!T) return '';
+  const sex = db.body.sex, bw = bwOn(new Date().toISOString()), su = viewing ? 'su' : 'tu', Su = viewing ? 'Su' : 'Tu';
   if (!bw || !sex) {
-    const miss = viewing ? `${esc(viewing.name)} todavía no anota ${!bw ? 'su peso' : 'su sexo'}.`
-      : `${!bw ? 'Anota tu peso en Cuerpo' : 'Pon tu sexo en Cuenta → Mis datos'} para ver tu nivel en este ejercicio.`;
-    return `<h2>${title}</h2><section class="card"><p class="muted small" style="margin:0">${miss}</p></section>`;
+    return note(viewing ? `${esc(viewing.name)} todavía no anota ${!bw ? 'su peso' : 'su sexo'}.`
+      : `${!bw ? 'Anota tu peso en Cuerpo' : 'Pon tu sexo en Cuenta → Mis datos'} para ver tu nivel en este ejercicio.`);
   }
   const age = db.body.birthYear ? new Date().getFullYear() - db.body.birthYear : null;
-  const lim = strLimits(T, sex === 'm' ? 'm' : 'h', bw, age), kg = toKg(rm, unit), ratio = kg / bw;
+  const lim = strLimits(T, sex === 'm' ? 'm' : 'h', bw, age, kind).map(x => (kind === 'reps' ? Math.max(0, Math.round(x)) : x));   // repeticiones: enteras
+  const inUnit = x => (unit === 'lb' ? x / 0.45359237 : x), u = unitShort(unit);
+  let val, line, show, missingTxt;
+  if (kind === 'reps') {
+    const since = Date.now() - days * 864e5;
+    let best = 0;
+    for (const { w, ex } of rows) if (Date.parse(w.date) >= since) for (const st of ex.sets) if (!(num(st.w) > 0)) best = Math.max(best, repsMin(st) || 0);
+    if (!best) return note(`El nivel en este ejercicio se mide en repeticiones sin peso extra. Anota una serie sin peso para ver ${su} nivel.`);
+    val = best;
+    line = `${Su} mejor serie sin peso extra del período: ${plural(best, 'repetición', 'repeticiones')}.`;
+    show = x => `${Math.max(0, Math.round(x))}`;
+    missingTxt = x => plural(Math.max(1, Math.ceil(x - best)), 'repetición', 'repeticiones');
+  } else if (kind === 'lastre') {
+    val = toKg(rm, unit);
+    const sign = x => (x > 0 ? `+${fmtNum(x)}` : x < 0 ? `−${fmtNum(-x)}` : '0');
+    line = `${Su} lastre máximo estimado es ${sign(round1(rm))} ${u}${rm < 0 ? ' (con asistencia)' : ''}.`;
+    show = x => sign(Math.round(inUnit(x)));
+    missingTxt = x => `${fmtNum(Math.max(0.5, Math.ceil((inUnit(x) - rm) * 2) / 2))} ${u} de lastre`;
+  } else {
+    val = toKg(rm, unit);
+    line = `${Su} 1RM de ${fmtNum(rm)} ${u} es ${fmtNum(Math.round((val / bw) * 100) / 100)} veces ${su} peso corporal (${fmtNum(bw)} kg).`;
+    show = x => fmtNum(Math.round(inUnit(x)));
+    missingTxt = x => `${fmtNum(Math.ceil((inUnit(x) - rm) / (unit === 'lb' ? 1 : 0.5)) * (unit === 'lb' ? 1 : 0.5))} ${u}`;
+  }
   let k = 0;
-  for (let n = 0; n < 5; n++) if (kg >= lim[n]) k = n;
-  const inUnit = x => (unit === 'lb' ? x / 0.45359237 : x), step = unit === 'lb' ? 1 : 0.5;
-  const missing = k < 4 ? Math.ceil((inUnit(lim[k + 1]) - rm) / step) * step : 0;
-  const su = viewing ? 'su' : 'tu';
-  return `<h2>${title}</h2>
-    <section class="card str-card">
+  for (let n = 0; n < 5; n++) if (val >= lim[n]) k = n;
+  const unitName = kind === 'reps' ? 'repeticiones' : kind === 'lastre' ? `${u} de lastre (negativo = asistencia)` : u;
+  return card(`
       <div class="str-top"><span class="str-stars" aria-label="${k + 1} de 5 estrellas">${'★'.repeat(k + 1)}<span>${'★'.repeat(4 - k)}</span></span><strong>${STR_NAMES[k]}</strong></div>
-      <p class="muted small" style="margin:0">${viewing ? 'Su' : 'Tu'} 1RM de ${fmtNum(rm)} ${unitShort(unit)} es ${fmtNum(Math.round(ratio * 100) / 100)} veces ${su} peso corporal (${fmtNum(bw)} kg).${k < 4 ? ` Para ${STR_NAMES[k + 1]} ${viewing ? 'le' : 'te'} faltan ${fmtNum(missing)} ${unitShort(unit)}.` : ''}</p>
-      <div class="str-limits">${lim.map((x, n) => `<div class="${n === k ? 'on' : ''}"><span>${STR_SHORT[n]}</span><strong>${fmtNum(Math.round(inUnit(x)))}</strong></div>`).join('')}</div>
-      <p class="muted small" style="margin:0">Para ${sex === 'm' ? 'mujeres' : 'hombres'} de ${fmtNum(bw)} kg${age ? ` y ${age} años` : ''}, en ${unitShort(unit)}, con ${su} mejor 1RM del período.${age ? '' : ` Pon ${su} año de nacimiento en Cuenta → Mis datos para ajustarlo a ${su} edad.`}
-        ${STR_MACHINE.test(STR_GUIDES[gid]) ? `En máquinas y poleas el peso cambia de un gimnasio a otro: tómalo como referencia.` : ''}${/dumbbell|goblet/.test(STR_GUIDES[gid]) ? 'Con el peso de una mancuerna.' : ''} Niveles: Strength Level.</p>
-    </section>`;
+      <p class="muted small" style="margin:0">${line}${k < 4 ? ` Para ${STR_NAMES[k + 1]} ${viewing ? 'le' : 'te'} ${(m => `${/^1 /.test(m) ? 'falta' : 'faltan'} ${m}`)(missingTxt(lim[k + 1]))}.` : ''}</p>
+      <div class="str-limits">${lim.map((x, n) => `<div class="${n === k ? 'on' : ''}"><span>${STR_SHORT[n]}</span><strong>${show(x)}</strong></div>`).join('')}</div>
+      <p class="muted small" style="margin:0">Para ${sex === 'm' ? 'mujeres' : 'hombres'} de ${fmtNum(bw)} kg${age ? ` y ${age} años` : ''}, en ${unitName}${kind === 'reps' ? '' : `, con ${su} mejor marca del período`}.${age ? '' : ` Pon ${su} año de nacimiento en Cuenta → Mis datos para ajustarlo a ${su} edad.`}
+        ${STR_MACHINE.test(key) ? 'En máquinas y poleas el peso cambia de un gimnasio a otro: tómalo como referencia.' : ''}${/dumbbell|goblet/.test(key) ? 'Con el peso de una mancuerna.' : ''} Niveles: Strength Level.</p>`);
 }
 
 // Tabla de cargas: cuánto podrías mover para cada cantidad de repeticiones
@@ -5974,10 +5998,13 @@ function viewProgressExercise(id) {
       ${[['', 'Todas'], ...rids].map(([k, n]) => `<button class="chip toggle ${rid === k ? 'on' : ''}" data-action="prog-rid" data-r="${esc(k)}" aria-pressed="${rid === k}">${esc(n)}</button>`).join('')}</div>` : '');
   const bwEx = isBwEx({ exerciseId: id, bw: rows[0].ex.bw });
   const sub = bwEx ? 'Lastre máximo estimado' : 'Tu fuerza estimada (1RM)';
+  const gidOf = () => (guideFor(name, (rows.find(r => r.ex.guide) || { ex: {} }).ex.guide) || {}).id;
 
   if (!points.length) {
     return `${header(name, { back: true, sub })}${range}
-      <p class="empty">No entrenaste este ejercicio en este período${rows.some(r => r.ex.sets.some(s => s.w != null)) ? '' : ' (o no tiene peso anotado)'}.</p>`;
+      <p class="empty">${rows.some(r => Date.parse(r.w.date) >= Date.now() - days * 864e5) ? 'En este período no tiene peso anotado, así que no hay gráfico de fuerza.'
+        : `No entrenaste este ejercicio en este período${rows.some(r => r.ex.sets.some(s => s.w != null)) ? '' : ' (o no tiene peso anotado)'}.`}</p>
+      ${strengthCard(gidOf(), { unit: rows[0].ex.unit, rows, days })}`;
   }
 
   const max = points.reduce((a, p) => (p.y > a.y ? p : a));
@@ -6001,7 +6028,7 @@ function viewProgressExercise(id) {
     <p class="muted hint">${bwEx
       ? 'Es el lastre máximo que podrías levantar 1 vez, calculado con la 1ª serie y tu peso de ese día.<br>Ej: pesando 90 kg, 30 kg × 7 ≈ +54 kg de lastre'
       : 'Es una estimación del peso máximo que podrías levantar, calculada con la 1ª serie.<br>Ej: 100 kg × 8 con RIR 2 ≈ 133 kg'}</p>
-    ${bwEx ? '' : strengthCard((guideFor(name, (rows.find(r => r.ex.guide) || { ex: {} }).ex.guide) || {}).id, max.y, unit)}
+    ${strengthCard(gidOf(), { rm: max.y, unit, rows, days })}
     ${bwEx ? '' : `<h2>Tabla de cargas</h2>
     <section class="card stats-card">${rmTable(max.y, unit)}
       <p class="muted small" style="margin:6px 0 8px">Con tu mejor 1RM del período (${fmtNum(max.y)} ${unitShort(unit)}): cuánto podrías mover para cada cantidad de repeticiones.</p></section>`}
