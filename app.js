@@ -1795,11 +1795,10 @@ function viewWorkout() {
   // "↓ drop" solo en ejercicios marcados como Dropset en la rutina (o que ya tienen bajadas, al editar uno guardado)
   // Fila de una serie, con sus bajadas de dropset debajo (label: "1", o "A1" en un superset)
   // Debajo de cada serie: tu mejor marca, "+ nota" (o la nota que escribiste) y la nota de la vez pasada
+  const bestLine = (b, drop = false) => (b ? `<div class="set-ref${drop ? ' drop-ref' : ''}"><span>Mejor: ${fmtNum(b.w)} ${b.unit} × ${repsText(b)}</span></div>` : '');
   const setFoot = (ex, i, s, j, best, label) => {
     const open = !!s.note || setNoteOpen === `${i}-${j}`;
-    return `<div class="set-ref"><span>${best[j] ? `Mejor: ${fmtNum(best[j].w)} ${best[j].unit} × ${repsText(best[j])}` : ''}</span>
-</div>
-      ${open ? `<input class="set-note-in" data-bind="snote" data-i="${i}" data-j="${j}" value="${esc(s.note || '')}" maxlength="140" placeholder="Nota de esta serie (ej. me dolió el codo)" aria-label="Nota de la serie ${label}">` : ''}
+    return `${open ? `<input class="set-note-in" data-bind="snote" data-i="${i}" data-j="${j}" value="${esc(s.note || '')}" maxlength="140" placeholder="Nota de esta serie (ej. me dolió el codo)" aria-label="Nota de la serie ${label}">` : ''}
       ${s.pnote ? `<p class="set-prev-note">La vez pasada: ${esc(s.pnote)}</p>` : ''}
       ${videoUp[`${i}-${j}`] != null ? `<p class="set-video up" data-video-up="${i}-${j}">Subiendo video… ${Math.round(videoUp[`${i}-${j}`] * 100)}%</p>`
         : s.video ? `<button class="set-video" data-action="video-open" data-i="${i}" data-j="${j}">${PLAY_ICON}Ver video de la serie</button>` : ''}`;
@@ -1829,7 +1828,8 @@ function viewWorkout() {
         <input inputmode="numeric" enterkeyhint="next" data-bind="dr" data-i="${i}" data-j="${j}" data-k="${k}" value="${esc(x.r)}" placeholder="${esc(x.pr || 'reps')}" aria-label="Repeticiones bajada ${k + 1} de la serie ${label}">
         ${ex.rir ? '<span></span>' : ''}
         <span class="mark-cell" data-mark="${i}-${j}-${k}">${markSpan(dropCmp(x, ex, (dropBests.get(i)[j] || [])[k]))}</span>
-      </div>`).join('');
+      </div>
+      ${bestLine((dropBests.get(i)[j] || [])[k], true)}`).join('');
     const wPh = s.pw || (lastreEx(ex) ? '0' : ex.unit === 'placas' ? 'placas' : 'peso');
     const rPh = (pr, side) => repsFor(ex, j) || pr || side;
     if (ex.side) return `
@@ -1841,6 +1841,7 @@ function viewWorkout() {
         ${ex.rir ? `<input class="rir" inputmode="numeric" enterkeyhint="next" data-bind="rir" data-i="${i}" data-j="${j}" value="${esc(s.rir ?? '')}" placeholder="${esc(rirFor(ex, j) || s.prir || 'RIR')}" aria-label="RIR serie ${label}">` : ''}
         <span class="mark-cell" data-mark="${i}-${j}">${markSpan(liveCmp(s, ex, best[j]))}</span>
       </div>
+      ${bestLine(best[j])}
       ${setMenu(s, i, j, label)}
       ${drops}
       ${setFoot(ex, i, s, j, best, label)}`;
@@ -1854,6 +1855,7 @@ function viewWorkout() {
         ${ex.rir ? `<input class="rir" inputmode="numeric" enterkeyhint="next" data-bind="rir" data-i="${i}" data-j="${j}" value="${esc(s.rir ?? '')}" placeholder="${esc(rirFor(ex, j) || s.prir || 'RIR')}" aria-label="RIR serie ${label}">` : ''}
         <span class="mark-cell" data-mark="${i}-${j}">${markSpan(liveCmp(s, ex, best[j]))}</span>
       </div>
+      ${bestLine(best[j])}
       ${setMenu(s, i, j, label)}
       ${drops}
       ${setFoot(ex, i, s, j, best, label)}`;

@@ -1363,3 +1363,4 @@ body.viewing .free-start { display: none; }
 .video-modal .modal { max-height: calc(100dvh - 32px); overflow-y: auto; }
 .video-player { width: 100%; max-height: 62dvh; border-radius: 12px; background: #000; }
 .video-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.set-ref.drop-ref { margin-left: 44px; }
