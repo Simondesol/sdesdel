@@ -1,0 +1,22 @@
+rules_version = '2';
+// Videos de técnica: videos/{dueño}/{id}. Los sube solo el dueño (máximo 120 MB, solo video).
+// Los ven: el dueño, su coach (coachLinks/{dueño}) y los gymbros a los que se los mandó (metadata "viewers": ",uid1,uid2,").
+// El servidor los borra a los 30 días y deja máximo 20 por persona (función videoCleanup).
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /videos/{owner}/{file} {
+      allow create: if request.auth != null && request.auth.uid == owner
+        && request.resource.size < 120 * 1024 * 1024
+        && request.resource.contentType.matches('video/.*');
+      // Solo cambiar a quién se le compartió (el archivo sigue igual)
+      allow update: if request.auth != null && request.auth.uid == owner
+        && request.resource.size == resource.size
+        && request.resource.contentType == resource.contentType;
+      allow delete: if request.auth != null && request.auth.uid == owner;
+      allow read: if request.auth != null && (
+        request.auth.uid == owner
+        || ('viewers' in resource.metadata && resource.metadata.viewers.matches('.*,' + request.auth.uid + ',.*'))
+        || firestore.get(/databases/(default)/documents/coachLinks/$(owner)).data.coachUid == request.auth.uid);
+    }
+  }
+}

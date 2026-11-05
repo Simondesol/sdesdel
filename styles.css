@@ -1351,3 +1351,15 @@ body.viewing .free-start { display: none; }
 .coach-alert-row { padding: 8px 0; cursor: default; }
 .coach-alert-go { flex: 1; display: flex; min-width: 0; padding: 0; border: 0; background: none; color: var(--text); font: inherit; text-align: left; text-decoration: none; cursor: pointer; }
 .coach-alert-row .small-btn { flex: none; }
+
+/* Videos de técnica */
+.set-video { display: inline-flex; align-items: center; gap: 6px; margin: 2px 0 6px; padding: 6px 12px; border: 1px solid var(--accent); border-radius: 999px;
+  background: none; color: var(--accent); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
+.set-video.up { border-color: var(--border); color: var(--muted); }
+.chip-video { display: inline-grid; place-items: center; width: 26px; height: 26px; margin-left: 6px; padding: 0; border: 1px solid var(--accent); border-radius: 50%;
+  background: none; color: var(--accent); vertical-align: middle; cursor: pointer; }
+.msg-card .btn svg, .set-video svg { flex: none; }
+.msg-card .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.video-modal .modal { max-height: calc(100dvh - 32px); overflow-y: auto; }
+.video-player { width: 100%; max-height: 62dvh; border-radius: 12px; background: #000; }
+.video-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }

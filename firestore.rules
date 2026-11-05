@@ -145,8 +145,8 @@ service cloud.firestore {
         allow create: if isMember(chatId)
           && request.resource.data.from == request.auth.uid
           && request.resource.data.at == request.time
-          && request.resource.data.type in ['text', 'diet', 'routine', 'workout', 'pr', 'program']
-          && request.resource.data.keys().hasOnly(['from', 'at', 'type', 'text', 'diet', 'routine', 'program'])
+          && request.resource.data.type in ['text', 'diet', 'routine', 'workout', 'pr', 'program', 'video']
+          && request.resource.data.keys().hasOnly(['from', 'at', 'type', 'text', 'diet', 'routine', 'program', 'video'])
           && (!('text' in request.resource.data) || request.resource.data.text.size() <= 4000);
         // Cada uno puede editar (solo el texto) y borrar sus propios mensajes; el cambio se ve para los dos
         allow update: if isMember(chatId) && resource.data.from == request.auth.uid

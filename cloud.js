@@ -14,6 +14,7 @@
 //   coachLinks/{uid}/comments/{idEntreno} → comentario del coach sobre un entreno { text, at, by }
 //   coachLinks/{uid}/checkins/{fecha}     → check-in semanal del atleta
 //   plans/{uidCoach}            → plan del coach { tier, max, until, trial } (lo escribe solo el servidor, al pagar)
+// Storage: videos/{uid}/{id}    → video de técnica de una serie (lo ven el dueño, su coach y los gymbros a los que se lo mandó)
 import { firebaseConfig } from './firebase-config.js';
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.8.0/firebase-app.js';
 import {
@@ -26,12 +27,14 @@ import {
   query, where, orderBy, limitToLast, updateDoc, writeBatch, Timestamp,
 } from 'https://www.gstatic.com/firebasejs/12.8.0/firebase-firestore.js';
 import { getFunctions, httpsCallable } from 'https://www.gstatic.com/firebasejs/12.8.0/firebase-functions.js';
+import { getStorage, ref as sref, uploadBytesResumable, getDownloadURL, deleteObject, getMetadata, updateMetadata } from 'https://www.gstatic.com/firebasejs/12.8.0/firebase-storage.js';
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);            // la sesión queda guardada en el teléfono hasta cerrar sesión
 auth.languageCode = 'es';             // correos de recuperación en español
 const fs = getFirestore(app);
 const fns = getFunctions(app, 'us-central1');   // programa de Desdel en el servidor (Servidor/functions)
+const st = getStorage(app);                      // videos de técnica
 
 const mainRef = uid => doc(fs, 'users', uid, 'data', 'main');
 const workoutsRef = uid => collection(fs, 'users', uid, 'workouts');
@@ -290,4 +293,19 @@ export const putCheckin = (uid, id, data) => setDoc(doc(checkinsRef(uid), id), d
 export async function listCheckins(uid) {
   const snap = await getDocs(query(checkinsRef(uid), orderBy('at'), limitToLast(8)));
   return snap.docs.map(d => ({ ...d.data(), id: d.id })).reverse();
+}
+
+// ---------- Videos de técnica (Storage) ----------
+// viewers: ",uid1,uid2," = gymbros a los que se lo mandaste (tu coach lo ve por coachLinks). El servidor los borra a los 30 días.
+export function uploadVideo(uid, id, file, onProgress) {
+  const path = `videos/${uid}/${id}`;
+  const type = file.type && file.type.startsWith('video/') ? file.type : 'video/mp4';
+  const task = uploadBytesResumable(sref(st, path), file, { contentType: type, customMetadata: { viewers: ',' } });
+  return new Promise((res, rej) => task.on('state_changed', s => onProgress && onProgress(s.totalBytes ? s.bytesTransferred / s.totalBytes : 0), rej, () => res(path)));
+}
+export const videoUrl = path => getDownloadURL(sref(st, path));
+export const deleteVideo = path => deleteObject(sref(st, path));
+export async function shareVideo(path, uid) {
+  const r = sref(st, path), m = await getMetadata(r), v = (m.customMetadata || {}).viewers || ',';
+  if (!v.includes(`,${uid},`)) await updateMetadata(r, { customMetadata: { viewers: `${v}${uid},` } });
 }

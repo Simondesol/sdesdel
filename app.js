@@ -1022,6 +1022,7 @@ function pickFoodIn(form, id) {
 // Busca primero en tus alimentos (por su código) y si no en Open Food Facts, una base abierta con valores por 100 g.
 // Lo revisas, se guarda en tus alimentos con su código y queda elegido donde lo escaneaste.
 const ZXING_URL = 'https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js';
+const PLAY_ICON = '<svg class="play-ic" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M8 5.5v13l10.5-6.5z"/></svg>';
 const TRASH_ICON = '<svg class="trash" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M5.5 7l1 12a2 2 0 0 0 2 2h7a2 2 0 0 0 2-2l1-12M9 7V4.5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1V7"/></svg>';
 const VIDEO_ICON = '<svg class="video-ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4.5" width="18" height="13" rx="2.5"/><path class="fill" d="M10.2 8.4v5.2l4.4-2.6z"/><path d="M8.5 20.5h7"/></svg>';
 const BARCODE_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V4h3M18 4h3v3M21 17v3h-3M6 20H3v-3M7 8v8M10 8v8M13 8v8M15.5 8v8M18 8v8"/></svg>';
@@ -1799,7 +1800,9 @@ function viewWorkout() {
     return `<div class="set-ref"><span>${best[j] ? `Mejor: ${fmtNum(best[j].w)} ${best[j].unit} × ${repsText(best[j])}` : ''}</span>
 </div>
       ${open ? `<input class="set-note-in" data-bind="snote" data-i="${i}" data-j="${j}" value="${esc(s.note || '')}" maxlength="140" placeholder="Nota de esta serie (ej. me dolió el codo)" aria-label="Nota de la serie ${label}">` : ''}
-      ${s.pnote ? `<p class="set-prev-note">La vez pasada: ${esc(s.pnote)}</p>` : ''}`;
+      ${s.pnote ? `<p class="set-prev-note">La vez pasada: ${esc(s.pnote)}</p>` : ''}
+      ${videoUp[`${i}-${j}`] != null ? `<p class="set-video up" data-video-up="${i}-${j}">Subiendo video… ${Math.round(videoUp[`${i}-${j}`] * 100)}%</p>`
+        : s.video ? `<button class="set-video" data-action="video-open" data-i="${i}" data-j="${j}">${PLAY_ICON}Ver video de la serie</button>` : ''}`;
   };
   // Opciones de una serie (⋮): nota, bajada (dropset) y borrar
   const setMenu = (s, i, j, label) => (setMenuOpen === `${i}-${j}` ? `<div class="set-pop-wrap">
@@ -1809,6 +1812,7 @@ function viewWorkout() {
           : `<button class="set-pop-item" role="menuitem" data-action="set-note" data-i="${i}" data-j="${j}">Agregar nota</button>`}
         <button class="set-pop-item" role="menuitem" data-action="add-drop" data-i="${i}" data-j="${j}">${(s.drops || []).length ? 'Agregar otro dropset' : 'Agregar dropset'}</button>
         ${(s.drops || []).length ? `<button class="set-pop-item" role="menuitem" data-action="del-drop" data-i="${i}" data-j="${j}" data-k="${s.drops.length - 1}">Quitar dropset</button>` : ''}
+        ${editing ? '' : `<button class="set-pop-item" role="menuitem" data-action="set-video" data-i="${i}" data-j="${j}">${s.video ? 'Cambiar video' : 'Grabar o subir video'}</button>`}
         <button class="set-pop-item danger" role="menuitem" data-action="del-set" data-i="${i}" data-j="${j}">${TRASH_ICON}Borrar serie</button>
       </div>
     </div>` : '');
@@ -2475,13 +2479,13 @@ function viewSession(id) {
   if (!w) { location.replace('#/historial'); return ''; }
 
   // Cada serie comparada con la mejor serie de esa posición en los entrenamientos anteriores
-  const blocks = w.exercises.map(ex => {
+  const blocks = w.exercises.map((ex, ei) => {
     const best = w.deload ? [] : bestSets(ex.exerciseId, k, ex.unit, w.routineId);
     const count = { up: 0, eq: 0, down: 0 };
     const chips = ex.sets.map((s, j) => {
       const c = best[j] ? cmpSet({ ...s, unit: ex.unit, bw: bwFor(ex, w.date) }, best[j]) : null;
       if (c != null) count[c > 0 ? 'up' : c < 0 ? 'down' : 'eq']++;
-      return `<span>${setText(s, ex.unit)} ${markSpan(c)}${setNoteChip(s)}</span>`;
+      return `<span>${setText(s, ex.unit)} ${markSpan(c)}${setNoteChip(s)}${s.video ? `<button class="chip-video" data-action="video-open" data-wid="${w.id}" data-e="${ei}" data-j="${j}" aria-label="Ver video de la serie ${j + 1}">${PLAY_ICON}</button>` : ''}</span>`;
     }).join('');
     const tally = w.deload ? '<span class="muted">Descarga</span>' : !best.length ? '<span class="muted">Primera vez</span>'
       : ['up', 'eq', 'down'].filter(k => count[k]).map(k => `<span class="mark ${k}">${count[k]} ${TREND_ICON[k]}</span>`).join(' ')
@@ -2644,6 +2648,122 @@ function viewStats() {
     <button class="btn block" data-action="stats-reload">Actualizar</button>`;
 }
 
+// ---------- Videos de técnica (una serie grabada; la ve tu coach o se la mandas a un gymbro) ----------
+// Se guardan en Storage (videos/{uid}/{id}); el servidor los borra a los 30 días y deja máximo 20 por persona
+const VIDEO_MAX_S = 50, VIDEO_MAX_MB = 120, VIDEO_DAYS = 30, VIDEO_MAX_N = 20;
+const videoUp = {};     // subidas en curso: 'i-j' → 0 a 1
+let videoView = null;   // video abierto { path, title, at, mine, url, error }
+function pickSetVideo(i, j) {
+  const inp = document.createElement('input');   // fuera de la pantalla: aunque se redibuje, la elección llega igual
+  inp.type = 'file'; inp.accept = 'video/*'; inp.hidden = true;
+  document.body.appendChild(inp);
+  inp.addEventListener('change', () => { const file = inp.files && inp.files[0]; inp.remove(); if (file) uploadSetVideo(file, i, j); });
+  inp.click();
+}
+const videoDuration = file => new Promise(res => {
+  const v = document.createElement('video'), url = URL.createObjectURL(file);
+  let done = false;
+  const end = d => { if (done) return; done = true; URL.revokeObjectURL(url); res(d); };
+  v.preload = 'metadata'; v.muted = true;
+  v.onloadedmetadata = () => end(Number.isFinite(v.duration) ? v.duration : null);
+  v.onerror = () => end(null);
+  setTimeout(() => end(null), 8000);
+  v.src = url;
+});
+function paintVideoUp(key) {
+  const el = $app.querySelector(`[data-video-up="${key}"]`);
+  if (el && videoUp[key] != null) el.textContent = `Subiendo video… ${Math.round(videoUp[key] * 100)}%`;
+  else render();
+}
+async function uploadSetVideo(file, i, j) {
+  const d = cur(), ex = d && d.exercises[i], st = ex && ex.sets[j];
+  if (!st) return;
+  if (file.size > VIDEO_MAX_MB * 1048576) {
+    notice(`El video pesa ${Math.round(file.size / 1048576)} MB y el máximo es ${VIDEO_MAX_MB} MB. Grábalo en menor calidad (por ejemplo 720p) o más corto.`);
+    return;
+  }
+  const dur = await videoDuration(file);
+  if (dur && dur > VIDEO_MAX_S + 0.9) {
+    notice(`El video dura ${Math.round(dur)} segundos y el máximo es ${VIDEO_MAX_S}. Recórtalo en la galería de tu teléfono y vuelve a subirlo.`);
+    return;
+  }
+  const key = `${i}-${j}`, id = uid();
+  videoUp[key] = 0; paintVideoUp(key);
+  try {
+    const path = await cloud.uploadVideo(user.uid, id, file, p => { videoUp[key] = p; paintVideoUp(key); });
+    const old = st.video;
+    st.video = { path, at: Date.now(), title: `${ex.name} · serie ${j + 1}` };
+    if (old) cloud.deleteVideo(old.path).catch(() => {});
+    delete videoUp[key];
+    trimVideos();
+    save(); render();
+    // Si tienes coach, le llega por el chat
+    const chatId = myCoach && [user.uid, myCoach.coachUid].sort().join('_');
+    if (chatId && chats.some(c => c.id === chatId)) {
+      sendMsg(chatId, { type: 'video', video: { path, title: st.video.title } }, `🎬 Video: ${st.video.title}`);
+      showNote('Video guardado. Tu coach ya lo puede ver en el chat.');
+    } else showNote('Video guardado en esta serie. Desde "Ver video" puedes mandárselo a un gymbro.');
+  } catch (e) {
+    delete videoUp[key]; render();
+    notice(navigator.onLine ? 'No se pudo subir el video. Intenta de nuevo.' : 'Se necesita internet para subir el video.');
+  }
+}
+// Tus videos guardados (entreno en curso e historial), del más nuevo al más antiguo
+function myVideos() {
+  const out = [];
+  const scan = (exs, ref) => exs.forEach((ex, e) => ex.sets.forEach((st, j) => { if (st.video) out.push({ st, ref: { ...ref, e, j } }); }));
+  if (db.draft) scan(db.draft.exercises, { draft: true });
+  db.workouts.forEach(w => scan(w.exercises, { wid: w.id }));
+  return out.sort((a, b) => (b.st.video.at || 0) - (a.st.video.at || 0));
+}
+function trimVideos() {   // máximo 20: al subir el 21.º se borra el más antiguo
+  for (const { st } of myVideos().slice(VIDEO_MAX_N)) { cloud.deleteVideo(st.video.path).catch(() => {}); delete st.video; }
+}
+function openVideo(v) {
+  videoView = { ...v };
+  paintVideo();
+  if (v.at && Date.now() - v.at > VIDEO_DAYS * 864e5) return;
+  cloud.videoUrl(v.path).then(url => { if (videoView && videoView.path === v.path) { videoView.url = url; paintVideo(); } },
+    () => { if (videoView && videoView.path === v.path) { videoView.error = 'No se pudo abrir el video. Puede que ya se haya borrado (se guardan 30 días) o que no haya internet.'; paintVideo(); } });
+}
+// El video va en su propia capa, fuera de la pantalla: así no se corta cuando la app se redibuja
+const $videoLayer = document.createElement('div');
+$videoLayer.id = 'video-layer';
+document.body.appendChild($videoLayer);
+function paintVideo() {
+  const v = videoView;
+  if (!v) { $videoLayer.innerHTML = ''; return; }
+  const expired = v.at && Date.now() - v.at > VIDEO_DAYS * 864e5;
+  $videoLayer.innerHTML = `<div class="modal-wrap video-modal">
+    <div class="modal-back" data-vact="close"></div>
+    <section class="modal card" role="dialog" aria-modal="true" aria-label="Video de técnica">
+      <div class="guide-head"><h2>${esc(v.title || 'Video')}</h2><button class="icon small" data-vact="close" aria-label="Cerrar">✕</button></div>
+      ${expired ? '<p class="muted" style="margin:0">Este video ya se borró: los videos se guardan 30 días.</p>'
+        : v.error ? `<p class="muted" style="margin:0">${esc(v.error)}</p>`
+        : v.url ? `<video class="video-player" src="${esc(v.url)}" controls playsinline autoplay></video>` : '<p class="muted" style="margin:0">Cargando video…</p>'}
+      ${v.mine && !viewing && !expired ? `<div class="video-actions">
+        <button class="btn" data-vact="share">Mandar a un gymbro</button>
+        <button class="btn danger-text" data-vact="del">Eliminar video</button></div>` : ''}
+      ${!expired && v.at ? `<p class="muted small" style="margin:0">Se borra solo el ${fmtDate(new Date(v.at + VIDEO_DAYS * 864e5).toISOString())} (se guardan 30 días).</p>` : ''}
+    </section>
+  </div>`;
+}
+$videoLayer.addEventListener('click', async e => {
+  const b = e.target.closest('[data-vact]'), v = videoView;
+  if (!b || !v) return;
+  const act = b.dataset.vact;
+  if (act === 'close') { videoView = null; paintVideo(); return; }
+  if (act === 'share') { videoView = null; paintVideo(); openShare('video', v.path, v.title); return; }
+  if (act === 'del') {
+    if (!await ask('¿Eliminar este video? Se borra también para tu coach y tus gymbros.', 'Eliminar')) return;
+    cloud.deleteVideo(v.path).catch(() => {});
+    for (const { st } of myVideos()) if (st.video.path === v.path) delete st.video;
+    videoView = null; paintVideo();
+    save(); render();
+    showNote('Video eliminado.');
+  }
+});
+
 // ---------- Descargar tus datos ----------
 const csvCell = v => { const t = v == null ? '' : typeof v === 'number' ? String(v).replace('.', ',') : String(v);
   return /[;"\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
@@ -2729,7 +2849,7 @@ const coachInviteText = code => `Vincúlate conmigo como tu coach en Desdel 💪
 const VIEW_OK = ['', 'chat', 'rutinas', 'rutina', 'programas', 'miprograma', 'listos', 'programa', 'dieta', 'objetivo', 'historial', 'sesion', 'progreso', 'ejercicio', 'peso', 'grasa', 'medidas', 'fotos', 'nutricion', 'sueno', 'agua'];
 const VIEW_EXIT = ['social', 'gymbro', 'perfil', 'privacidad', 'cuenta', 'alumnos', 'coach', 'asignar', 'estadisticas'];
 // Lo que se puede tocar mirando a un atleta, y lo extra en el editor de rutinas
-const VIEW_SAFE = new Set(['back', 'view-exit', 'rm-calc', 'rm-unit', 'vid-toggle', 'info', 'toggle-sec', 'range', 'toggle-history', 'hist-month', 'hist-day', 'skin-view', 'measure-view',
+const VIEW_SAFE = new Set(['back', 'view-exit', 'rm-calc', 'rm-unit', 'video-open', 'vid-toggle', 'info', 'toggle-sec', 'range', 'toggle-history', 'hist-month', 'hist-day', 'skin-view', 'measure-view',
   'prog-open', 'prog-close', 'prog-filter', 'prog-retry', 'week-sum', 'week-day', 'guide-view', 'guide-close', 'explore-zone', 'explore-open', 'explore-back', 'explore-close', 'go-ex', 'prev-ex', 'next-ex', 'prog-rid', 'thumb-play']);
 const VIEW_ROUTINE = new Set(['reps-by', 'toggle-drop', 'toggle-bw', 'toggle-ss', 'toggle-rir', 'toggle-unit', 'move', 'ex-open', 'ex-close', 'del-ex', 'dup-routine', 'del-routine',
   'guide-pick', 'guide-change', 'guide-set', 'guide-pick-close', 'explore-list', 'explore-add', 'explore-add-custom']);
@@ -3943,6 +4063,9 @@ function msgBody(m, mine) {
         <span class="muted small">${esc(payloadWeekLine(m.program))}</span>${add('Añadir a mis splits')}</div>`;
     case 'pr':
       return `<div class="msg-card"><span class="muted small">🔥 ¡Nuevo PR!</span><div class="pre">${esc(m.text)}</div></div>`;
+    case 'video':
+      return `<div class="msg-card"><span class="muted small">🎬 Video de técnica</span><strong>${esc(m.video.title || 'Video')}</strong>
+        <button class="btn" data-action="video-open" data-path="${esc(m.video.path)}" data-title="${esc(m.video.title || '')}" data-at="${+m.at || 0}">${PLAY_ICON}Ver video</button></div>`;
     default:
       return `<div class="pre">${esc(m.text || '')}</div>`;
   }
@@ -4035,6 +4158,7 @@ function saveMsgEdit(text) {
 }
 
 function shareMsg(kind, id) {   // [mensaje, vista previa] o null si no hay nada que mandar
+  if (kind === 'video') { const title = (shareSheet && shareSheet.name) || 'Video'; return [{ type: 'video', video: { path: id, title } }, `🎬 Video: ${title}`]; }
   if (kind === 'program') { const p = db.programs.find(x => x.id === id), pr = p && checkSendable(p); return pr ? [{ type: 'program', program: pr }, `📅 Split: ${pr.name}`] : null; }
   if (kind === 'diet') { const d = dietById(id); return d ? [{ type: 'diet', diet: dietPayload(d) }, `🥗 Dieta: ${d.name}`] : null; }
   if (kind === 'routine') { const r = db.routines.find(x => x.id === id); return r ? [{ type: 'routine', routine: routinePayload(r) }, `🏋️ Rutina: ${r.name}`] : null; }
@@ -4049,7 +4173,8 @@ function sendAttachment(id) {
 
 // Panel "Compartir": mandarlo por el chat a tus gymbros (a uno o a varios) o por otra app
 let shareSheet = null;   // { kind: 'workout' | 'routine' | 'diet' | 'program', id, name, at: ruta, sent: chats ya enviados }
-function openShare(kind, id) {
+function openShare(kind, id, title = '') {
+  if (kind === 'video') { shareSheet = { kind, id, name: title, at: location.hash, sent: [] }; render(); return; }
   const ok = kind === 'routine' ? (db.routines.find(x => x.id === id) || {}).exercises?.length || (notice('Agrega ejercicios a la rutina antes de compartirla.'), 0)
     : kind === 'diet' ? (dietById(id) || { meals: [] }).meals.some(m => m.items.length) || (notice('Agrega alimentos a la dieta antes de compartirla.'), 0)
     : shareMsg(kind, id);
@@ -4063,7 +4188,8 @@ function shareToChat(chatId) {
   const c = chats.find(x => x.id === chatId), m = shareSheet && shareMsg(shareSheet.kind, shareSheet.id);
   if (!c || !m || shareSheet.sent.includes(chatId)) return;
   shareSheet.sent.push(chatId); render();
-  cloud.sendMessage(c.id, { from: user.uid, ...m[0] }, m[1].slice(0, 120))
+  (shareSheet.kind === 'video' ? cloud.shareVideo(shareSheet.id, otherUid(c)) : Promise.resolve())   // el gymbro queda con permiso para verlo
+    .then(() => cloud.sendMessage(c.id, { from: user.uid, ...m[0] }, m[1].slice(0, 120)))
     .then(() => showNote(`Enviado a ${gymbroName(c)} ✓`), () => {
       if (shareSheet) { shareSheet.sent = shareSheet.sent.filter(x => x !== chatId); render(); }
       notice('No se pudo enviar el mensaje. Revisa tu internet e intenta de nuevo.');
@@ -4114,7 +4240,7 @@ function sendOut(text) {
 }
 function shareSheetHtml() {
   const sh = shareSheet;
-  const what = { workout: 'entrenamiento', routine: 'rutina', diet: 'dieta', program: 'split' }[sh.kind];
+  const what = { workout: 'entrenamiento', routine: 'rutina', diet: 'dieta', program: 'split', video: 'video' }[sh.kind];
   const when = c => (c.last ? c.last.at : c.createdAt || 0);
   const rows = chats.slice().sort((a, b) => when(b) - when(a)).map(c => {
     const name = gymbroName(c), sent = sh.sent.includes(c.id);
@@ -4132,8 +4258,8 @@ function shareSheetHtml() {
       ${!chatsLoaded ? '<p class="muted small">Cargando…</p>'
         : rows ? `<div class="share-list">${rows}</div>`
         : '<p class="muted small" style="margin:0">Todavía no tienes gymbros. <a href="#/gymbro" data-action="share-close">Agrega uno</a> y podrás mandárselo por el chat.</p>'}
-      <h3 class="guide-zone">Otras apps</h3>
-      <button class="btn block" data-action="share-out" ${sh.busy ? 'disabled' : ''}>${sh.busy ? 'Preparando link…' : 'WhatsApp u otra app'}</button>
+      ${sh.kind === 'video' ? '' : `<h3 class="guide-zone">Otras apps</h3>
+      <button class="btn block" data-action="share-out" ${sh.busy ? 'disabled' : ''}>${sh.busy ? 'Preparando link…' : 'WhatsApp u otra app'}</button>`}
       <button class="btn ${sh.sent.length ? 'primary' : ''} block" data-action="share-close">${sh.sent.length ? 'Listo' : 'Cancelar'}</button>
     </section>
   </div>`;
@@ -4146,6 +4272,7 @@ const msgPreview = m => ({
   workout: () => '💪 Entrenamiento',
   pr: () => '🔥 Nuevo PR',
   program: () => `📅 Split: ${m.program.name}`,
+  video: () => `🎬 Video: ${m.video.title || ''}`,
 }[m.type] || (() => m.text || ''))().slice(0, 120);
 
 // Borra un mensaje tuyo para los dos; si era el último, la lista de chats muestra el anterior
@@ -6462,6 +6589,7 @@ const cleanExercises = d => d.exercises
         const e = bwEff(s, lastreEx(ex));
         const set = { w: num(e.w), r: num(e.r) }; const rir = num(e.rir); if (ex.rir && rir != null) set.rir = rir;
         if (s.note && s.note.trim()) set.note = s.note.trim().slice(0, 140);   // nota de la serie
+        if (s.video) set.video = s.video;   // video de técnica { path, at, title }
         if (ex.side) {   // r = izquierda, r2 = derecha
           const typed = v => v !== '' && v != null, tL = typed(s.r), tR = typed(s.r2);
           if (tL || tR) { set.r = tL ? num(s.r) : null; set.r2 = tR ? num(s.r2) : null; }
@@ -6530,7 +6658,7 @@ function makeEditBuf(id) {
       exerciseId: ex.exerciseId, name: ex.name, unit: ex.unit, rest: 0,
       rir: !!ex.rir, ...(ex.bw ? { bw: true } : {}), ...(ex.side ? { side: true } : {}), ...(ex.guide ? { guide: ex.guide } : {}),
       sets: ex.sets.map(s => ({
-        w: toField(s.w), r: toField(s.r), ...(isSideSet(s) ? { r2: toField(s.r2) } : {}), ...(s.note ? { note: s.note } : {}), ...(ex.rir ? { rir: toField(s.rir) } : {}),
+        w: toField(s.w), r: toField(s.r), ...(isSideSet(s) ? { r2: toField(s.r2) } : {}), ...(s.note ? { note: s.note } : {}), ...(s.video ? { video: s.video } : {}), ...(ex.rir ? { rir: toField(s.rir) } : {}),
         ...(s.drops ? { drops: s.drops.map(x => ({ w: toField(x.w), r: toField(x.r) })) } : {}),
       })),
     })),
@@ -8329,6 +8457,20 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       delete st.note;
       if (setNoteOpen === `${i}-${j}`) setNoteOpen = null;
       save(); render();
+      break;
+    }
+    case 'set-video':   // grabar o elegir el video de esta serie
+      $app.querySelector('.set-pop-wrap')?.remove();   // cierra el menú sin redibujar (la elección del video sigue abierta)
+      pickSetVideo(i, j);
+      break;
+    case 'video-open': {
+      if (el.dataset.path) {
+        openVideo({ path: el.dataset.path, title: el.dataset.title, at: +el.dataset.at || 0, mine: el.dataset.path.startsWith(`videos/${user.uid}/`) });
+        break;
+      }
+      const w = el.dataset.wid ? db.workouts.find(x => x.id === el.dataset.wid) : null;
+      const st = w ? ((w.exercises[+el.dataset.e] || {}).sets || [])[j] : ((cur() || { exercises: [] }).exercises[i] || { sets: [] }).sets[j];
+      if (st && st.video) openVideo({ ...st.video, mine: !viewing });
       break;
     }
     case 'set-note':   // abrir la nota de una serie
