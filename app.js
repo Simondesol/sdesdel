@@ -7114,7 +7114,7 @@ function myProgVolume(p) {
   }
   return { planned, missing };
 }
-// Series por semana de cada músculo, agrupadas: pocas, en rango y muchas (sin barras: se lee de un vistazo)
+// Series por semana de cada músculo, agrupadas: pocas, en rango y muchas (sin barras: se lee de un vistazo); en cada grupo, de menos a más
 function volumeHtml(planned, missing = 0) {
   const zones = [...Object.keys(GUIDE_ZONES), ''].filter(z => planned.get(z));
   if (!zones.length) return '';
@@ -7125,7 +7125,7 @@ function volumeHtml(planned, missing = 0) {
   }
   const block = (key, title, sub) => (groups[key].length ? `<div class="vol-group ${key}">
       <div class="vol-head"><strong>${title}</strong><span class="muted small">${sub}</span></div>
-      ${groups[key].map(([name, n]) => `<div class="vol-row"><span>${name}</span><span class="vol-n">${fmtNum(n)}</span></div>`).join('')}
+      ${groups[key].slice().sort((x, y) => x[1] - y[1]).map(([name, n]) => `<div class="vol-row"><span>${name}</span><span class="vol-n">${fmtNum(n)}</span></div>`).join('')}
     </div>` : '');
   return `<h2>Series por semana</h2>
     <section class="card vol-card">
