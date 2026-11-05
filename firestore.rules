@@ -85,7 +85,7 @@ service cloud.firestore {
         allow read: if request.auth != null && (request.auth.uid == studentUid || isCoachOf(studentUid));
         allow create, update: if isCoachOf(studentUid)
           && request.resource.data.by == request.auth.uid
-          && request.resource.data.keys().hasOnly(['routine', 'program', 'plan', 'diet', 'nutri', 'target', 'deleted', 'kind', 'at', 'by']);
+          && request.resource.data.keys().hasOnly(['routine', 'program', 'plan', 'diet', 'nutri', 'target', 'deload', 'deloadAsk', 'deleted', 'kind', 'at', 'by']);
         allow delete: if request.auth != null && (request.auth.uid == studentUid || isCoachOf(studentUid));
       }
 
