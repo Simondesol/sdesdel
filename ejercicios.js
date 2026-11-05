@@ -1,8 +1,9 @@
 // Guías de técnica: ejercicios con sus músculos, puntos clave y errores comunes (y su video, cuando exista).
 // alias: otros nombres con que la gente lo escribe; con eso Desdel conecta solo tus ejercicios con su guía.
 // El id no se cambia nunca (las rutinas lo guardan); video: 'videos/<id>.mp4' cuando esté grabado.
-export const GUIDE_ZONES = { pecho: 'Pecho', espalda: 'Espalda', trapecio: 'Trapecio', 'espalda-baja': 'Espalda baja', 'hombro-anterior': 'Hombro anterior', 'hombro-lateral': 'Hombro lateral', 'hombro-posterior': 'Hombro posterior', biceps: 'Bíceps', triceps: 'Tríceps', antebrazo: 'Antebrazo',
-  cuadriceps: 'Cuádriceps', femoral: 'Femoral', gluteo: 'Glúteo', aductores: 'Aductores', pantorrilla: 'Pantorrilla', core: 'Core' };
+// Orden en que se muestran los músculos: torso, brazos, piernas y zona media (espalda baja junto al core)
+export const GUIDE_ZONES = { pecho: 'Pecho', espalda: 'Espalda', trapecio: 'Trapecio', 'hombro-anterior': 'Hombro anterior', 'hombro-lateral': 'Hombro lateral', 'hombro-posterior': 'Hombro posterior', biceps: 'Bíceps', triceps: 'Tríceps', antebrazo: 'Antebrazo',
+  cuadriceps: 'Cuádriceps', gluteo: 'Glúteo', femoral: 'Femoral', aductores: 'Aductores', pantorrilla: 'Pantorrilla', 'espalda-baja': 'Espalda baja', core: 'Core' };
 
 export const GUIDES = [
   // ---------- Pecho ----------
