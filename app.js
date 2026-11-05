@@ -7114,22 +7114,27 @@ function myProgVolume(p) {
   }
   return { planned, missing };
 }
+// Series por semana de cada músculo, agrupadas: pocas, en rango y muchas (sin barras: se lee de un vistazo)
 function volumeHtml(planned, missing = 0) {
   const zones = [...Object.keys(GUIDE_ZONES), ''].filter(z => planned.get(z));
   if (!zones.length) return '';
-  const pct = n => `${Math.min(100, (n / VOL_MAX) * 100)}%`;
-  const rows = zones.map(z => {
-    const pl = round1(planned.get(z) || 0);
-    const cls = !z ? 'none' : pl < VOL_RANGE[0] ? 'low' : pl > VOL_RANGE[1] ? 'high' : 'ok';
-    return `<div class="vol-row ${cls}"><span class="vol-name">${z ? GUIDE_ZONES[z] : 'Sin músculo'}</span>
-      <span class="vol-bar"><i class="pl" style="width:${pct(pl)}"></i></span>
-      <span class="vol-n">${fmtNum(pl)}</span></div>`;
-  }).join('');
+  const groups = { low: [], ok: [], high: [], none: [] };
+  for (const z of zones) {
+    const n = round1(planned.get(z) || 0);
+    groups[!z ? 'none' : n < VOL_RANGE[0] ? 'low' : n > VOL_RANGE[1] ? 'high' : 'ok'].push([z ? GUIDE_ZONES[z] : 'Sin músculo', n]);
+  }
+  const block = (key, title, sub) => (groups[key].length ? `<div class="vol-group ${key}">
+      <div class="vol-head"><strong>${title}</strong><span class="muted small">${sub}</span></div>
+      ${groups[key].map(([name, n]) => `<div class="vol-row"><span>${name}</span><span class="vol-n">${fmtNum(n)}</span></div>`).join('')}
+    </div>` : '');
   return `<h2>Series por semana</h2>
     <section class="card vol-card">
-      ${rows}
-      <p class="muted small" style="margin:6px 0 0"><span class="vol-key ok">Verde</span>: entre ${VOL_RANGE[0]} y ${VOL_RANGE[1]} series por semana, lo típico para hipertrofia (la franja de la barra). Gris: menos. <span class="vol-key high">Amarillo</span>: más.
-        Cuenta el músculo principal de cada ejercicio.${planned.get('') ? ' "Sin músculo": ejercicios sin guía de técnica (elígela en Editar rutina).' : ''}${missing ? ` ${plural(missing, 'ejercicio')} sin series objetivo no se ${missing === 1 ? 'cuenta' : 'cuentan'}.` : ''}</p>
+      <p class="muted small" style="margin:0">Para crecer, lo típico es entre ${VOL_RANGE[0]} y ${VOL_RANGE[1]} series por semana de cada músculo.</p>
+      ${block('low', 'Pocas series', `menos de ${VOL_RANGE[0]}`)}
+      ${block('ok', 'En rango', `de ${VOL_RANGE[0]} a ${VOL_RANGE[1]}`)}
+      ${block('high', 'Muchas series', `más de ${VOL_RANGE[1]}`)}
+      ${groups.none.length ? `<p class="muted small" style="margin:0">${fmtNum(groups.none[0][1])} series de ejercicios sin guía de técnica no suman a ningún músculo (elige su guía en Editar rutina).</p>` : ''}
+      <p class="muted small" style="margin:0">Cada ejercicio suma a su músculo principal: el press banca suma a pecho, no a hombro ni a tríceps.${missing ? ` ${plural(missing, 'ejercicio')} sin series objetivo no se ${missing === 1 ? 'cuenta' : 'cuentan'}.` : ''}</p>
     </section>`;
 }
 
