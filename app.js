@@ -641,8 +641,7 @@ function viewFoodForm(id, fromId) {
           <label class="field"><span>Cuánto pesa 1 unidad (opcional)</span>
           <div class="add-row" style="margin-top:0"><input name="uw" inputmode="decimal" value="${w ? toField(w) : ''}" placeholder="${b ? `Ej. ${b.unitG}` : 'Ej. 120'}" autocomplete="off"><span class="unit-label">g</span></div></label>
           <p class="muted small unit-calc when-100-block" style="margin:0">${foodUnitCalc(src ? { p: src.p, c: src.c, f: src.f, kcal: src.kcal, w } : {})}</p>
-        </div>
-        ${show ? '' : '<button type="button" class="link small when-100-block uw-add" data-action="food-uw-show" style="justify-self:start">+ Se come por unidad (agregar su peso)</button>'}`;
+        </div>`;
       })()}
       <p class="form-msg" hidden></p>
       <button class="btn primary block">Guardar alimento</button>
@@ -9205,13 +9204,6 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       const done = t.done.includes(id) ? t.done.filter(x => x !== id) : [...t.done, id];
       setTodayLog(t.diet.id, done);
       save(); render();
-      break;
-    }
-    case 'food-uw-show': {
-      const wrap = el.closest('form').querySelector('.uw-wrap');
-      wrap.classList.remove('uw-hide');
-      el.remove();
-      wrap.querySelector('[name="uw"]').focus();
       break;
     }
     case 'food-del': {
