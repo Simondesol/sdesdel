@@ -1370,3 +1370,21 @@ body.viewing .free-start { display: none; }
 .why-row b { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .why-diff { font-weight: 700; font-size: 15px; }
 .superset .set-pop.why-pop { left: auto; }
+
+/* Progresión por porcentajes o RPE (Editar rutina y al entrenar) */
+.exprog { display: grid; gap: 10px; padding-top: 12px; border-top: 1px solid var(--border); }
+.exprog-head { display: flex; align-items: center; gap: 6px; }
+.exprog textarea { min-height: 112px; font-size: 16px; line-height: 1.4; resize: vertical; }
+.exprog-base { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 6px 12px; }
+.exprog-base label { display: grid; gap: 4px; color: var(--muted); font-size: 13px; }
+.exprog-base input { width: 7.5em; }
+.exprog-prev { display: grid; gap: 4px; }
+.exprog-row { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 8px 10px; border-radius: 10px;
+  border: 1px solid var(--border); background: transparent; color: inherit; font: inherit; font-size: 14px; line-height: 1.35; }
+.exprog-row.on { border-color: var(--accent); }
+.exprog-row.bad { color: var(--danger); border-style: dashed; }
+.exprog-n { min-width: 1.4em; color: var(--muted); font-variant-numeric: tabular-nums; }
+.exprog-today { flex: none; font-size: 12px; font-weight: 700; color: var(--accent); }
+.prog-line { margin: 0 0 6px; font-size: 14px; color: var(--muted); }
+.prog-line strong { color: var(--accent); }
+.exprog .link.danger-text { color: var(--danger); }

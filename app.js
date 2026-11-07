@@ -1585,6 +1585,7 @@ const repsByBlock = (ex, i) => (ex.goalSets && ex.rir
 const INFO = {
   rm: '1RM = el peso máximo que podrías levantar 1 vez. Desdel lo estima con tu 1ª serie (peso y repeticiones), así ves si te estás haciendo más fuerte aunque cambies las repeticiones.',
   rir: 'RIR = repeticiones en reserva: cuántas más podrías haber hecho con buena técnica. RIR 2 es que te quedaban 2; RIR 0, que no podías hacer otra. No es lo mismo que el fallo: al fallo intentas otra repetición y no la completas.',
+  prog: 'Escribe una línea por sesión. 8x80% = 1 serie de 8 repeticiones con el 80% de tu 1RM base. 2x8x75% = 2 series de 8 al 75%. Separa con coma lo que va en la misma sesión: 8x80%, 2x8x75%. 4x4 @8 = 4 series de 4 a RPE 8, o sea, te quedan 2 repeticiones (también vale 4x4 rir2); el peso se calcula con tu 1RM. "Intentar récord" = ese día buscas una marca nueva y, si superas tu 1RM base, al terminar te propongo actualizarlo. Los pesos son exactos, sin redondear a discos. Después de la última sesión vuelve a la primera.',
   opts: 'RIR: al entrenar anotas cuántas repeticiones te quedaban en cada serie (y puedes ponerle un RIR objetivo). Peso corporal: para dominadas, fondos y similares; lo que anotas es el lastre. Unilateral: anotas las repeticiones de cada lado. Calentamiento: al entrenar, arriba de tus series aparecen las series de aproximación con su peso, calculadas desde tu primera serie: el primer ejercicio de cada músculo lleva calentamiento completo y, si el músculo ya trabajó antes en la rutina, una sola aproximación. Si tu primera serie es pesada (1 a 5 repeticiones) lleva una aproximación más y más cerca del peso; si es larga (11 o más), una menos. En dominadas y fondos con lastre, primero sin lastre y después con la mitad. Apágalo en los ejercicios donde no lo quieras.',
 };
 const infoOpen = new Set();
@@ -1603,6 +1604,130 @@ const exThumb = ex => { const g = guideFor(ex.name, ex.guide);
     ? `<button type="button" class="ex-thumb" data-action="thumb-play" aria-label="Ver el video de ${esc(g.name)}"><video src="${esc(g.video)}" poster="${esc(thumbOf(g))}" muted loop playsinline preload="none"></video><span class="ex-thumb-play" aria-hidden="true"></span></button>`
     : '<span class="ex-thumb none" aria-hidden="true">Sin video</span>'; };   // Rutinas: modo para cambiar el orden (flechas en vez de Editar / Empezar)
 
+// ---------- Progresión por porcentajes o RPE (por ejercicio) ----------
+// ex.prog = { text, base, pos }: una línea por sesión, base = 1RM en la unidad del ejercicio, pos = la sesión que toca
+// "8x80%" = 1 serie de 8 al 80% · "2x8x75%" = 2 series de 8 al 75% · "4x4 @8" = 4 de 4 a RPE 8 (RIR 2) · "4x4 rir2"
+// "intentar récord" = día de marca · "repetir" = se ignora (después de la última sesión vuelve a la primera)
+const progCache = new Map();
+function parseProg(text) {
+  const key = String(text || '');
+  if (progCache.has(key)) return progCache.get(key);
+  const out = [];
+  for (const raw of key.split('\n').map(x => x.trim()).filter(Boolean)) {
+    let l = raw.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/×/g, 'x');
+    l = l.replace(/^(semana|sesion|dia|s)\s*\d{1,2}\s*[:.)-]?\s*/, '').replace(/^\d{1,2}\s*[:.)-]\s*/, '').replace(/^\d{1,2}\s+(?!x)/, '').trim();
+    if (!l) continue;
+    if (/^repet/.test(l)) { out.push({ kind: 'skip', raw }); continue; }
+    if (/record|maximo|\btest\b|\brm\b/.test(l)) { out.push({ kind: 'record', raw }); continue; }
+    const sets = [];
+    let ok = true;
+    // La coma decimal ("@7,5", "72,5%") no separa bloques
+    l = l.replace(/(@\s*\d{1,2}|rpe\s*\d{1,2}|rir\s*\d),5(?!\d)/g, '$1.5').replace(/(\d),(\d+)\s*%/g, '$1.$2%');
+    for (const b0 of l.split(/[,;+]|\s+y\s+|\s+luego\s+/)) {
+      const b = b0.trim();
+      if (!b) continue;
+      const m = b.match(/^(?:(\d{1,2})\s*x\s*)?(\d{1,2})(?:(?:\s*(?:x|al|a)\s*|\s+)(\d{1,3}(?:[.,]\d+)?)\s*%|\s*@\s*(?:rpe\s*)?(\d{1,2}(?:\.5)?)|\s*(?:x\s*)?rpe\s*(\d{1,2}(?:\.5)?)|\s*(?:x\s*)?rir\s*(\d(?:\.5)?))$/);
+      if (!m) { ok = false; break; }
+      const n = m[1] ? +m[1] : 1, r = +m[2];
+      const pct = m[3] != null ? +m[3] : null;
+      const rpe = m[4] != null ? +m[4] : m[5] != null ? +m[5] : null;
+      const rir = rpe != null ? 10 - rpe : m[6] != null ? +m[6] : null;
+      if (n < 1 || n > 10 || r < 1 || r > 30 || (pct != null && (pct < 30 || pct > 110)) || (rir != null && (rir < 0 || rir > 5))) { ok = false; break; }
+      for (let k = 0; k < n; k++) sets.push(pct != null ? { r, pct } : { r, rir, ...(rpe != null ? { rpe: true } : {}) });
+    }
+    out.push(ok && sets.length && sets.length <= 15 ? { kind: 'sets', raw, sets } : { kind: 'bad', raw });
+  }
+  progCache.set(key, out);
+  return out;
+}
+const progSteps = ex => (ex && ex.prog ? parseProg(ex.prog.text).filter(x => x.kind === 'sets' || x.kind === 'record') : []);
+// Peso de una serie de la progresión (exacto, con 1 decimal): % del 1RM, o con RPE el que podrías mover reps + RIR veces
+const progW = (base, x) => round1(x.pct != null ? (base * x.pct) / 100 : base * rmPct(x.r + x.rir));
+// La sesión que toca hoy (null si no hay progresión)
+function progStep(ex) {
+  const st = progSteps(ex);
+  if (!st.length) return null;
+  const at = Math.min(Math.max(ex.prog.pos || 0, 0), st.length - 1);
+  return { ...st[at], at, n: st.length };
+}
+// "80 kg × 8 · 2 series de 75 kg × 8"; sin 1RM base: "8 al 80% · 2 series de 8 al 75%"
+function progText(step, base, unit) {
+  if (step.kind === 'record') return 'Intentar récord';
+  const u = unitShort(unit), one = x => (x.pct != null
+    ? (base ? `${fmtNum(progW(base, x))} ${u} × ${x.r}` : `${x.r} al ${fmtNum(x.pct)}%`)
+    : `${x.r} ${x.rpe ? `@${fmtNum(10 - x.rir)}` : `RIR ${fmtNum(x.rir)}`}${base ? ` (≈ ${fmtNum(progW(base, x))} ${u})` : ''}`);
+  const groups = [];
+  for (const x of step.sets) {
+    const g = groups[groups.length - 1];
+    if (g && g.x.r === x.r && g.x.pct === x.pct && g.x.rir === x.rir) g.n++; else groups.push({ x, n: 1 });
+  }
+  return groups.map(g => (g.n > 1 ? `${g.n} series de ${one(g.x)}` : one(g.x))).join(' · ');
+}
+// 1RM estimado de los últimos 4 meses (para sugerirlo como base), en la unidad del ejercicio
+function progRmGuess(ex) {
+  if (!ex || ex.unit === 'placas') return null;
+  const { unit, points } = progressPoints(ex.id, 120);
+  if (!points.length) return null;
+  return round1(convertWeight(Math.max(...points.map(p => p.y)), unit, ex.unit));
+}
+// El entreno toma las series de la sesión que toca: pesos exactos de referencia (en gris) y las repeticiones
+function progDraft(dx, ex) {
+  const st = progStep(ex);
+  if (!st) return dx;
+  const base = ex.prog.base > 0 ? ex.prog.base : null;
+  Object.assign(dx, { progAt: st.at, progN: st.n, ...(base ? { progBase: base } : {}) });
+  if (st.kind === 'record') { dx.progRecord = true; return dx; }
+  const rows = st.sets, useRir = rows.some(x => x.rir != null);
+  if (useRir) dx.rir = true;
+  for (const k of ['goalSets', 'goalReps', 'goalRepsBy', 'goalRir', 'goalRirBy']) delete dx[k];
+  dx.goalSets = rows.length;
+  const reps = rows.map(x => String(x.r));
+  if (reps.every(x => x === reps[0])) dx.goalReps = reps[0]; else dx.goalRepsBy = reps;
+  if (useRir) {
+    const rirs = rows.map(x => (x.rir != null ? toField(x.rir) : ''));
+    if (rirs.every(x => x === rirs[0])) dx.goalRir = rirs[0]; else dx.goalRirBy = rirs;
+  }
+  const prev = dx.sets;
+  dx.sets = rows.map((x, j) => {
+    const p = prev[j] || prev[prev.length - 1] || {};
+    return { w: '', r: '', ...(dx.rir ? { rir: '' } : {}), ...(base ? { pw: toField(progW(base, x)) } : p.pw ? { pw: p.pw } : {}), pr: String(x.r),
+      ...(x.rir != null ? { prir: toField(x.rir) } : {}), ...(p.pnote ? { pnote: p.pnote } : {}) };
+  });
+  if (ex.dropset) dx.sets[dx.sets.length - 1].drops = [{ w: '', r: '' }];
+  return dx;
+}
+// Sección "Progresión" en Editar rutina
+const exProgOpen = new Set();   // ejercicios con la sección abierta
+function progPrevHtml(ex, i) {
+  const items = parseProg(ex.prog && ex.prog.text);
+  if (!items.length) return '<p class="muted small" style="margin:0">Escribe una línea por sesión para ver aquí los pesos de cada una.</p>';
+  const base = ex.prog.base > 0 ? ex.prog.base : null, at = (progStep(ex) || {}).at;
+  let k = -1;
+  return items.map(x => {
+    if (x.kind === 'bad') return `<div class="exprog-row bad">No entendí: «${esc(x.raw)}»</div>`;
+    if (x.kind === 'skip') return '';
+    k++;
+    return `<button type="button" class="exprog-row${k === at ? ' on' : ''}" data-action="exprog-pos" data-i="${i}" data-k="${k}">
+      <span class="exprog-n">${k + 1}</span><span class="grow">${progText(x, base, ex.unit)}</span>${k === at ? '<span class="exprog-today">Toca hoy</span>' : ''}</button>`;
+  }).join('') + (!base && items.some(x => x.kind === 'sets') ? '<p class="muted small" style="margin:0">Pon tu 1RM base para ver los pesos.</p>' : '');
+}
+function progSection(ex, i) {
+  if (!ex.prog && !exProgOpen.has(ex.id)) return `<button class="link small" data-action="exprog-add" data-i="${i}" style="justify-self:start">+ Progresión por porcentajes o RPE</button>`;
+  const p = ex.prog || {}, guess = progRmGuess(ex), u = unitShort(ex.unit);
+  return `<div class="exprog">
+      <div class="exprog-head"><strong>Progresión</strong>${infoBtn('prog')}</div>
+      ${infoBox('prog')}
+      <textarea data-bind="exprog-text" data-i="${i}" rows="5" placeholder="Una línea por sesión. Ej:&#10;8x80%, 2x8x75%&#10;3x8x80%&#10;4x4 @8&#10;intentar récord" aria-label="Progresión: una línea por sesión">${esc(p.text || '')}</textarea>
+      <div class="exprog-base">
+        <label>1RM base (${u})<input data-bind="exprog-base" data-i="${i}" inputmode="decimal" value="${p.base ? toField(p.base) : ''}" placeholder="–" autocomplete="off" aria-label="1RM base"></label>
+        ${guess && guess !== p.base ? `<button class="link small" data-action="exprog-rm" data-i="${i}">Usar mi 1RM estimado: ${fmtNum(guess)} ${u}</button>` : ''}
+      </div>
+      <div class="exprog-prev" data-i="${i}">${progPrevHtml(ex, i)}</div>
+      <p class="muted small" style="margin:0">Mientras tengas progresión, las series, repeticiones y pesos de cada entreno salen de aquí. Al terminar el entreno pasa a la siguiente sesión.</p>
+      <button class="link small danger-text" data-action="exprog-del" data-i="${i}" style="justify-self:start">Quitar progresión</button>
+    </div>`;
+}
+
 // "4 × 8-10 · RIR 2 · Dropset · Rest 1:30"
 function exSummary(ex) {
   const parts = [];
@@ -1615,6 +1740,7 @@ function exSummary(ex) {
   if (ex.bw) parts.push('Peso corporal');
   if (ex.side) parts.push('Unilateral');
   if (ex.warm === 'never') parts.push('Sin calentamiento');
+  { const st = progStep(ex); if (st) parts.push(`Progresión ${st.at + 1}/${st.n}`); }
   if (ex.rest) parts.push(`Rest ${fmtRest(ex.rest)}`);
   if (ex.unit !== 'kg') parts.push(ex.unit);
   return parts.join(' · ') || 'Toca para configurar';
@@ -1651,6 +1777,7 @@ function viewRoutine() {
       </div>
       <button class="link small" data-action="info" data-k="opts" style="justify-self:start">${infoOpen.has('opts') ? 'Ocultar' : '¿Qué hace cada opción?'}</button>
       ${infoBox('opts')}
+      ${alt ? '' : progSection(ex, i)}
       ${(g => {
         // Elegida por ti o con el mismo nombre: está bien. Conectada por un nombre parecido: puede ser otra
         const sure = g && ((ex.guide && ex.guide !== 'none') || guideKey(g.name) === guideKey(ex.name));
@@ -1892,7 +2019,12 @@ function viewWorkout() {
   // Objetivo de la rutina (si tiene), aviso para subir el peso, nota y "Primera vez"
   const exInfo = (ex, i, compact = false) => {
     let hint = '';
-    if (!editing && !d.deload && (ex.goalReps || hasRepsBy(ex))) {
+    if (!editing && ex.progAt != null) {
+      const u = unitShort(ex.unit);
+      hint = `<p class="prog-line"><strong>Progresión · sesión ${ex.progAt + 1} de ${ex.progN}</strong>${ex.progBase ? ` · 1RM base ${fmtNum(ex.progBase)} ${u}` : ''}</p>
+        ${ex.progRecord ? `<p class="goal-hint">Hoy toca intentar un récord.${ex.progBase ? ' Si superas tu 1RM base, al terminar te propongo actualizarlo.' : ''}</p>`
+          : !ex.progBase ? '<p class="goal-hint">Pon tu 1RM base en Editar rutina para ver los pesos de la progresión.</p>' : ''}`;
+    } else if (!editing && !d.deload && (ex.goalReps || hasRepsBy(ex))) {
       const prev = lastFor(ex.exerciseId, before, ridOf(ex));
       const done = prev ? prev.ex.sets.filter(x => x.w != null) : [];
       const topOf = j => (repsFor(ex, j) ? rangeTop(repsFor(ex, j)) : Infinity);
@@ -2881,7 +3013,7 @@ const VIEW_EXIT = ['social', 'gymbro', 'perfil', 'privacidad', 'cuenta', 'alumno
 // Lo que se puede tocar mirando a un atleta, y lo extra en el editor de rutinas
 const VIEW_SAFE = new Set(['back', 'view-exit', 'rm-calc', 'rm-unit', 'video-open', 'vid-toggle', 'info', 'toggle-sec', 'range', 'toggle-history', 'hist-month', 'hist-day', 'skin-view', 'measure-view',
   'prog-open', 'prog-close', 'prog-filter', 'prog-retry', 'week-sum', 'week-day', 'guide-view', 'guide-close', 'explore-zone', 'explore-open', 'explore-back', 'explore-close', 'go-ex', 'prev-ex', 'next-ex', 'prog-rid', 'thumb-play']);
-const VIEW_ROUTINE = new Set(['reps-by', 'toggle-drop', 'toggle-bw', 'toggle-ss', 'toggle-rir', 'toggle-unit', 'move', 'ex-open', 'ex-close', 'del-ex', 'dup-routine', 'del-routine',
+const VIEW_ROUTINE = new Set(['exprog-add', 'exprog-rm', 'exprog-pos', 'exprog-del', 'reps-by', 'toggle-drop', 'toggle-bw', 'toggle-ss', 'toggle-rir', 'toggle-unit', 'move', 'ex-open', 'ex-close', 'del-ex', 'dup-routine', 'del-routine',
   'guide-pick', 'guide-change', 'guide-set', 'guide-pick-close', 'explore-list', 'explore-add', 'explore-add-custom']);
 const VIEW_PROGRAM = new Set(['myprog-new', 'myprog-weeks', 'myprog-stop', 'myprog-use', 'myprog-del', 'prog-level', 'prog-days', 'prog-add', 'prog-add-one']);
 const VIEW_NUTRI = new Set(['diet-new', 'nutri-use', 'diet-link', 'diet-done', 'diet-del', 'meal-add', 'meal-dup', 'meal-del', 'item-del', 'item-mode', 'add-mode', 'pick-food', 'pace-dir', 'set-activity']);
@@ -6543,11 +6675,11 @@ $toast.addEventListener('click', e => {
 // ---------- Entrenamiento ----------
 // Firma de la rutina (para saber si la editaste con el entreno en curso)
 const routineSig = r => { const t = stable(r.exercises); let h = 0; for (let k = 0; k < t.length; k++) h = (h * 31 + t.charCodeAt(k)) | 0; return String(h); };
-const draftEx = (ex, last, rid) => ({
+const draftEx = (ex, last, rid) => progDraft({
   exerciseId: ex.id, name: ex.name, unit: ex.unit, rest: ex.rest || 0, rir: !!ex.rir, ...planFields(ex),
   ...(last ? { ssNext: false } : {}),   // el último no se une con nada
   sets: prefillSets(lastFor(ex.id, db.workouts.length, rid), ex.rir, ex.goalSets),
-});
+}, ex);
 // Editaste la rutina del entreno en curso: el entreno toma los cambios sin perder lo que ya anotaste
 function syncDraftRoutine() {
   const d = db.draft;
@@ -6566,7 +6698,10 @@ function syncDraftRoutine() {
     const ex = ap ? { ...ap, ssNext: ex0.ssNext } : ex0, fresh = draftEx(ex, k === lastK, r.id);
     if (!o) return fresh;
     let sets = o.sets;
-    if ((o.goalSets || 0) !== (ex.goalSets || 0) && ex.goalSets) {   // cambió el número de series
+    if (fresh.progAt != null || o.progAt != null) {   // con progresión: las series que no anotaste toman la sesión nueva
+      sets = fresh.sets.map((x, j) => (o.sets[j] && used(o.sets[j]) ? o.sets[j] : x));
+      o.sets.slice(fresh.sets.length).forEach(x => { if (used(x)) sets.push(x); });
+    } else if ((o.goalSets || 0) !== (ex.goalSets || 0) && ex.goalSets) {   // cambió el número de series
       sets = [...sets];
       while (sets.length < ex.goalSets) sets.push(fresh.sets[sets.length] || nextSet(sets, ex.rir));
       while (sets.length > ex.goalSets && !used(sets[sets.length - 1])) sets.pop();
@@ -6642,11 +6777,43 @@ function finishWorkout() {
   const durationSec = Math.max(0, Math.round((Date.now() - new Date(d.start).getTime()) / 1000));
   const w = { id, routineId: d.routineId, routineName: d.routineName, date: d.start, durationSec, exercises, ...(d.free ? { free: true } : {}), ...(d.deload ? { deload: true } : {}) };
   db.workouts.push(w);
+  const recs = progAdvance(d, w);
   db.draft = null;
   save();
   announcePRs(w);
   justFinished = id;
   location.replace('#/sesion/' + id);
+  if (recs.length) setTimeout(() => progAskBase(recs), 450);
+}
+function progAdvance(d, w) {
+  const r = !d.free && db.routines.find(x => x.id === d.routineId), recs = [];
+  if (!r || d.deload) return recs;   // semana de descarga: la progresión espera
+  for (const e of d.exercises) {
+    if (e.progAt == null || e.swapOf) continue;
+    const done = w.exercises.find(x => x.exerciseId === e.exerciseId), rex = r.exercises.find(x => x.id === e.exerciseId);
+    if (!done || !rex || !rex.prog) continue;
+    const n = progSteps(rex).length;
+    if (!n) continue;
+    rex.prog.pos = (e.progAt + 1) % n;
+    if (e.progRecord && rex.unit !== 'placas') {
+      const best = Math.max(...done.sets.filter(x => x.w != null && x.r != null).map(x => e1rmEx(done, x, w.date)));
+      if (best > 0 && best > (rex.prog.base || 0) + 0.05) recs.push({ rid: r.id, id: rex.id, best: round1(best) });
+    }
+  }
+  return recs;
+}
+async function progAskBase(recs) {
+  for (const x of recs) {
+    const r = db.routines.find(y => y.id === x.rid), rex = r && r.exercises.find(y => y.id === x.id);
+    if (!rex || !rex.prog) continue;
+    const u = unitShort(rex.unit);
+    if (await ask(`¡Récord en ${rex.name}! Tu 1RM estimado de hoy es ${fmtNum(x.best)} ${u}${rex.prog.base ? ` (antes ${fmtNum(rex.prog.base)} ${u})` : ''}.
+
+¿Usarlo como tu nuevo 1RM base? Los pesos de la progresión se calculan con él.`, 'Sí, actualizar')) {
+      rex.prog.base = x.best;
+      save(); render();
+    }
+  }
 }
 
 // Entreno libre → rutina: mismos ejercicios (mismo historial) y sus series como objetivo
@@ -8328,6 +8495,32 @@ $app.addEventListener('click', async e => {
       break;
     case 'toggle-drop':
     case 'toggle-bw':
+    case 'exprog-add': {
+      const ex = edEx(i), g = progRmGuess(ex);
+      ex.prog = { text: '', pos: 0, ...(g ? { base: g } : {}) };
+      exProgOpen.add(ex.id);
+      save(); render();
+      const ta = $app.querySelector('[data-bind="exprog-text"]');
+      if (ta) ta.focus();
+      break;
+    }
+    case 'exprog-rm': {
+      const ex = edEx(i), g = progRmGuess(ex);
+      if (g) { ex.prog = { text: '', pos: 0, ...(ex.prog || {}), base: g }; save(); render(); }
+      break;
+    }
+    case 'exprog-pos': {
+      const ex = edEx(i);
+      if (ex.prog) { ex.prog.pos = +el.dataset.k; save(); render(); }
+      break;
+    }
+    case 'exprog-del': {
+      const ex = edEx(i);
+      if (!(await ask('¿Quitar la progresión de este ejercicio?'))) break;
+      delete ex.prog; exProgOpen.delete(ex.id);
+      save(); render();
+      break;
+    }
     case 'ex-warm': {
       const ex = edEx(i);
       if (ex.warm === 'never') delete ex.warm; else ex.warm = 'never';
@@ -9443,6 +9636,14 @@ $app.addEventListener('input', e => {
     ex.goalRirBy = by;
     repsByOpen.add(ex.id);
   }
+  else if (bind === 'exprog-text' || bind === 'exprog-base') {
+    const ex = edEx(i);
+    ex.prog = { text: '', pos: 0, ...(ex.prog || {}) };
+    if (bind === 'exprog-text') ex.prog.text = el.value;
+    else { const v = num(el.value); if (v > 0 && v < 2000) ex.prog.base = v; else if (!el.value.trim()) delete ex.prog.base; }
+    const prev = $app.querySelector(`.exprog-prev[data-i="${i}"]`);
+    if (prev) prev.innerHTML = progPrevHtml(ex, i);   // sin redibujar todo (para no cerrar el teclado)
+  }
   else if (bind === 'ex-goal-sets' || bind === 'ex-goal-reps' || bind === 'ex-goal-rir') {
     // Vacío = sin objetivo; si lo escrito no es válido se mantiene lo anterior
     const ex = edEx(i), text = el.value.trim();
@@ -9524,6 +9725,9 @@ $app.addEventListener('focusout', e => {
     refresh();   // al salir del cuadro se recalculan las calorías
   } else if (bind === 'wq-ml') {
     refresh();   // al salir del cuadro se ven los botones rápidos actualizados
+  } else if (bind === 'exprog-base') {
+    const ex = curRoutine() && edEx(+e.target.dataset.i);
+    if (ex && ex.prog) { e.target.value = ex.prog.base ? toField(ex.prog.base) : ''; refresh(); }
   } else if (bind === 'ex-repby' || bind === 'ex-rirby') {
     const ex = curRoutine() && edEx(+e.target.dataset.i);
     if (ex) e.target.value = (ex[bind === 'ex-repby' ? 'goalRepsBy' : 'goalRirBy'] || [])[+e.target.dataset.j] || '';
