@@ -797,6 +797,72 @@ function targetBanner() {
     </a>`;
 }
 
+// Lista de compras: lo de tus dietas por los días a la semana que usas cada una (sin extras)
+const shopKey = () => `desdel-compras-${user ? user.uid : ''}`;
+function shopState() {
+  let st = null;
+  try { st = JSON.parse(localStorage.getItem(shopKey()) || 'null'); } catch (e) { /* sin almacenamiento */ }
+  if (!st || !st.days) {   // de partida: los días de tu split (si cada rutina tiene su dieta) o la dieta de hoy los 7 días
+    const days = {}, a = planDietAverage();
+    if (a) for (const [d, n] of a.count) days[d.id] = Math.min(7, Math.round((n / Math.max(1, db.plan.weeks)) * 10) / 10);
+    else { const d = todayNutrition().diet || N().diets[0]; if (d) days[d.id] = 7; }
+    st = { days, checked: (st && st.checked) || [] };
+  }
+  return st;
+}
+const shopSave = st => { try { localStorage.setItem(shopKey(), JSON.stringify(st)); } catch (e) { /* sin almacenamiento */ } };
+// Cocido → crudo (aprox.): cuánto pesa cocido 1 g crudo
+const RAW_FACTORS = [[/arroz/, 2.6], [/fideo|pasta|tallarin|espagueti/, 2.3], [/quinoa/, 2.7], [/cuscus/, 2.5], [/lenteja/, 2.5], [/garbanzo/, 2.2],
+  [/poroto|frijol/, 2.4], [/arveja/, 2.3], [/mote|cebada/, 2.6], [/pollo|pavo|carne|vacuno|lomo|filete|cerdo|chuleta|molida|posta|trutro/, 0.75],
+  [/salmon|merluza|reineta|pescado|atun|tilapia|corvina/, 0.8]];
+const rawFactor = name => { const n = normText(name); if (!/cocid/.test(n)) return null; const r = RAW_FACTORS.find(([re]) => re.test(n)); return r ? r[1] : null; };
+const fmtGrams = g => (g >= 1000 ? `${fmtNum(round1(g / 1000))} kg` : `${fmtNum(Math.round(g / 10) * 10 || Math.round(g))} g`);
+function shopList(st) {
+  const out = new Map();
+  for (const d of N().diets) {
+    const n = +st.days[d.id] || 0;
+    if (!n) continue;
+    for (const meal of d.meals) for (const it of meal.items) {
+      const food = foodById(it.foodId);
+      if (!food) continue;
+      const row = out.get(food.id) || { food, g: 0, u: 0 };
+      if (isUnit(food)) row.u += (it.g || 0) * n; else row.g += itemGrams(food, it) * n;
+      out.set(food.id, row);
+    }
+  }
+  return [...out.values()].filter(r => r.g > 0 || r.u > 0).sort((a, b) => a.food.name.localeCompare(b.food.name, 'es'));
+}
+function shopAmount(r) {
+  if (r.u) return `${fmtNum(Math.ceil(r.u * 2) / 2)} ${Math.ceil(r.u * 2) / 2 === 1 ? 'unidad' : 'unidades'}`;
+  const raw = rawFactor(r.food.name);
+  return `${fmtGrams(r.g)}${r.food.unitG ? ` (≈ ${fmtNum(Math.ceil(r.g / r.food.unitG))} u)` : ''}${raw ? ` · ≈ ${fmtGrams(r.g / raw)} en crudo` : ''}`;
+}
+function viewShopping() {
+  const st = shopState(), list = shopList(st), checked = new Set(st.checked);
+  const dayRows = N().diets.map(d => { const n = +st.days[d.id] || 0;
+    return `<div class="shop-day"><span class="grow">${esc(d.name)}</span>
+      <button class="icon small" data-action="shop-days" data-id="${d.id}" data-d="-1" ${n <= 0 ? 'disabled' : ''} aria-label="Un día menos">−</button>
+      <strong class="shop-n">${fmtNum(n)}</strong>
+      <button class="icon small" data-action="shop-days" data-id="${d.id}" data-d="1" ${n >= 7 ? 'disabled' : ''} aria-label="Un día más">+</button></div>`; }).join('');
+  const sorted = [...list.filter(r => !checked.has(r.food.id)), ...list.filter(r => checked.has(r.food.id))];
+  const rows = sorted.map(r => { const on = checked.has(r.food.id);
+    return `<button type="button" class="shop-item${on ? ' on' : ''}" data-action="shop-check" data-id="${r.food.id}" aria-pressed="${on}">
+      <span class="shop-box" aria-hidden="true">${on ? '✓' : ''}</span><span class="grow"><strong>${esc(r.food.name)}</strong><span class="muted small">${shopAmount(r)}</span></span></button>`; }).join('');
+  const total = N().diets.reduce((a, d) => a + (+st.days[d.id] || 0), 0);
+  return `${header('Lista de compras', { back: true, sub: 'Para 1 semana con tus dietas' })}
+    ${N().diets.length ? `<section class="card stack">
+      <strong>¿Cuántos días a la semana usas cada dieta?</strong>
+      ${dayRows}
+      ${total > 7 ? `<span class="muted small">Suman ${fmtNum(total)} días: revisa que no pase de 7.</span>` : ''}
+    </section>` : '<p class="empty">Todavía no tienes dietas.</p>'}
+    ${list.length ? `<h2>Para comprar${checked.size ? ` · ${checked.size} de ${list.length} listos` : ''}</h2>
+      <div class="shop-list">${rows}</div>
+      <p class="muted small">Toca un alimento para marcarlo cuando lo eches al carro. Lo cocido (arroz, fideos, carnes…) muestra también cuánto es en crudo, aproximado. No incluye los extras.</p>
+      <button class="btn primary block" data-action="shop-share">Compartir lista</button>
+      ${checked.size ? '<button class="btn ghost block" data-action="shop-clear">Desmarcar todo</button>' : ''}`
+      : N().diets.length ? '<p class="empty">Pon cuántos días usas tus dietas para ver qué comprar.</p>' : ''}`;
+}
+
 function viewDiets() {
   const active = todayNutrition().diet;
   const list = N().diets.map(d => {
@@ -811,8 +877,56 @@ function viewDiets() {
     ${targetBanner()}
     ${averageCard()}
     <button class="btn primary block" data-action="diet-new" style="margin:0 0 12px">+ Crear dieta</button>
+    ${N().diets.some(d => d.meals.some(m => m.items.length)) ? '<a class="btn block center" href="#/compras" style="margin:0 0 12px">Lista de compras</a>' : ''}
     ${list || `<p class="empty">${N().foods.length ? 'Crea tu primera dieta.' : 'Todavía no tienes dietas. Toca "+ Crear dieta" para armar la primera.'}</p>`}
     ${importForm('Importar dieta con código', 'dieta')}`;
+}
+
+// Intercambio: cambiar un alimento de la dieta por otro con la misma cantidad de su macro principal
+// (arroz → papas con los mismos carbohidratos; pollo → atún con la misma proteína)
+let itemSwap = null;   // { m, i, q, foodId, by }
+const SWAP_BY = { p: 'Proteína', c: 'Carbohidratos', f: 'Grasas', kcal: 'Calorías' };
+const mainMacro = m => { const e = { p: m.p * 4, c: m.c * 4, f: m.f * 9 }; return Object.keys(e).reduce((a, b) => (e[b] > e[a] ? b : a)); };
+const amountText = (food, it) => {
+  const n = isUnit(food) ? it.g : byPortion(food, it) ? it.n : null;
+  return n != null ? `${fmtNum(n)} ${n === 1 ? 'unidad' : 'unidades'}` : `${fmtNum(it.g || 0)} g`;
+};
+// El ítem nuevo con la cantidad que iguala `by` (null si el alimento nuevo no tiene de ese macro)
+function swappedItem(it, food, by) {
+  const target = itemMacros(it)[by], per = isUnit(food) ? food[by] : food[by] / 100;
+  if (!(target > 0) || !(per > 0)) return null;
+  const q = target / per, old = foodById(it.foodId), half = x => Math.max(0.5, Math.round(x * 2) / 2);
+  if (isUnit(food)) return { foodId: food.id, g: half(q) };
+  if (food.unitG && old && (byPortion(old, it) || isUnit(old))) return { foodId: food.id, n: half(q / food.unitG) };
+  const step = q < 30 ? 1 : 5;
+  return { foodId: food.id, g: Math.max(step, Math.round(q / step) * step) };
+}
+const swapResults = (q, skip) => {
+  if (!q.trim()) return '<p class="muted small" style="margin:0">Escribe el alimento por el que lo quieres cambiar.</p>';
+  const res = searchFoods(q).filter(f => f.id !== skip);
+  return res.map(f => foodResultBtn(f, 'swap-pick')).join('') || '<p class="muted small" style="margin:0">No hay coincidencias.</p>';
+};
+function swapPanelHtml(it) {
+  const old = foodById(it.foodId), sw = itemSwap;
+  const food = sw.foodId && foodById(sw.foodId);
+  let body = swapResults(sw.q || '', it.foodId);
+  if (food) {
+    const now = itemMacros(it), nu = swappedItem(it, food, sw.by);
+    const line = m => `${fmtKcal(m.kcal)} kcal · P ${fmtNum(Math.round(m.p))} · C ${fmtNum(Math.round(m.c))} · G ${fmtNum(Math.round(m.f))}`;
+    body = `<div class="swap-by" role="group" aria-label="Igualar">${['p', 'c', 'f', 'kcal'].map(k => `<button type="button" class="chip toggle ${sw.by === k ? 'on' : ''}" data-action="swap-by" data-k="${k}">${k === 'c' ? 'Carbos' : SWAP_BY[k]}</button>`).join('')}</div>
+      ${nu ? `<div class="swap-res">
+          <div><span class="muted small">Ahora</span><strong>${esc(old.name)} · ${amountText(old, it)}</strong><span class="muted small">${line(now)}</span></div>
+          <div><span class="muted small">Queda</span><strong>${esc(food.name)} · ${amountText(food, nu)}</strong><span class="muted small">${line(itemMacros(nu))}</span></div>
+        </div>`
+        : `<p class="muted small" style="margin:0">${esc(food.name)} no tiene ${SWAP_BY[sw.by].toLowerCase()}. Elige otro macro para igualar.</p>`}
+      <button type="button" class="link small" data-action="swap-again" style="justify-self:start">Elegir otro alimento</button>`;
+  }
+  return `<div class="swap-panel">
+      <span class="muted small">Cambiar <strong>${esc(old ? old.name : 'alimento')}</strong> por otro con la misma cantidad de ${food ? SWAP_BY[sw.by].toLowerCase() : 'su macro principal'}</span>
+      ${food ? '' : `<input data-bind="iswap-q" value="${esc(sw.q || '')}" placeholder="🔍 ¿Por cuál alimento?" autocomplete="off" aria-label="Buscar alimento para el cambio">`}
+      <div class="swap-body">${body}</div>
+      <div class="swap-btns"><button type="button" class="btn" data-action="swap-cancel">Cancelar</button>${food && swappedItem(it, food, sw.by) ? '<button type="button" class="btn primary" data-action="swap-ok">Cambiar</button>' : ''}</div>
+    </div>`;
 }
 
 function viewDietEditor(id) {
@@ -823,15 +937,16 @@ function viewDietEditor(id) {
     const m = mealMacros(meal);
     const items = meal.items.map((it, ii) => {
       const food = foodById(it.foodId), im = itemMacros(it);
-      return `<div class="item-row">
-        <span class="grow">${esc(food ? food.name : '(alimento borrado)')}
+      const open = itemSwap && itemSwap.m === mi && itemSwap.i === ii;
+      return `<div class="item-row${open ? ' swapping' : ''}">
+        <span class="grow">${food ? `<button type="button" class="item-name" data-action="item-swap" data-m="${mi}" data-i="${ii}" aria-label="Cambiar ${esc(food.name)} por otro alimento">${esc(food.name)} <span class="swap-ic" aria-hidden="true">⇄</span></button>` : '(alimento borrado)'}
           <span class="item-macros muted" data-item-macros="${mi}-${ii}">${itemMacroText(im)}</span></span>
         <input class="grams" inputmode="decimal" data-bind="item-g" data-m="${mi}" data-i="${ii}" value="${toField(food && byPortion(food, it) ? it.n : it.g)}" aria-label="${food && (isUnit(food) || byPortion(food, it)) ? 'Cantidad' : 'Gramos'}">
         ${food && food.unitG
           ? `<button type="button" class="chip mode-chip" data-action="item-mode" data-m="${mi}" data-i="${ii}" title="${portionHint(food)}" aria-label="Cambiar entre gramos y unidades">${byPortion(food, it) ? 'u' : 'g'}</button>`
           : `<span class="unit-label">${isUnit(food) ? 'u' : 'g'}</span>`}
         <button class="icon small danger" data-action="item-del" data-m="${mi}" data-i="${ii}" aria-label="Quitar">${TRASH_ICON}</button>
-      </div>`;
+      </div>${open ? swapPanelHtml(it) : ''}`;
     }).join('');
     return `<section class="card meal-edit">
       <div class="meal-title">
@@ -863,7 +978,7 @@ function viewDietEditor(id) {
     </section>
     ${meals}
     <button class="btn block" data-action="meal-add">+ Agregar comida ${diet.meals.length + 1}</button>
-    <p class="muted hint">¿Falta un alimento? <a href="#/alimento/nuevo">Créalo aquí</a> y vuelve.</p>
+    <p class="muted hint">¿Falta un alimento? <a href="#/alimento/nuevo">Créalo aquí</a> y vuelve. Para cambiar uno por otro equivalente, toca su nombre (⇄).</p>
     <button class="btn primary block" data-action="diet-done" style="margin-top:20px">Terminar dieta</button>
     <button class="btn block" data-action="share-diet">Compartir dieta</button>
     <button class="btn ghost block danger-text" data-action="diet-del">Eliminar dieta</button>`;
@@ -3097,7 +3212,7 @@ const VIEW_SAFE = new Set(['back', 'view-exit', 'rm-calc', 'rm-unit', 'video-ope
 const VIEW_ROUTINE = new Set(['exprog-add', 'exprog-rm', 'exprog-pos', 'exprog-del', 'reps-by', 'toggle-drop', 'toggle-bw', 'toggle-ss', 'toggle-rir', 'toggle-unit', 'move', 'ex-open', 'ex-close', 'del-ex', 'dup-routine', 'del-routine',
   'guide-pick', 'guide-change', 'guide-set', 'guide-pick-close', 'explore-list', 'explore-add', 'explore-add-custom']);
 const VIEW_PROGRAM = new Set(['myprog-new', 'myprog-weeks', 'myprog-stop', 'myprog-use', 'myprog-del', 'prog-level', 'prog-days', 'prog-add', 'prog-add-one']);
-const VIEW_NUTRI = new Set(['diet-new', 'nutri-use', 'diet-link', 'diet-done', 'diet-del', 'meal-add', 'meal-dup', 'meal-del', 'item-del', 'item-mode', 'add-mode', 'pick-food', 'pace-dir', 'set-activity']);
+const VIEW_NUTRI = new Set(['item-swap', 'swap-pick', 'swap-by', 'swap-again', 'swap-cancel', 'swap-ok', 'diet-new', 'nutri-use', 'diet-link', 'diet-done', 'diet-del', 'meal-add', 'meal-dup', 'meal-del', 'item-del', 'item-mode', 'add-mode', 'pick-food', 'pace-dir', 'set-activity']);
 const CHAT_BLOCK = new Set(['attach', 'attach-pick', 'attach-send', 'msg-add', 'gymbro-del']);   // usan tus datos: no mientras ves a un atleta
 const viewAllowed = action => VIEW_SAFE.has(action) || action === 'student-del'
   || (routeParts()[0] === 'chat' && !CHAT_BLOCK.has(action)) || (routeParts()[0] === 'rutina' && VIEW_ROUTINE.has(action))
@@ -6516,7 +6631,8 @@ function render() {
     case 'objetivo': html = viewTarget(); break;
     case 'nutricion': html = viewNutrition(arg); break;
     case 'alimento': html = viewFoodForm(arg, routeParts()[2]); break;
-    case 'dieta': html = viewDietEditor(arg); break;
+    case 'dieta': if (itemSwap && itemSwap.diet !== arg) itemSwap = null; html = viewDietEditor(arg); break;
+    case 'compras': html = viewShopping(); break;
     case 'social': html = viewSocial(); break;
     case 'alumnos': html = viewStudents(); break;
     case 'coach': html = viewMyCoach(); break;
@@ -6574,7 +6690,7 @@ function render() {
   const NAV = {
     rutinas: 'entreno', rutina: 'entreno', programas: 'entreno', miprograma: 'entreno', listos: 'entreno', programa: 'entreno',
     historial: 'entreno', sesion: 'entreno', progreso: 'entreno', ejercicio: 'entreno',
-    nutricion: 'nutricion', alimento: 'nutricion', dieta: 'nutricion', objetivo: 'nutricion',
+    nutricion: 'nutricion', alimento: 'nutricion', dieta: 'nutricion', objetivo: 'nutricion', compras: 'nutricion',
     peso: 'cuerpo', grasa: 'cuerpo', pliegues: 'cuerpo', medidas: 'cuerpo', fotos: 'cuerpo',
     social: 'inicio', gymbro: 'inicio', alumnos: 'inicio', coach: 'inicio', asignar: 'inicio', planes: 'inicio',
     perfil: arg === 'yo' ? 'perfil' : 'inicio', privacidad: 'perfil', cuenta: 'perfil', estadisticas: 'perfil',
@@ -9319,6 +9435,66 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       save(); render();
       break;
     }
+    case 'shop-days': {
+      const st = shopState(), n = Math.round(((+st.days[el.dataset.id] || 0) + +el.dataset.d) * 10) / 10;
+      st.days[el.dataset.id] = Math.max(0, Math.min(7, n));
+      shopSave(st); render();
+      break;
+    }
+    case 'shop-check': {
+      const st = shopState(), k = st.checked.indexOf(el.dataset.id);
+      if (k >= 0) st.checked.splice(k, 1); else st.checked.push(el.dataset.id);
+      shopSave(st); render();
+      break;
+    }
+    case 'shop-clear': {
+      const st = shopState(); st.checked = []; shopSave(st); render();
+      break;
+    }
+    case 'shop-share': {
+      const st = shopState(), checked = new Set(st.checked);
+      const list = shopList(st).filter(r => !checked.has(r.food.id));
+      if (!list.length) { showNote('Ya marcaste todo'); break; }
+      sendOut(`Lista de compras (1 semana)\n${list.map(r => `• ${r.food.name}: ${shopAmount(r)}`).join('\n')}`);
+      break;
+    }
+    case 'item-swap': {
+      const m = +el.dataset.m, k = +el.dataset.i;
+      itemSwap = itemSwap && itemSwap.m === m && itemSwap.i === k ? null : { m, i: k, q: '', diet: routeParts()[1] };
+      render();
+      const q = $app.querySelector('[data-bind="iswap-q"]');
+      if (q) { q.focus(); q.closest('.swap-panel').scrollIntoView({ block: 'nearest' }); }
+      break;
+    }
+    case 'swap-pick': {
+      const diet = dietById(routeParts()[1]), it = itemSwap && diet && diet.meals[itemSwap.m]?.items[itemSwap.i];
+      if (!it) break;
+      const food = foodById(el.dataset.id), by = mainMacro(itemMacros(it));
+      // Igualar el macro principal del alimento que sacas; si el nuevo no tiene de ese, las calorías
+      itemSwap.foodId = food.id; itemSwap.by = swappedItem(it, food, by) ? by : 'kcal';
+      render();
+      break;
+    }
+    case 'swap-by':
+      if (itemSwap) { itemSwap.by = el.dataset.k; render(); }
+      break;
+    case 'swap-again':
+      if (itemSwap) { delete itemSwap.foodId; render(); const q = $app.querySelector('[data-bind="iswap-q"]'); if (q) q.focus(); }
+      break;
+    case 'swap-cancel':
+      itemSwap = null; render();
+      break;
+    case 'swap-ok': {
+      const diet = dietById(routeParts()[1]), sw = itemSwap, meal = sw && diet && diet.meals[sw.m], it = meal && meal.items[sw.i];
+      const food = it && foodById(sw.foodId), nu = food && swappedItem(it, food, sw.by);
+      if (!nu) break;
+      const before = { ...it }, oldName = (foodById(it.foodId) || {}).name || 'Alimento';
+      meal.items[sw.i] = nu;
+      itemSwap = null;
+      save(); render();
+      showUndo(`${oldName} → ${food.name}`, () => { meal.items[sw.i] = before; save(); render(); });
+      break;
+    }
     case 'item-del': {
       const meal = dietById(routeParts()[1]).meals[+el.dataset.m], [removed] = meal.items.splice(i, 1);
       save(); render();
@@ -9662,6 +9838,13 @@ $app.addEventListener('input', e => {
     if (guidePick) guidePick.q = el.value;
     const list = $app.querySelector('.guide-list');
     if (list) list.innerHTML = guideListHtml(el.value);
+    return;
+  }
+  if (bind === 'iswap-q' && itemSwap) {
+    itemSwap.q = el.value;
+    const it = (dietById(routeParts()[1]) || { meals: [] }).meals[itemSwap.m]?.items[itemSwap.i];
+    const body = $app.querySelector('.swap-body');
+    if (body && it) body.innerHTML = swapResults(el.value, it.foodId);
     return;
   }
   if (bind === 'food-q') {
