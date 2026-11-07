@@ -412,7 +412,7 @@ function searchFoods(query, limit = 8) {
 }
 const foodResultBtn = (f, action, extra = '') => `<button type="button" class="food-pick" data-action="${action}" data-id="${f.id}" ${extra}>
   <span class="grow">${esc(f.name)}${f.base ? '' : ' <span class="badge on">Mío</span>'}</span>
-  <span class="muted small">${f.unitG ? portionHint(f) : `${fmtKcal(f.kcal)} kcal${isUnit(f) ? ' c/u' : ''} · P ${fmtG(f.p)}`}</span></button>`;
+  <span class="muted small">${f.unitG ? portionHint(f) : isUnit(f) && f.uw ? `${portionHint(f)} · ${fmtKcal(f.kcal)} kcal` : `${fmtKcal(f.kcal)} kcal${isUnit(f) ? ' c/u' : ''} · P ${fmtG(f.p)}`}</span></button>`;
 const dietById = id => N().diets.find(d => d.id === id);
 const sumM = list => list.reduce((a, m) => ({ kcal: a.kcal + m.kcal, p: a.p + m.p, c: a.c + m.c, f: a.f + m.f }), { ...ZERO });
 // Alimentos por unidad (1 huevo, 1 rebanada...) o por 100 g
@@ -433,7 +433,7 @@ const itemText = (food, it) => {
   }
   return `${fmtNum(it.g)} g ${esc(food.name)}`;
 };
-const portionHint = f => (f.unitG ? `1 ${f.unitLabel} ≈ ${f.unitG} g` : '');
+const portionHint = f => (f.unitG ? `1 ${f.unitLabel} ≈ ${f.unitG} g` : isUnit(f) && f.uw ? `1 unidad ≈ ${fmtNum(f.uw)} g` : '');
 function itemMacros(it) {
   const food = foodById(it.foodId);
   if (!food) return { ...ZERO };
@@ -579,7 +579,7 @@ function viewFoods() {
   const list = foods.map(f => `
     <a class="card" href="#/alimento/${f.id}" data-search="${esc(normText(`${f.name} ${synonymsOf(f.name)}`))}">
       <div class="grow"><strong>${esc(f.name)}</strong>
-        <span class="muted small">${fmtKcal(f.kcal)} kcal · P ${fmtG(f.p)} · C ${fmtG(f.c)} · G ${fmtG(f.f)} <span class="per">${perText(f)}</span></span>
+        <span class="muted small">${fmtKcal(f.kcal)} kcal · P ${fmtG(f.p)} · C ${fmtG(f.c)} · G ${fmtG(f.f)} <span class="per">${perText(f)}${isUnit(f) && f.uw ? ` (≈ ${fmtNum(f.uw)} g)` : ''}</span></span>
       </div><span class="chev">›</span>
     </a>`).join('');
   return `${header('Nutrición', {})}${nutriTabs('alimentos')}
@@ -633,6 +633,11 @@ function viewFoodForm(id, fromId) {
       ${field('c', 'Carbohidratos', 'g')}
       ${field('f', 'Grasas', 'g')}
       ${field('kcal', 'Calorías (si lo dejas vacío se calcula con los macros)', 'kcal')}
+      ${(() => {   // solo con "Por unidad"; sugiere el peso del mismo alimento en la base de Desdel
+        const b = src && BASE_FOODS.find(x => x.unitG && normText(x.name) === normText(src.name));
+        return `<label class="field when-unit-block"><span>Cuánto pesa 1 unidad (opcional)</span>
+          <div class="add-row" style="margin-top:0"><input name="uw" inputmode="decimal" value="${src && src.uw ? toField(src.uw) : ''}" placeholder="${b ? `Ej. ${b.unitG}` : 'Ej. 120'}" autocomplete="off"><span class="unit-label">g</span></div></label>`;
+      })()}
       <p class="form-msg" hidden></p>
       <button class="btn primary block">Guardar alimento</button>
     </form>
@@ -653,10 +658,15 @@ function saveFood(f) {
   if (kcal < 0 || kcal > (unit ? 3000 : 1000)) return formMsg(f, unit ? 'Revisa las calorías de 1 unidad.' : 'Las calorías por 100 g deben estar entre 0 y 1000.');
   const data = { name, kcal: round1(kcal), p: round1(p), c: round1(c), f: round1(fat) };
   if (unit) data.per = 'unit';
+  if (unit && f.elements.uw.value.trim()) {
+    const uw = val('uw');
+    if (!(uw > 0 && uw <= 3000)) return formMsg(f, 'Revisa cuánto pesa 1 unidad (en gramos), o déjalo vacío.');
+    data.uw = round1(uw);
+  }
   const existing = f.dataset.id && N().foods.find(x => x.id === f.dataset.id);
   if (existing) {
     const changed = isUnit(existing) !== unit;
-    delete existing.per; delete existing.unitName;
+    delete existing.per; delete existing.unitName; delete existing.uw;
     Object.assign(existing, data);
     const used = N().diets.some(d => d.meals.some(m => m.items.some(it => it.foodId === existing.id)));
     if (changed && used) notice(`Cambiaste "${name}" a ${unit ? 'por unidad' : 'por 100 g'}. Revisa las cantidades en tus dietas: ahora se cuentan en ${unit ? 'unidades' : 'gramos'}.`);
