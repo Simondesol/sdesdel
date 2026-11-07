@@ -175,8 +175,7 @@ function bestDrops(exerciseId, before = db.workouts.length, unit = null, rid = n
 const dropCmp = (x, ex, best) => liveCmp(x, { ...ex, rir: false, side: false }, best);
 
 // Compara lo que se está escribiendo con la mejor marca (null si no hay nada que comparar)
-function liveCmp(s, ex, best) {
-  if (!best) return null;
+function liveSet(s, ex) {
   // Los íconos de progreso recién cuando escribes el peso (o lastre), las repeticiones y, si lo usas, el RIR
   const has = v => v !== '' && v != null;
   if (!(has(s.r) || (ex.side && has(s.r2))) || !has(s.w)) return null;
@@ -185,7 +184,33 @@ function liveCmp(s, ex, best) {
   s = { ...s, ...bwEff(s, lastreEx(ex)) };
   const w = num(s.w), r = ex.side && !has(raw.r) ? null : num(s.r), r2 = ex.side && has(raw.r2) ? num(s.r2) : null;
   if (w == null && r == null && r2 == null) return null;
-  return cmpSet({ w, r, ...(ex.side ? { r2 } : {}), rir: num(s.rir), unit: ex.unit, bw: bwFor(ex, new Date().toISOString()) }, best);
+  return { w, r, ...(ex.side ? { r2 } : {}), rir: num(s.rir), unit: ex.unit, bw: bwFor(ex, new Date().toISOString()) };
+}
+function liveCmp(s, ex, best) {
+  const c = best && liveSet(s, ex);
+  return c ? cmpSet(c, best) : null;
+}
+// Tarjeta "¿por qué?": al tocar el ícono de subiste / igualaste / bajaste se explica con el 1RM estimado de las dos series
+let markWhy = null;   // ícono tocado: 'i-j' (serie) o 'i-j-k' (bajada del dropset)
+function whyPop(key, c, best, ex) {
+  if (markWhy !== key || !c || !best) return '';
+  const k = cmpSet(c, best), a = setStrength(c), b = setStrength(best);
+  const u = unitShort(ex.unit), bwKg = c.bw || best.bw || 0;
+  const inU = kg => (ex.unit === 'lb' ? kg / 0.45359237 : kg);   // setStrength está en kg
+  const show = kg => fmtNum(round1(inU(kg)));
+  const desc = x => `${bwKg ? '+' : ''}${fmtNum(x.w)} ${u} × ${repsText(x)}${x.rir != null ? ` (RIR ${fmtNum(x.rir)})` : ''}`;
+  const d = a - b, pct = b ? (d / b) * 100 : 0, sign = d > 0 ? '+' : d < 0 ? '−' : '';
+  const title = k > 0 ? 'Superaste tu mejor marca' : k < 0 ? 'Bajo tu mejor marca' : 'Igualaste tu mejor marca';
+  return `<div class="set-pop-wrap">
+    <div class="set-pop-back" data-action="mark-why-close"></div>
+    <div class="set-pop why-pop ${k > 0 ? 'up' : k < 0 ? 'down' : 'eq'}" role="dialog" aria-label="${title}">
+      <strong>${title}</strong>
+      <div class="why-row"><span>Hoy</span><span>${desc(c)}</span><b>1RM ≈ ${show(a)} ${u}</b></div>
+      <div class="why-row"><span>Mejor</span><span>${desc(best)}</span><b>1RM ≈ ${show(b)} ${u}</b></div>
+      <div class="why-diff">${sign}${fmtNum(round1(Math.abs(inU(d))))} ${u} (${sign}${fmtNum(round1(Math.abs(pct)))}%)${k === 0 ? ' · menos de 0,5% de diferencia cuenta como igual' : ''}</div>
+      <p class="muted small" style="margin:0">Se compara la fuerza estimada (1RM): así se pueden comparar series con distinto peso y repeticiones.${(c.rir != null || best.rir != null) ? ' El RIR suma las repeticiones que te quedaban.' : ''}${bwKg ? ' Incluye tu peso corporal.' : ''}${c.r2 != null || best.r2 != null ? ' En unilateral cuenta el lado más débil.' : ''}</p>
+    </div>
+  </div>`;
 }
 
 // Gráfico chico: sube (superaste), plano (igualaste), baja (bajo tu récord)
@@ -1827,8 +1852,9 @@ function viewWorkout() {
         <span class="x">×</span>
         <input inputmode="numeric" enterkeyhint="next" data-bind="dr" data-i="${i}" data-j="${j}" data-k="${k}" value="${esc(x.r)}" placeholder="${esc(x.pr || 'reps')}" aria-label="Repeticiones bajada ${k + 1} de la serie ${label}">
         ${ex.rir ? '<span></span>' : ''}
-        <span class="mark-cell" data-mark="${i}-${j}-${k}">${markSpan(dropCmp(x, ex, (dropBests.get(i)[j] || [])[k]))}</span>
+        <span class="mark-cell" data-mark="${i}-${j}-${k}" data-action="mark-why" data-key="${i}-${j}-${k}">${markSpan(dropCmp(x, ex, (dropBests.get(i)[j] || [])[k]))}</span>
       </div>
+      ${whyPop(`${i}-${j}-${k}`, liveSet(x, { ...ex, rir: false, side: false }), (dropBests.get(i)[j] || [])[k], ex)}
       ${bestLine((dropBests.get(i)[j] || [])[k], true)}`).join('');
     const wPh = s.pw || (lastreEx(ex) ? '0' : ex.unit === 'placas' ? 'placas' : 'peso');
     const rPh = (pr, side) => repsFor(ex, j) || pr || side;
@@ -1839,8 +1865,9 @@ function viewWorkout() {
         <input inputmode="numeric" enterkeyhint="next" data-bind="r" data-i="${i}" data-j="${j}" value="${esc(s.r)}" placeholder="${esc(rPh(s.pr, 'izq'))}" aria-label="Repeticiones izquierda serie ${label}">
         <input inputmode="numeric" enterkeyhint="next" data-bind="r2" data-i="${i}" data-j="${j}" value="${esc(s.r2 ?? '')}" placeholder="${esc(rPh(s.pr2 ?? s.pr, 'der'))}" aria-label="Repeticiones derecha serie ${label}">
         ${ex.rir ? `<input class="rir" inputmode="numeric" enterkeyhint="next" data-bind="rir" data-i="${i}" data-j="${j}" value="${esc(s.rir ?? '')}" placeholder="${esc(rirFor(ex, j) || s.prir || 'RIR')}" aria-label="RIR serie ${label}">` : ''}
-        <span class="mark-cell" data-mark="${i}-${j}">${markSpan(liveCmp(s, ex, best[j]))}</span>
+        <span class="mark-cell" data-mark="${i}-${j}" data-action="mark-why" data-key="${i}-${j}">${markSpan(liveCmp(s, ex, best[j]))}</span>
       </div>
+      ${whyPop(`${i}-${j}`, liveSet(s, ex), best[j], ex)}
       ${bestLine(best[j])}
       ${setMenu(s, i, j, label)}
       ${drops}
@@ -1853,8 +1880,9 @@ function viewWorkout() {
         <span class="x">×</span>
         <input inputmode="numeric" enterkeyhint="next" data-bind="r" data-i="${i}" data-j="${j}" value="${esc(s.r)}" placeholder="${esc(repsFor(ex, j) || s.pr || 'reps')}" aria-label="Repeticiones serie ${label}">
         ${ex.rir ? `<input class="rir" inputmode="numeric" enterkeyhint="next" data-bind="rir" data-i="${i}" data-j="${j}" value="${esc(s.rir ?? '')}" placeholder="${esc(rirFor(ex, j) || s.prir || 'RIR')}" aria-label="RIR serie ${label}">` : ''}
-        <span class="mark-cell" data-mark="${i}-${j}">${markSpan(liveCmp(s, ex, best[j]))}</span>
+        <span class="mark-cell" data-mark="${i}-${j}" data-action="mark-why" data-key="${i}-${j}">${markSpan(liveCmp(s, ex, best[j]))}</span>
       </div>
+      ${whyPop(`${i}-${j}`, liveSet(s, ex), best[j], ex)}
       ${bestLine(best[j])}
       ${setMenu(s, i, j, label)}
       ${drops}
@@ -7991,6 +8019,7 @@ $app.addEventListener('click', async e => {
   if (!el || el.disabled) return;
   const { action, id } = el.dataset;
   const i = +el.dataset.i, j = +el.dataset.j;
+  if (action !== 'mark-why') markWhy = null;   // tocar otra cosa cierra la tarjeta del ícono
   if (action !== 'set-menu') setMenuOpen = null;   // elegir una opción (o tocar otra cosa) cierra el menú de la serie
   if (viewing && !viewAllowed(action)) { notice(viewOnlyMsg()); return; }
 
@@ -8454,6 +8483,16 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
     }
     case 'set-menu':
       setMenuOpen = setMenuOpen === `${i}-${j}` ? null : `${i}-${j}`;
+      render();
+      break;
+    case 'mark-why':   // tocar el ícono de subiste / igualaste / bajaste
+      if (!el.querySelector('.mark')) break;
+      markWhy = markWhy === el.dataset.key ? null : el.dataset.key;
+      setMenuOpen = null;
+      render();
+      break;
+    case 'mark-why-close':
+      markWhy = null;
       render();
       break;
     case 'set-menu-close':   // tocar fuera del cuadro (ya se cerró arriba)

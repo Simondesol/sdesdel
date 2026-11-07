@@ -1359,3 +1359,14 @@ body.viewing .free-start { display: none; }
 .video-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .set-ref.drop-ref { margin-left: 44px; }   /* 12 px de la bajada + la columna de los ⋮ */
 .superset .set-ref.drop-ref { margin-left: 68px; }   /* en superset la columna también lleva la letra */
+
+/* Tarjeta "¿por qué subí o bajé?" (al tocar el ícono de la serie) */
+.mark-cell .mark { cursor: pointer; }
+.set-pop.why-pop { left: auto; right: 0; top: 2px; min-width: 0; width: min(330px, calc(100vw - 48px)); display: grid; gap: 8px; padding: 14px 16px; }
+.why-pop.up > strong { color: var(--accent); }
+.why-pop.down > strong { color: var(--danger); }
+.why-row { display: grid; grid-template-columns: 3.4em 1fr auto; gap: 6px; align-items: baseline; font-size: 14px; }
+.why-row > span:first-child { color: var(--muted); }
+.why-row b { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.why-diff { font-weight: 700; font-size: 15px; }
+.superset .set-pop.why-pop { left: auto; }
