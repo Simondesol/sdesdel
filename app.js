@@ -663,6 +663,21 @@ function paintFoodUnitCalc(form) {
   out.innerHTML = foodUnitCalc({ p: v('p'), c: v('c'), f: v('f'), kcal: v('kcal'), w: v('uw') });
 }
 
+// Cambiar entre "Por 100 g" y "Por unidad" con el peso de 1 unidad escrito: los macros se convierten solos
+function convertFoodPer(form, toUnit) {
+  const w = num(form.elements.uw.value);
+  if (!(w > 0)) return;
+  const k = toUnit ? w / 100 : 100 / w;
+  let any = false;
+  for (const name of ['p', 'c', 'f', 'kcal']) {
+    const v = num(form.elements[name].value);
+    if (v == null) continue;
+    form.elements[name].value = toField(round1(v * k));
+    any = true;
+  }
+  if (any) showNote(toUnit ? `Macros convertidos a 1 unidad (${fmtNum(w)} g)` : 'Macros convertidos a 100 g');
+}
+
 function saveFood(f) {
   const name = f.elements.name.value.trim();
   const val = k => num(f.elements[k].value);
@@ -9580,7 +9595,10 @@ $app.addEventListener('change', async e => {
 
 $app.addEventListener('input', e => {
   const el = e.target, bind = el.dataset.bind;
-  if (el.form && el.form.matches('.food-form')) paintFoodUnitCalc(el.form);
+  if (el.form && el.form.matches('.food-form')) {
+    if (el.name === 'per') convertFoodPer(el.form, el.value === 'unit');
+    paintFoodUnitCalc(el.form);
+  }
   if (!bind) return;
   if (bind === 'progress-search') { progressQuery = el.value; filterProgress(); return; }
   if (rmCalc && (bind === 'rm-w' || bind === 'rm-r' || bind === 'rm-rir')) {
