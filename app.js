@@ -706,12 +706,15 @@ function saveFood(f) {
     // Lo que tenías anotado en unidades sigue igual: si ahora es por unidad, son unidades; si le quitaste el peso, pasa a gramos
     const items = [...N().diets.flatMap(d => d.meals.flatMap(m => m.items)), ...Object.values(N().log || {}).flatMap(day => (day && day.extras) || [])];
     for (const it of items) {
-      if (it.foodId !== existing.id || it.n == null) continue;
+      if (it.foodId !== existing.id) continue;
+      // De "Por unidad" a "Por 100 g" con peso de 1 unidad: lo anotado sigue en unidades (mismas calorías)
+      if (changed && !unit && it.n == null && existing.unitG) { it.n = it.g || 0; delete it.g; continue; }
+      if (it.n == null) continue;
       if (unit) { it.g = it.n; delete it.n; }
       else if (!existing.unitG) { it.g = Math.round(it.n * (oldU || 0)); delete it.n; }
     }
     const used = N().diets.some(d => d.meals.some(m => m.items.some(it => it.foodId === existing.id)));
-    if (changed && used) notice(`Cambiaste "${name}" a ${unit ? 'por unidad' : 'por 100 g'}. Revisa las cantidades en tus dietas: ahora se cuentan en ${unit ? 'unidades' : 'gramos'}.`);
+    if (changed && used && (unit || !existing.unitG)) notice(`Cambiaste "${name}" a ${unit ? 'por unidad' : 'por 100 g'}. Revisa las cantidades en tus dietas: ahora se cuentan en ${unit ? 'unidades' : 'gramos'}.`);
   } else {
     N().foods.push({ id: uid(), ...data });
   }
