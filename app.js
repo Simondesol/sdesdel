@@ -9171,6 +9171,12 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
     }
     case 'food-del': {
       const food = foodById(routeParts()[1]);
+      const uses = N().diets.map(d => ({ d, meals: d.meals.filter(m => m.items.some(it => it.foodId === food.id)) })).filter(x => x.meals.length);
+      if (uses.length) {
+        const list = uses.map(({ d, meals }) => `• ${d.name || 'Dieta sin nombre'}: ${meals.map(m => m.name || 'Comida').join(', ')}`).join('\n');
+        const msg = `"${food.name}" está en ${uses.length === 1 ? 'tu dieta' : `${uses.length} de tus dietas`}:\n${list}\n\nSi lo eliminas, también se quita de ${uses.reduce((n, x) => n + x.meals.length, 0) === 1 ? 'esa comida' : 'esas comidas'}. ¿Eliminarlo de todas formas?`;
+        if (!(await dialog(msg, { ok: 'Eliminar', cancel: 'Cancelar', danger: true }))) break;
+      }
       const before = { diets: clone(N().diets), foods: [...N().foods] };
       undoDel(`"${food.name}" eliminado`, () => { Object.assign(N(), before); }, 450);
       for (const d of N().diets) for (const m of d.meals) m.items = m.items.filter(it => it.foodId !== food.id);
