@@ -1389,3 +1389,6 @@ body.viewing .free-start { display: none; }
 .prog-line strong { color: var(--accent); }
 .exprog .link.danger-text { color: var(--danger); }
 .food-form:has(input[value="unit"]:checked) .when-100-block { display: none; }
+.food-form .uw-wrap { display: grid; gap: 8px; }
+.food-form .uw-wrap.uw-hide { display: none; }
+.food-form:has(input[value="unit"]:checked) .uw-wrap.uw-hide { display: grid; }

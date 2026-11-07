@@ -634,11 +634,15 @@ function viewFoodForm(id, fromId) {
       ${field('f', 'Grasas', 'g')}
       ${field('kcal', 'Calorías (si lo dejas vacío se calcula con los macros)', 'kcal')}
       ${(() => {   // sugiere el peso del mismo alimento en la base de Desdel
-        const b = src && BASE_FOODS.find(x => x.unitG && normText(x.name) === normText(src.name));
-        const w = src ? src.unitG || src.uw : null;
-        return `<label class="field"><span>Cuánto pesa 1 unidad (opcional)</span>
+        const nm = src ? normText(src.name.trim()) : '';
+        const b = nm && BASE_FOODS.find(x => x.unitG && (normText(x.name) === nm || nm.startsWith(`${normText(x.name)} `)));
+        const w = src ? src.unitG || src.uw : null, show = !!(w || b);
+        return `<div class="uw-wrap${show ? '' : ' uw-hide'}">
+          <label class="field"><span>Cuánto pesa 1 unidad (opcional)</span>
           <div class="add-row" style="margin-top:0"><input name="uw" inputmode="decimal" value="${w ? toField(w) : ''}" placeholder="${b ? `Ej. ${b.unitG}` : 'Ej. 120'}" autocomplete="off"><span class="unit-label">g</span></div></label>
-          <p class="muted small unit-calc when-100-block" style="margin:-4px 0 0">${foodUnitCalc(src ? { p: src.p, c: src.c, f: src.f, kcal: src.kcal, w } : {})}</p>`;
+          <p class="muted small unit-calc when-100-block" style="margin:0">${foodUnitCalc(src ? { p: src.p, c: src.c, f: src.f, kcal: src.kcal, w } : {})}</p>
+        </div>
+        ${show ? '' : '<button type="button" class="link small when-100-block uw-add" data-action="food-uw-show" style="justify-self:start">+ Se come por unidad (agregar su peso)</button>'}`;
       })()}
       <p class="form-msg" hidden></p>
       <button class="btn primary block">Guardar alimento</button>
@@ -9201,6 +9205,13 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       const done = t.done.includes(id) ? t.done.filter(x => x !== id) : [...t.done, id];
       setTodayLog(t.diet.id, done);
       save(); render();
+      break;
+    }
+    case 'food-uw-show': {
+      const wrap = el.closest('form').querySelector('.uw-wrap');
+      wrap.classList.remove('uw-hide');
+      el.remove();
+      wrap.querySelector('[name="uw"]').focus();
       break;
     }
     case 'food-del': {
