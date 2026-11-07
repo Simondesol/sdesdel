@@ -1388,5 +1388,4 @@ body.viewing .free-start { display: none; }
 .prog-line { margin: 0 0 6px; font-size: 14px; color: var(--muted); }
 .prog-line strong { color: var(--accent); }
 .exprog .link.danger-text { color: var(--danger); }
-.food-form .when-unit-block { display: none; }
-.food-form:has(input[value="unit"]:checked) .when-unit-block { display: block; }
+.food-form:has(input[value="unit"]:checked) .when-100-block { display: none; }

@@ -579,7 +579,7 @@ function viewFoods() {
   const list = foods.map(f => `
     <a class="card" href="#/alimento/${f.id}" data-search="${esc(normText(`${f.name} ${synonymsOf(f.name)}`))}">
       <div class="grow"><strong>${esc(f.name)}</strong>
-        <span class="muted small">${fmtKcal(f.kcal)} kcal · P ${fmtG(f.p)} · C ${fmtG(f.c)} · G ${fmtG(f.f)} <span class="per">${perText(f)}${isUnit(f) && f.uw ? ` (≈ ${fmtNum(f.uw)} g)` : ''}</span></span>
+        <span class="muted small">${fmtKcal(f.kcal)} kcal · P ${fmtG(f.p)} · C ${fmtG(f.c)} · G ${fmtG(f.f)} <span class="per">${perText(f)}${isUnit(f) && f.uw ? ` (≈ ${fmtNum(f.uw)} g)` : f.unitG ? ` · 1 unidad ≈ ${fmtNum(f.unitG)} g` : ''}</span></span>
       </div><span class="chev">›</span>
     </a>`).join('');
   return `${header('Nutrición', {})}${nutriTabs('alimentos')}
@@ -633,15 +633,31 @@ function viewFoodForm(id, fromId) {
       ${field('c', 'Carbohidratos', 'g')}
       ${field('f', 'Grasas', 'g')}
       ${field('kcal', 'Calorías (si lo dejas vacío se calcula con los macros)', 'kcal')}
-      ${(() => {   // solo con "Por unidad"; sugiere el peso del mismo alimento en la base de Desdel
+      ${(() => {   // sugiere el peso del mismo alimento en la base de Desdel
         const b = src && BASE_FOODS.find(x => x.unitG && normText(x.name) === normText(src.name));
-        return `<label class="field when-unit-block"><span>Cuánto pesa 1 unidad (opcional)</span>
-          <div class="add-row" style="margin-top:0"><input name="uw" inputmode="decimal" value="${src && src.uw ? toField(src.uw) : ''}" placeholder="${b ? `Ej. ${b.unitG}` : 'Ej. 120'}" autocomplete="off"><span class="unit-label">g</span></div></label>`;
+        const w = src ? src.unitG || src.uw : null;
+        return `<label class="field"><span>Cuánto pesa 1 unidad (opcional)</span>
+          <div class="add-row" style="margin-top:0"><input name="uw" inputmode="decimal" value="${w ? toField(w) : ''}" placeholder="${b ? `Ej. ${b.unitG}` : 'Ej. 120'}" autocomplete="off"><span class="unit-label">g</span></div></label>
+          <p class="muted small unit-calc when-100-block" style="margin:-4px 0 0">${foodUnitCalc(src ? { p: src.p, c: src.c, f: src.f, kcal: src.kcal, w } : {})}</p>`;
       })()}
       <p class="form-msg" hidden></p>
       <button class="btn primary block">Guardar alimento</button>
     </form>
     ${food ? '<button class="btn ghost block danger-text" data-action="food-del" style="margin-top:16px">Eliminar alimento</button>' : ''}`;
+}
+
+// "1 unidad (120 g) = 107 kcal · P 1,3 · C 27,4 · G 0,4": los macros de 1 unidad con los de 100 g
+function foodUnitCalc({ p, c, f, kcal, w }) {
+  if (!(w > 0)) return 'Si le pones peso, también lo puedes anotar en unidades y la app calcula los macros de 1 unidad.';
+  if ([p, c, f].some(x => x == null || x < 0)) return `Escribe los macros de 100 g para ver los de 1 unidad (${fmtNum(w)} g).`;
+  const k = w / 100, cal = kcal != null ? kcal : p * 4 + c * 4 + f * 9;
+  return `1 unidad (${fmtNum(w)} g) = <strong>${fmtKcal(cal * k)} kcal</strong> · P ${fmtNum(round1(p * k))} · C ${fmtNum(round1(c * k))} · G ${fmtNum(round1(f * k))}`;
+}
+function paintFoodUnitCalc(form) {
+  const out = form.querySelector('.unit-calc');
+  if (!out) return;
+  const v = k => num(form.elements[k].value);
+  out.innerHTML = foodUnitCalc({ p: v('p'), c: v('c'), f: v('f'), kcal: v('kcal'), w: v('uw') });
 }
 
 function saveFood(f) {
@@ -658,16 +674,24 @@ function saveFood(f) {
   if (kcal < 0 || kcal > (unit ? 3000 : 1000)) return formMsg(f, unit ? 'Revisa las calorías de 1 unidad.' : 'Las calorías por 100 g deben estar entre 0 y 1000.');
   const data = { name, kcal: round1(kcal), p: round1(p), c: round1(c), f: round1(fat) };
   if (unit) data.per = 'unit';
-  if (unit && f.elements.uw.value.trim()) {
+  if (f.elements.uw.value.trim()) {
     const uw = val('uw');
     if (!(uw > 0 && uw <= 3000)) return formMsg(f, 'Revisa cuánto pesa 1 unidad (en gramos), o déjalo vacío.');
-    data.uw = round1(uw);
+    // Por unidad: el peso es solo informativo. Por 100 g: permite anotarlo en unidades (como los de la base de Desdel)
+    if (unit) data.uw = round1(uw); else Object.assign(data, { unitG: round1(uw), unitLabel: 'unidad' });
   }
   const existing = f.dataset.id && N().foods.find(x => x.id === f.dataset.id);
   if (existing) {
-    const changed = isUnit(existing) !== unit;
-    delete existing.per; delete existing.unitName; delete existing.uw;
+    const changed = isUnit(existing) !== unit, oldU = existing.unitG;
+    delete existing.per; delete existing.unitName; delete existing.uw; delete existing.unitG; delete existing.unitLabel;
     Object.assign(existing, data);
+    // Lo que tenías anotado en unidades sigue igual: si ahora es por unidad, son unidades; si le quitaste el peso, pasa a gramos
+    const items = [...N().diets.flatMap(d => d.meals.flatMap(m => m.items)), ...Object.values(N().log || {}).flatMap(day => (day && day.extras) || [])];
+    for (const it of items) {
+      if (it.foodId !== existing.id || it.n == null) continue;
+      if (unit) { it.g = it.n; delete it.n; }
+      else if (!existing.unitG) { it.g = Math.round(it.n * (oldU || 0)); delete it.n; }
+    }
     const used = N().diets.some(d => d.meals.some(m => m.items.some(it => it.foodId === existing.id)));
     if (changed && used) notice(`Cambiaste "${name}" a ${unit ? 'por unidad' : 'por 100 g'}. Revisa las cantidades en tus dietas: ahora se cuentan en ${unit ? 'unidades' : 'gramos'}.`);
   } else {
@@ -9553,6 +9577,7 @@ $app.addEventListener('change', async e => {
 
 $app.addEventListener('input', e => {
   const el = e.target, bind = el.dataset.bind;
+  if (el.form && el.form.matches('.food-form')) paintFoodUnitCalc(el.form);
   if (!bind) return;
   if (bind === 'progress-search') { progressQuery = el.value; filterProgress(); return; }
   if (rmCalc && (bind === 'rm-w' || bind === 'rm-r' || bind === 'rm-rir')) {
