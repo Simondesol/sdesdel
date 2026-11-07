@@ -614,10 +614,11 @@ function viewFoodForm(id, fromId) {
   if (id !== 'nuevo' && !food) { location.replace('#/nutricion/alimentos'); return ''; }
   const from = !food && fromId ? BASE_BY_ID.get(decodeURIComponent(fromId)) : null;   // copia desde la base
   const src = food || from;
-  const v = k => (src ? toField(src[k]) : '');
+  const asUnitView = !!(food && food.view === 'unit' && food.unitG);   // guardado por 100 g, pero lo escribiste por unidad
+  const v = k => (!src ? '' : asUnitView && ['p', 'c', 'f', 'kcal'].includes(k) ? toField(round1((src[k] * src.unitG) / 100)) : toField(src[k]));
   const field = (name, label, unit) => `<label class="field"><span>${label}</span>
       <div class="add-row" style="margin-top:0"><input name="${name}" inputmode="decimal" value="${v(name)}" autocomplete="off"><span class="unit-label">${unit}</span></div></label>`;
-  const unit = isUnit(src);
+  const unit = isUnit(src) || asUnitView;
   return `${header(food ? 'Editar alimento' : 'Nuevo alimento', { back: true })}
     <form class="stack card food-form" data-form="food" data-id="${food ? food.id : ''}" novalidate>
       ${from ? '<p class="muted small" style="margin:0">Copiado de la base de Desdel (valores aproximados). Ajústalo con tu etiqueta y guárdalo.</p>' : ''}
@@ -678,6 +679,26 @@ function convertFoodPer(form, toUnit) {
   if (any) showNote(toUnit ? `Macros convertidos a 1 unidad (${fmtNum(w)} g)` : 'Macros convertidos a 100 g');
 }
 
+// Macros de 1 unidad → por 100 g (con 2 decimales, para que al mostrarlos por unidad vuelvan iguales)
+const r2 = n => Math.round(n * 100) / 100;
+const unitToPer100 = (x, w) => ({ ...x, kcal: r2((x.kcal * 100) / w), p: r2((x.p * 100) / w), c: r2((x.c * 100) / w), f: r2((x.f * 100) / w) });
+// Alimentos "Por unidad" a los que les pusiste peso (versión anterior): pasan a por 100 g con peso, sin cambiar lo anotado
+function unitWeightFoods() {
+  const n = db.nutrition;
+  if (!n || !n.foods) return false;
+  let changed = false;
+  for (const food of n.foods) {
+    if (!(isUnit(food) && food.uw > 0)) continue;
+    const w = food.uw;
+    Object.assign(food, unitToPer100(food, w), { unitG: w, unitLabel: 'unidad', view: 'unit' });
+    delete food.per; delete food.uw;
+    const items = [...(n.diets || []).flatMap(d => d.meals.flatMap(m => m.items)), ...Object.values(n.log || {}).flatMap(day => (day && day.extras) || [])];
+    for (const it of items) if (it.foodId === food.id && it.n == null) { it.n = it.g || 0; delete it.g; }
+    changed = true;
+  }
+  return changed;
+}
+
 function saveFood(f) {
   const name = f.elements.name.value.trim();
   const val = k => num(f.elements[k].value);
@@ -690,18 +711,23 @@ function saveFood(f) {
   let kcal = val('kcal');
   if (kcal == null) kcal = Math.round(p * 4 + c * 4 + fat * 9);       // 4 kcal por g de proteína y carbo, 9 por g de grasa
   if (kcal < 0 || kcal > (unit ? 3000 : 1000)) return formMsg(f, unit ? 'Revisa las calorías de 1 unidad.' : 'Las calorías por 100 g deben estar entre 0 y 1000.');
-  const data = { name, kcal: round1(kcal), p: round1(p), c: round1(c), f: round1(fat) };
-  if (unit) data.per = 'unit';
+  let data = { name, kcal: round1(kcal), p: round1(p), c: round1(c), f: round1(fat) };
+  let uw = null;
   if (f.elements.uw.value.trim()) {
-    const uw = val('uw');
+    uw = val('uw');
     if (!(uw > 0 && uw <= 3000)) return formMsg(f, 'Revisa cuánto pesa 1 unidad (en gramos), o déjalo vacío.');
-    // Por unidad: el peso es solo informativo. Por 100 g: permite anotarlo en unidades (como los de la base de Desdel)
-    if (unit) data.uw = round1(uw); else Object.assign(data, { unitG: round1(uw), unitLabel: 'unidad' });
+    uw = round1(uw);
   }
+  // Con peso de 1 unidad se guarda por 100 g (aunque lo escribas por unidad): en la dieta se anota en unidades o en gramos
+  const asUnit = unit && !uw;
+  if (unit && uw) data = { ...unitToPer100(data, uw), view: 'unit' };
+  if (asUnit) data.per = 'unit';
+  if (uw) Object.assign(data, { unitG: uw, unitLabel: 'unidad' });
   const existing = f.dataset.id && N().foods.find(x => x.id === f.dataset.id);
   if (existing) {
-    const changed = isUnit(existing) !== unit, oldU = existing.unitG;
-    delete existing.per; delete existing.unitName; delete existing.uw; delete existing.unitG; delete existing.unitLabel;
+    const changed = isUnit(existing) !== asUnit, oldU = existing.unitG;
+    const unit = asUnit;   // desde aquí: cómo quedó guardado
+    delete existing.per; delete existing.unitName; delete existing.uw; delete existing.unitG; delete existing.unitLabel; delete existing.view;
     Object.assign(existing, data);
     // Lo que tenías anotado en unidades sigue igual: si ahora es por unidad, son unidades; si le quitaste el peso, pasa a gramos
     const items = [...N().diets.flatMap(d => d.meals.flatMap(m => m.items)), ...Object.values(N().log || {}).flatMap(day => (day && day.extras) || [])];
@@ -8144,7 +8170,7 @@ async function handleUser(u) {
   status = 'ready';
   planSeen = stable(db.plan || null);
   migrateLoosePlan();
-  if ([autoUnilateral(), fixJalonGironda(), splitSwapClashes(), renameOldGuideNames(), relinkGuideAlts(), unifyExerciseIds(), backfillWorkoutGuides(), syncHistoryNames()].some(Boolean)) save();
+  if ([unitWeightFoods(), autoUnilateral(), fixJalonGironda(), splitSwapClashes(), renameOldGuideNames(), relinkGuideAlts(), unifyExerciseIds(), backfillWorkoutGuides(), syncHistoryNames()].some(Boolean)) save();
   // Si el teléfono cerró la app en medio del entrenamiento, al abrirla vuelves a él (no al inicio)
   if (firstOpen && db.draft && routeParts()[0] === '') location.replace('#/entrenar');
   firstOpen = false;
