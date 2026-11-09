@@ -2569,7 +2569,68 @@ function viewAccount() {
       <button class="btn block">Cambiar contraseña</button>
     </form>
 
-    <button class="btn ghost block danger-text" data-action="logout" style="margin-top:32px">Cerrar sesión</button>`;
+    <button class="btn ghost block danger-text" data-action="logout" style="margin-top:32px">Cerrar sesión</button>
+    <div class="account-foot">
+      <a href="privacidad.html" target="_blank" rel="noopener">Política de privacidad</a>
+      <a href="#/eliminar-cuenta">Eliminar mi cuenta</a>
+    </div>`;
+}
+
+// Eliminar la cuenta: explica qué se borra, ofrece descargar el historial y pide la contraseña
+function viewDeleteAccount() {
+  const plan = coachPlan && !coachPlan.trial && coachPlan.until > Date.now();
+  return `${header('Eliminar cuenta', { back: true })}
+    <section class="card stack del-card">
+      <strong>Se borra todo y no se puede recuperar</strong>
+      <ul class="del-list">
+        <li>Tu cuenta (correo y contraseña)</li>
+        <li>Rutinas, entrenamientos, récords y notas</li>
+        <li>Peso, medidas, fotos de progreso, sueño, agua y dietas</li>
+        <li>Videos de técnica, tus chats y tu perfil para gymbros</li>
+        <li>El vínculo con tu coach${coachOn() ? ' y con tus atletas' : ''}</li>
+      </ul>
+      ${plan ? '<p class="del-warn">Tienes un plan de coach pagado: se pierde al eliminar la cuenta.</p>' : ''}
+      ${students.length ? `<p class="del-warn">Tus ${plural(students.length, 'atleta')} dejan de estar vinculados contigo.</p>` : ''}
+    </section>
+    <section class="card stack" style="margin-top:12px">
+      <span class="muted small">¿Quieres guardar tu historial antes? Descárgalo en un archivo para Excel o Google Sheets.</span>
+      <button class="btn block" data-action="export-workouts" style="margin-top:0">Descargar entrenamientos</button>
+      <button class="btn block" data-action="export-body" style="margin-top:0">Descargar peso y medidas</button>
+    </section>
+    <form class="stack card" data-form="delete-account" novalidate style="margin-top:12px">
+      <label class="field"><span>Escribe tu contraseña para confirmar</span>
+        <input name="password" type="password" autocomplete="current-password">
+      </label>
+      <p class="form-msg" hidden></p>
+      <button class="btn block del-btn">Eliminar mi cuenta para siempre</button>
+    </form>
+    <p class="muted hint">¿Prefieres solo dejar de usar Desdel? Puedes <strong>cerrar sesión</strong> y tus datos quedan guardados.</p>`;
+}
+async function submitDeleteAccount(f) {
+  const pw = f.elements.password.value;
+  if (!pw) return formMsg(f, 'Escribe tu contraseña.');
+  if (!await dialog('¿Eliminar tu cuenta y todos tus datos para siempre?\n\nNo se puede deshacer.', { ok: 'Eliminar', cancel: 'Cancelar', danger: true })) return;
+  const btn = f.querySelector('button');
+  try {
+    await busy(btn, 'Revisando…', () => withTimeout(cloud.reauth(pw)));
+  } catch (e) {
+    return formMsg(f, e && (e.code === 'auth/invalid-credential' || e.code === 'auth/wrong-password') ? 'La contraseña no es correcta.' : authError(e));
+  }
+  // Desde aquí no se sube nada más a la nube (si no, se volverían a crear datos recién borrados)
+  const uid = user.uid;
+  keepScreenOn(false); stopListening(); stopSocial(); setTimer(null);
+  user = null;
+  btn.disabled = true; btn.textContent = 'Eliminando… no cierres la app';
+  try {
+    await cloud.deleteAccount();
+  } catch (e) {
+    notice('No se pudo eliminar la cuenta (¿sin internet?). Tus datos siguen guardados: vuelve a intentarlo.');
+    setTimeout(() => location.reload(), 2500);
+    return;
+  }
+  for (const k of Object.keys(localStorage)) if (k.includes(uid)) localStorage.removeItem(k);
+  location.replace('#/');
+  setTimeout(() => notice('Tu cuenta y todos tus datos se eliminaron. Gracias por usar Desdel.'), 300);
 }
 
 const formMsgOr = (f, text) => (f.querySelector('.form-msg') ? formMsg(f, text) : notice(text));
@@ -6624,6 +6685,7 @@ function render() {
     case 'ejercicio': html = viewExercise(decodeURIComponent(arg)); break;
     case 'cuenta': html = viewAccount(); break;
     case 'estadisticas': html = viewStats(); break;
+    case 'eliminar-cuenta': html = viewDeleteAccount(); break;
     case 'agua': html = viewWater(); break;
     case 'rutinas': html = viewHome(); tab = 'rutinas'; break;
     case 'peso': html = viewBodyweight(); break;
@@ -6693,7 +6755,7 @@ function render() {
     nutricion: 'nutricion', alimento: 'nutricion', dieta: 'nutricion', objetivo: 'nutricion', compras: 'nutricion',
     peso: 'cuerpo', grasa: 'cuerpo', pliegues: 'cuerpo', medidas: 'cuerpo', fotos: 'cuerpo',
     social: 'inicio', gymbro: 'inicio', alumnos: 'inicio', coach: 'inicio', asignar: 'inicio', planes: 'inicio',
-    perfil: arg === 'yo' ? 'perfil' : 'inicio', privacidad: 'perfil', cuenta: 'perfil', estadisticas: 'perfil',
+    perfil: arg === 'yo' ? 'perfil' : 'inicio', privacidad: 'perfil', cuenta: 'perfil', estadisticas: 'perfil', 'eliminar-cuenta': 'perfil',
   };
   tab = ['entrenar', 'editar', 'chat'].includes(screen) ? null : NAV[screen] || 'inicio';
   $tabs.hidden = !tab;
@@ -10042,6 +10104,7 @@ $app.addEventListener('submit', async e => {
     case 'register': submitAuth(f); return;
     case 'profile': saveProfileData(f); return;
     case 'password': submitPassword(f); return;
+    case 'delete-account': submitDeleteAccount(f); return;
     case 'import-code': importRoutine(f); return;
     case 'chat-send': sendText(f); return;
     case 'bodyweight': saveBodyweight(f); return;

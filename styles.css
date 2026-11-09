@@ -1418,3 +1418,11 @@ body.viewing .free-start { display: none; }
 .shop-item.on .shop-box { background: var(--accent); border-color: var(--accent); }
 .swap-by { display: grid; grid-template-columns: repeat(4, 1fr); }
 .swap-by .chip.toggle { padding: 8px 2px; font-size: 13px; min-width: 0; justify-content: center; text-align: center; }
+
+/* Cuenta: política de privacidad y eliminar cuenta */
+.account-foot { display: flex; justify-content: center; gap: 24px; margin: 18px 0 8px; font-size: 14px; }
+.account-foot a { color: var(--muted); }
+.del-card strong { color: var(--danger); }
+.del-list { margin: 0; padding-left: 20px; display: grid; gap: 4px; color: var(--muted); }
+.del-warn { margin: 0; color: var(--danger); font-size: 14px; }
+.btn.del-btn { background: var(--danger); border-color: var(--danger); color: #fff; font-weight: 700; }

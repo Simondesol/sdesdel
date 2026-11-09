@@ -65,6 +65,18 @@ export async function changePassword(current, next) {
   await updatePassword(u, next);
 }
 
+// Eliminar la cuenta: primero se confirma la contraseña (si no es correcta, no pasa nada)
+export async function reauth(password) {
+  const u = auth.currentUser;
+  await reauthenticateWithCredential(u, EmailAuthProvider.credential(u.email, password));
+  await u.getIdToken(true);   // el servidor revisa que la contraseña se escribió hace poco
+}
+// …y después el servidor borra todos los datos y la cuenta (Servidor/functions/cuenta.js)
+export async function deleteAccount() {
+  await httpsCallable(fns, 'deleteAccount', { timeout: 300000 })();
+  await signOut(auth).catch(() => {});
+}
+
 // Rutinas compartidas por código (si el código ya existe, las reglas lo rechazan)
 export const shareRoutine = (code, data) => setDoc(doc(fs, 'shared', code), { ...data, createdAt: serverTimestamp() });
 export async function getShared(code) {
