@@ -8032,7 +8032,8 @@ function guideViewHtml() {
   const body = g
     ? `<span class="muted small">${guideKey(g.name) === guideKey(ex.name) ? '' : `${esc(g.name)} · `}Trabaja: ${esc(g.musc)}</span>
        ${guideBody(g)}
-       <button class="link small" data-action="guide-change" style="justify-self:start">¿No es este ejercicio? Cambiar guía</button>`
+       ${(ex.guide && ex.guide !== 'none') || guideKey(g.name) === guideKey(ex.name) ? ''   // elegida o con el mismo nombre: es esa
+         : '<button class="link small" data-action="guide-change" style="justify-self:start">¿No es este ejercicio? Cambiar guía</button>'}`
     : `<p class="muted" style="margin:0">Todavía no hay guía para este ejercicio.</p>
        <button class="btn block" data-action="guide-change">Elegir una guía</button>
        <a class="btn primary block center" href="https://ig.me/m/${IG_USER}" target="_blank" rel="noopener">Pide esta guía</a>
