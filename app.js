@@ -3313,7 +3313,7 @@ const coachInviteText = code => `Vincúlate conmigo como tu coach en Desdel 💪
 const VIEW_OK = ['', 'chat', 'rutinas', 'rutina', 'programas', 'miprograma', 'listos', 'programa', 'dieta', 'objetivo', 'historial', 'sesion', 'progreso', 'ejercicio', 'peso', 'grasa', 'medidas', 'fotos', 'nutricion', 'sueno', 'agua'];
 const VIEW_EXIT = ['social', 'gymbro', 'perfil', 'privacidad', 'cuenta', 'alumnos', 'coach', 'asignar', 'estadisticas'];
 // Lo que se puede tocar mirando a un atleta, y lo extra en el editor de rutinas
-const VIEW_SAFE = new Set(['back', 'view-exit', 'rm-calc', 'rm-unit', 'video-open', 'vid-toggle', 'info', 'toggle-sec', 'range', 'toggle-history', 'hist-month', 'hist-day', 'skin-view', 'measure-view',
+const VIEW_SAFE = new Set(['back', 'view-exit', 'rm-calc', 'rm-unit', 'conv', 'video-open', 'vid-toggle', 'info', 'toggle-sec', 'range', 'toggle-history', 'hist-month', 'hist-day', 'skin-view', 'measure-view',
   'prog-open', 'prog-close', 'prog-filter', 'prog-retry', 'week-sum', 'week-day', 'guide-view', 'guide-close', 'explore-zone', 'explore-open', 'explore-back', 'explore-close', 'go-ex', 'prev-ex', 'next-ex', 'prog-rid', 'thumb-play']);
 const VIEW_ROUTINE = new Set(['exprog-add', 'exprog-rm', 'exprog-pos', 'exprog-del', 'reps-by', 'toggle-drop', 'toggle-bw', 'toggle-ss', 'toggle-rir', 'toggle-unit', 'move', 'ex-open', 'ex-close', 'del-ex', 'dup-routine', 'del-routine',
   'guide-pick', 'guide-change', 'guide-set', 'guide-pick-close', 'explore-list', 'explore-add', 'explore-add-custom']);
@@ -5594,7 +5594,7 @@ function viewProgress() {
       <span class="chev">›</span>
     </a>`;
   return `${header('Entreno', {})}${entrenoTabs('progreso')}
-    ${rmCalcHtml()}
+    ${toolsHtml()}
     <input class="search" type="search" data-bind="progress-search" value="${esc(progressQuery)}"
       placeholder="🔍 Buscar ejercicio…" autocomplete="off" aria-label="Buscar ejercicio">
     ${groups.map(g => `<section class="prog-group"><h2>${esc(g.name)}</h2>${g.items.map(item).join('')}</section>`).join('')}
@@ -5611,6 +5611,20 @@ function rmCalcOut() {
     ${rmTable(rm, c.unit)}
     <p class="muted small" style="margin:8px 0 0">Calculado con Brzycki hasta 10 repeticiones y Epley desde 11. Con más de 12 repeticiones es menos exacto.</p>`;
 }
+let lbConv = null;   // abierto: { lb, kg } (lo escrito en cada casilla)
+const LB = 0.45359237;
+const convHtml = () => `<section class="card rm-calc conv-card">
+      <div class="guide-head"><strong>Conversor lb ↔ kg</strong><button class="icon small" data-action="conv" aria-label="Cerrar conversor">✕</button></div>
+      <div class="conv-fields">
+        <label>Libras<div class="add-row" style="margin-top:0"><input data-bind="cv-lb" inputmode="decimal" value="${esc(lbConv.lb)}" placeholder="45" autocomplete="off" aria-label="Libras"><span class="unit-label">lb</span></div></label>
+        <span class="conv-eq" aria-hidden="true">=</span>
+        <label>Kilos<div class="add-row" style="margin-top:0"><input data-bind="cv-kg" inputmode="decimal" value="${esc(lbConv.kg)}" placeholder="20,4" autocomplete="off" aria-label="Kilos"><span class="unit-label">kg</span></div></label>
+      </div>
+      <div class="conv-quick"><span class="muted small">Discos y mancuernas comunes</span>
+        <div class="conv-grid">${[5, 10, 15, 20, 25, 35, 45].map(lb => `<span><b>${lb} lb</b> = ${fmtNum(round1(lb * LB))} kg</span>`).join('')}</div></div>
+    </section>`;
+const toolsHtml = () => `${!rmCalc || !lbConv ? `<div class="tool-btns">${!rmCalc ? '<button class="btn block" data-action="rm-calc">Calculadora de 1RM</button>' : ''}${!lbConv ? '<button class="btn block" data-action="conv">Conversor lb ↔ kg</button>' : ''}</div>` : ''}
+    ${rmCalc ? rmCalcHtml() : ''}${lbConv ? convHtml() : ''}`;
 const rmCalcHtml = () => (!rmCalc ? '<button class="btn block rm-open" data-action="rm-calc">Calculadora de 1RM</button>'
   : `<section class="card rm-calc">
       <div class="guide-head"><strong>Calculadora de 1RM</strong><button class="icon small" data-action="rm-calc" aria-label="Cerrar calculadora">✕</button></div>
@@ -8782,6 +8796,11 @@ $app.addEventListener('click', async e => {
       render();
       if (rmCalc) $app.querySelector('[data-bind="rm-w"]').focus();
       break;
+    case 'conv':
+      lbConv = lbConv ? null : { lb: '', kg: '' };
+      render();
+      if (lbConv) $app.querySelector('[data-bind="cv-lb"]').focus();
+      break;
     case 'rm-unit':
       rmCalc.unit = el.dataset.v;
       render();
@@ -9918,6 +9937,13 @@ $app.addEventListener('input', e => {
     rmCalc[bind.slice(3)] = el.value;
     const out = $app.querySelector('[data-rm-out]');
     if (out) out.innerHTML = rmCalcOut();
+    return;
+  }
+  if (lbConv && (bind === 'cv-lb' || bind === 'cv-kg')) {   // escribes en una casilla y la otra se llena sola
+    const toKgSide = bind === 'cv-lb', v = num(el.value), other = $app.querySelector(`[data-bind="${toKgSide ? 'cv-kg' : 'cv-lb'}"]`);
+    const out = v == null || !(v >= 0) ? '' : toField(round1(toKgSide ? v * LB : v / LB));
+    lbConv = toKgSide ? { lb: el.value, kg: out } : { lb: out, kg: el.value };
+    if (other) other.value = out;
     return;
   }
   if (bind === 'food-search') { foodQuery = el.value; filterFoods(); return; }

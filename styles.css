@@ -1430,3 +1430,15 @@ body.viewing .free-start { display: none; }
 .why-side > strong { font-size: 14px; }
 .why-side.up > strong { color: var(--accent); }
 .why-side.down > strong { color: var(--danger); }
+
+/* Herramientas en Entreno → Progreso: Calculadora de 1RM y Conversor lb ↔ kg */
+.tool-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 0 0 12px; }
+.tool-btns .btn:only-child { grid-column: 1 / -1; }
+.tool-btns .btn { margin: 0; padding-left: 8px; padding-right: 8px; }
+.conv-fields { display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; align-items: end; }
+.conv-fields label { display: grid; gap: 4px; color: var(--muted); font-size: 13px; min-width: 0; }
+.conv-fields input { min-width: 0; width: 100%; }
+.conv-eq { padding-bottom: 12px; font-weight: 700; color: var(--muted); }
+.conv-quick { display: grid; gap: 6px; }
+.conv-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; font-size: 14px; font-variant-numeric: tabular-nums; }
+.conv-grid b { font-weight: 700; }
