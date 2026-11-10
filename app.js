@@ -8793,11 +8793,13 @@ $app.addEventListener('click', async e => {
     }
     case 'rm-calc':
       rmCalc = rmCalc ? null : { w: '', r: '', rir: '', unit: 'kg' };
+      if (rmCalc) lbConv = null;   // una herramienta abierta a la vez
       render();
       if (rmCalc) $app.querySelector('[data-bind="rm-w"]').focus();
       break;
     case 'conv':
       lbConv = lbConv ? null : { lb: '', kg: '' };
+      if (lbConv) rmCalc = null;
       render();
       if (lbConv) $app.querySelector('[data-bind="cv-lb"]').focus();
       break;
