@@ -1426,3 +1426,7 @@ body.viewing .free-start { display: none; }
 .del-list { margin: 0; padding-left: 20px; display: grid; gap: 4px; color: var(--muted); }
 .del-warn { margin: 0; color: var(--danger); font-size: 14px; }
 .btn.del-btn { background: var(--danger); border-color: var(--danger); color: #fff; font-weight: 700; }
+.why-side { display: grid; gap: 4px; padding-top: 6px; border-top: 1px solid var(--border); }
+.why-side > strong { font-size: 14px; }
+.why-side.up > strong { color: var(--accent); }
+.why-side.down > strong { color: var(--danger); }

@@ -129,9 +129,37 @@ const repsMin = s => { if (!isSideSet(s)) return s.r;
 const repsText = s => `${fmtNum(s.r)}${isSideSet(s) ? ` / ${fmtNum(s.r2)}` : ''}`;
 const setStrength = x => est1rm((x.bw || 0) + toKg(x.w || 0, x.unit), repsMin(x) || 1, x.rir);
 // Con peso corporal, cada serie cuenta con lo que pesabas ese día (más peso tuyo con el mismo lastre = moviste más)
-function cmpSet(a, b) {
+function cmpPlain(a, b) {
   const sb = setStrength(b), diff = setStrength(a) - sb;
   return Math.abs(diff) < Math.max(0.05, sb * 0.005) ? 0 : diff > 0 ? 1 : -1;
+}
+// Un lado de una serie como serie normal ('l' izquierda = r, 'd' derecha = r2); sin lados, los dos son la misma
+const hasN = v => v != null && v !== '';
+function sidePart(x, k) {
+  if (x.side) return x.side[k] || null;   // mejor marca por lado (de bestSets)
+  const r = !isSideSet(x) ? x.r : k === 'l' ? x.r : x.r2;
+  return hasN(r) ? { w: x.w, r, rir: x.rir, unit: x.unit, bw: x.bw } : null;
+}
+function cmpSet(a, b) {
+  if (isSideSet(a) || a.side || b.side) {
+    let up = false, eq = false, any = false;
+    for (const k of ['l', 'd']) {
+      const x = sidePart(a, k), y = sidePart(b, k);
+      if (!x || !y) continue;
+      any = true;
+      const c = cmpPlain(x, y);
+      if (c > 0) up = true; else if (c === 0) eq = true;
+    }
+    if (any) return up ? 1 : eq ? 0 : -1;
+  }
+  return cmpPlain(a.side ? a.side.l || a.side.d : a, b.side ? b.side.l || b.side.d : b);
+}
+// "25 lb × 7 / 8" (o "Izq 25 lb × 7 · Der 20 lb × 10" si el mejor de cada lado fue con distinto peso)
+function bestText(b, unit = b.unit) {
+  if (!b.side) return `${fmtNum(b.w)} ${unit} × ${repsText(b)}`;
+  const { l, d } = b.side, one = x => `${fmtNum(x.w)} ${unit} × ${fmtNum(x.r)}`;
+  if (l && d && l.w === d.w) return `${fmtNum(l.w)} ${unit} × ${fmtNum(l.r)} / ${fmtNum(d.r)}`;
+  return [l && `Izq ${one(l)}`, d && `Der ${one(d)}`].filter(Boolean).join(' · ');
 }
 // Tu peso de ese día, solo en ejercicios con peso corporal
 const bwFor = (ex, dateIso) => (ex.unit !== 'placas' && isBwEx(ex) ? bwOn(dateIso) || 0 : 0);
@@ -149,7 +177,12 @@ function bestSets(exerciseId, before = db.workouts.length, unit = null, rid = nu
     const bw = bwFor(ex, db.workouts[k].date);   // con peso corporal, cada serie con lo que pesabas ese día
     ex.sets.forEach((s, j) => {
       const c = { w: s.w, r: s.r, ...(isSideSet(s) ? { r2: s.r2 } : {}), rir: s.rir, unit: ex.unit, bw };
-      if (!best[j] || cmpSet(c, best[j]) > 0) best[j] = c;
+      if (isSideSet(c) || (best[j] && best[j].side)) {
+        const cur = best[j] ? { l: sidePart(best[j], 'l'), d: sidePart(best[j], 'd') } : { l: null, d: null };
+        for (const k of ['l', 'd']) { const p = sidePart(c, k); if (p && (!cur[k] || cmpPlain(p, cur[k]) > 0)) cur[k] = p; }
+        const any = cur.l || cur.d;
+        best[j] = { side: cur, w: any.w, r: (cur.l || any).r, r2: (cur.d || any).r, unit: ex.unit, bw: any.bw };
+      } else if (!best[j] || cmpSet(c, best[j]) > 0) best[j] = c;
     });
   }
   return best;
@@ -194,21 +227,33 @@ function liveCmp(s, ex, best) {
 let markWhy = null;   // ícono tocado: 'i-j' (serie) o 'i-j-k' (bajada del dropset)
 function whyPop(key, c, best, ex) {
   if (markWhy !== key || !c || !best) return '';
-  const k = cmpSet(c, best), a = setStrength(c), b = setStrength(best);
+  const k = cmpSet(c, best);
   const u = unitShort(ex.unit), bwKg = c.bw || best.bw || 0;
   const inU = kg => (ex.unit === 'lb' ? kg / 0.45359237 : kg);   // setStrength está en kg
   const show = kg => fmtNum(round1(inU(kg)));
   const desc = x => `${bwKg ? '+' : ''}${fmtNum(x.w)} ${u} × ${repsText(x)}${x.rir != null ? ` (RIR ${fmtNum(x.rir)})` : ''}`;
-  const d = a - b, pct = b ? (d / b) * 100 : 0, sign = d > 0 ? '+' : d < 0 ? '−' : '';
+  const diff = (a, b) => { const d = a - b, pct = b ? (d / b) * 100 : 0, sign = d > 0 ? '+' : d < 0 ? '−' : '';
+    return `${sign}${fmtNum(round1(Math.abs(inU(d))))} ${u} (${sign}${fmtNum(round1(Math.abs(pct)))}%)`; };
   const title = k > 0 ? 'Superaste tu mejor marca' : k < 0 ? 'Bajo tu mejor marca' : 'Igualaste tu mejor marca';
+  const side = isSideSet(c) || !!best.side;
+  const body = side
+    ? ['l', 'd'].map(s => { const x = sidePart(c, s), y = sidePart(best, s);
+        if (!x || !y) return '';
+        const a = setStrength(x), b = setStrength(y), kk = cmpPlain(x, y), name = s === 'l' ? 'Izq' : 'Der';
+        return `<div class="why-side ${kk > 0 ? 'up' : kk < 0 ? 'down' : 'eq'}"><strong>${name}</strong>
+          <div class="why-row"><span>Hoy</span><span>${desc(x)}</span><b>1RM ≈ ${show(a)} ${u}</b></div>
+          <div class="why-row"><span>Mejor</span><span>${desc(y)}</span><b>1RM ≈ ${show(b)} ${u}</b></div>
+          <div class="why-diff">${diff(a, b)}</div></div>`; }).join('')
+    : (() => { const a = setStrength(c), b = setStrength(best);
+        return `<div class="why-row"><span>Hoy</span><span>${desc(c)}</span><b>1RM ≈ ${show(a)} ${u}</b></div>
+      <div class="why-row"><span>Mejor</span><span>${desc(best)}</span><b>1RM ≈ ${show(b)} ${u}</b></div>
+      <div class="why-diff">${diff(a, b)}${k === 0 ? ' · menos de 0,5% de diferencia cuenta como igual' : ''}</div>`; })();
   return `<div class="set-pop-wrap">
     <div class="set-pop-back" data-action="mark-why-close"></div>
     <div class="set-pop why-pop ${k > 0 ? 'up' : k < 0 ? 'down' : 'eq'}" role="dialog" aria-label="${title}">
       <strong>${title}</strong>
-      <div class="why-row"><span>Hoy</span><span>${desc(c)}</span><b>1RM ≈ ${show(a)} ${u}</b></div>
-      <div class="why-row"><span>Mejor</span><span>${desc(best)}</span><b>1RM ≈ ${show(b)} ${u}</b></div>
-      <div class="why-diff">${sign}${fmtNum(round1(Math.abs(inU(d))))} ${u} (${sign}${fmtNum(round1(Math.abs(pct)))}%)${k === 0 ? ' · menos de 0,5% de diferencia cuenta como igual' : ''}</div>
-      <p class="muted small" style="margin:0">Se compara la fuerza estimada (1RM): así se pueden comparar series con distinto peso y repeticiones.${(c.rir != null || best.rir != null) ? ' El RIR suma las repeticiones que te quedaban.' : ''}${bwKg ? ' Incluye tu peso corporal.' : ''}${c.r2 != null || best.r2 != null ? ' En unilateral cuenta el lado más débil.' : ''}</p>
+      ${body}
+      <p class="muted small" style="margin:0">Se compara la fuerza estimada (1RM): así se pueden comparar series con distinto peso y repeticiones.${(c.rir != null || best.rir != null) ? ' El RIR suma las repeticiones que te quedaban.' : ''}${bwKg ? ' Incluye tu peso corporal.' : ''}${side ? ' En unilateral cada lado se compara con su mejor marca: si uno sube, subiste.' : ''}</p>
     </div>
   </div>`;
 }
@@ -2143,7 +2188,7 @@ function viewWorkout() {
   // "↓ drop" solo en ejercicios marcados como Dropset en la rutina (o que ya tienen bajadas, al editar uno guardado)
   // Fila de una serie, con sus bajadas de dropset debajo (label: "1", o "A1" en un superset)
   // Debajo de cada serie: tu mejor marca, "+ nota" (o la nota que escribiste) y la nota de la vez pasada
-  const bestLine = (b, drop = false) => (b ? `<div class="set-ref${drop ? ' drop-ref' : ''}"><span>Mejor: ${fmtNum(b.w)} ${b.unit} × ${repsText(b)}</span></div>` : '');
+  const bestLine = (b, drop = false) => (b ? `<div class="set-ref${drop ? ' drop-ref' : ''}"><span>Mejor: ${bestText(b)}</span></div>` : '');
   const setFoot = (ex, i, s, j, best, label) => {
     const open = !!s.note || setNoteOpen === `${i}-${j}`;
     return `${open ? `<input class="set-note-in" data-bind="snote" data-i="${i}" data-j="${j}" value="${esc(s.note || '')}" maxlength="140" placeholder="Nota de esta serie (ej. me dolió el codo)" aria-label="Nota de la serie ${label}">` : ''}
@@ -4753,7 +4798,7 @@ function newPRs(w) {
     const first = ex.sets.findIndex(x => x.w != null);
     ex.sets.forEach((x, j) => {
       if (j <= first || x.w == null || !best[j]) return;
-      const c = { w: x.w, r: x.r, rir: x.rir, unit: ex.unit, bw: bwFor(ex, w.date) };
+      const c = { w: x.w, r: x.r, ...(isSideSet(x) ? { r2: x.r2 } : {}), rir: x.rir, unit: ex.unit, bw: bwFor(ex, w.date) };
       if (cmpSet(c, best[j]) > 0) {
         prs.push({ id: ex.exerciseId, name: ex.name, text: `${ex.name} · serie ${j + 1}: ${setText(x, ex.unit)}` });
       }
