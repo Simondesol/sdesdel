@@ -4080,7 +4080,7 @@ function viewStudents() {
           <li>Comenta sus entrenos y recibe su check-in semanal.</li>
           <li>Ve de un vistazo quién entrenó esta semana y quién no.</li>
           <li>Tus atletas se vinculan con tu código de coach y pueden desvincularse cuando quieran.</li>
-          <li>Gratis hasta 5 atletas. Para más, planes desde ${fmtCLP(PLAN_INFO.coach.mes)} al mes. Cuando llegues a tu 6.º atleta tienes 1 mes de prueba gratis con atletas sin límite.</li>
+          <li>Gratis hasta 5 atletas.${androidApp() ? '' : ` Para más, planes desde ${fmtCLP(PLAN_INFO.coach.mes)} al mes.`} Cuando llegues a tu 6.º atleta tienes 1 mes de prueba gratis con atletas sin límite.</li>
         </ul>
         <span class="muted small">Puedes seguir usando Desdel para tus propios entrenamientos.</span>
         <button class="btn primary block" data-action="coach-on">Activar modo coach</button>
@@ -4168,6 +4168,10 @@ function coachAlertsHtml() {
     </section>` : '';
 }
 
+// ¿Desdel abierta desde la app de Android de Google Play? (se marca al abrir: ?app=android o referrer de la app)
+function androidApp() {
+  try { return sessionStorage.getItem('desdel-android') === '1'; } catch (e) { return false; }
+}
 // Tu plan, arriba de Mis atletas: cuántos ves, hasta cuándo, y renovar si está por vencer
 function planBarHtml() {
   if (!coachPlanLoaded) return '';
@@ -4186,9 +4190,10 @@ function planBarHtml() {
       : `${n} de ${FREE_STUDENTS} atletas gratis${coachPlan ? '' : ' · con tu 6.º atleta tienes 1 mes de prueba con atletas sin límite'}`;
     if (coachPlan && !coachPlan.trial) btn = 'Renovar';
   }
+  if (androidApp()) sub = sub.replace(' Pasa a Coach para verlos a todos.', '');   // en la app de Android no se ofrecen planes
   return `<section class="card plan-bar${warn ? ' warn' : ''}">
     <span class="grow"><strong>${title}</strong><span class="muted small">${sub}</span></span>
-    <a class="btn small-btn${warn ? ' primary' : ''}" href="#/planes">${btn}</a>
+    ${androidApp() ? '' : `<a class="btn small-btn${warn ? ' primary' : ''}" href="#/planes">${btn}</a>`}
   </section>`;
 }
 
@@ -4196,6 +4201,16 @@ function planBarHtml() {
 function viewPlans() {
   if (!coachOn()) { location.replace('#/alumnos'); return ''; }
   const n = students.length, cur = planActive() ? coachPlan.tier : 'free';
+  if (androidApp()) {   // app de Android: solo el estado del plan, sin precios ni pagos
+    const p = planActive() ? PLAN_INFO[coachPlan.tier] || PLAN_INFO.pro : null;
+    return `${header('Tu plan', { back: true, sub: 'Modo coach' })}
+      <section class="card stack">
+        <strong>${p ? `${coachPlan.trial ? 'Prueba gratis de ' : 'Plan '}${p.name}` : 'Plan gratis'}</strong>
+        <span class="muted">${p ? `${p.max ? `Hasta ${p.max} atletas` : 'Atletas sin límite'} · hasta el ${fmtDMY(new Date(coachPlan.until).toISOString().slice(0, 10))}`
+          : `Ves a tus ${FREE_STUDENTS} primeros atletas.`}</span>
+        <span class="muted small">Hoy tienes ${plural(n, 'atleta')}.</span>
+      </section>`;
+  }
   const result = payResult === 'ok' ? '<section class="card pay-msg ok"><strong>¡Pago recibido!</strong><span class="muted small">Tu plan se activa en unos segundos.</span></section>'
     : payResult === 'pendiente' ? '<section class="card pay-msg"><strong>Tu pago está pendiente</strong><span class="muted small">Cuando Mercado Pago lo apruebe, tu plan se activa solo.</span></section>'
     : payResult === 'no' ? '<section class="card pay-msg bad"><strong>El pago no se completó</strong><span class="muted small">No se te cobró. Puedes intentarlo de nuevo.</span></section>' : '';
@@ -8542,7 +8557,7 @@ $app.addEventListener('click', async e => {
       render();
       break;
     case 'plan-pay': {
-      if (planBusy) return;
+      if (planBusy || androidApp()) return;
       planBusy = el.dataset.plan; payResult = null;
       render();
       try {
@@ -10245,6 +10260,14 @@ $app.addEventListener('submit', async e => {
 // ---------- Inicio ----------
 // Link de rutina compartida (?r=CÓDIGO): se guarda para importarla y se limpia la dirección
 const linkParams = new URLSearchParams(location.search);
+if (linkParams.get('app') === 'android' || document.referrer.startsWith('android-app://cl.desdel.app')) {
+  try { sessionStorage.setItem('desdel-android', '1'); } catch (e) { /* sin almacenamiento */ }
+  if (linkParams.has('app')) {
+    linkParams.delete('app');
+    const qs = linkParams.toString();
+    history.replaceState(null, '', `${location.pathname}${qs ? `?${qs}` : ''}${location.hash}`);
+  }
+}
 const isLocal = ['localhost', '127.0.0.1'].includes(location.hostname);
 const isIPhone = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const isInstalled = navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
