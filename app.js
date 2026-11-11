@@ -164,16 +164,45 @@ function bestText(b, unit = b.unit) {
 // Tu peso de ese día, solo en ejercicios con peso corporal
 const bwFor = (ex, dateIso) => (ex.unit !== 'placas' && isBwEx(ex) ? bwOn(dateIso) || 0 : 0);
 
+// ---------- Gimnasios ----------
+// db.body.gyms = [{ id, name }] (sin lista: uno solo, "Gimnasio actual" con id 'g0'); db.body.gym = donde entrenas ahora.
+// Cada entreno guarda su gym (sin gym = 'g0'). Máquinas y poleas se comparan solo con el mismo gimnasio (pesan distinto);
+// barra, mancuernas y peso corporal con todos. db.body.gymEx[exerciseId] = true/false fuerza "por gimnasio" o "compartido".
+const GYM0 = 'g0';
+const gymsList = () => (db.body.gyms && db.body.gyms.length ? db.body.gyms : [{ id: GYM0, name: 'Gimnasio actual' }]);
+const multiGym = () => gymsList().length > 1;
+const curGym = () => { const g = db.body.gym, l = gymsList(); return l.some(x => x.id === g) ? g : l[0].id; };
+const gymName = id => (gymsList().find(x => x.id === id) || {}).name || 'Otro gimnasio';
+const gymOf = w => w.gym || GYM0;
+const draftGym = d => d.gym || (d.editOf ? GYM0 : curGym());
+const ensureGyms = () => { if (!db.body.gyms || !db.body.gyms.length) db.body.gyms = [{ id: GYM0, name: 'Gimnasio actual' }]; return db.body.gyms; };
+const MACHINE_RE = /maquina|polea|cable|smith|multipower|prensa|hack|jalon|pec ?deck|peck|contractora|abductor|aductor|extension de (cuadriceps|piernas)|curl femoral|curl de piernas?|chest press|crossover|cruce de|remo en t\b|t-?bar|landmine|pendulo|belt squat|v-?squat|asistid|katana/;
+const gymExCache = new Map();
+function gymSplitEx(exerciseId, ex) {
+  const o = (db.body.gymEx || {})[exerciseId];
+  if (o != null) return o;
+  if (!ex) return false;
+  const key = `${exerciseId}|${ex.name}|${ex.guide}|${ex.unit}`;
+  if (!gymExCache.has(key)) {
+    const g = ex.guide && ex.guide !== 'none' ? GUIDE_BY_ID.get(ex.guide) : guideFor(ex.name, ex.guide);
+    gymExCache.set(key, ex.unit === 'placas' || MACHINE_RE.test(normText(`${ex.name || ''} ${g ? `${g.id} ${g.name}` : ''}`)));
+  }
+  return gymExCache.get(key);
+}
+// ¿Este entreno no cuenta para comparar? (otro gimnasio y el ejercicio es de máquina o polea)
+const gymSkip = (w, ex, gym, exerciseId) => !!gym && gymOf(w) !== gym && gymSplitEx(exerciseId, ex);
+
 // Mejor serie de cada posición (serie 1, serie 2...) en los entrenamientos anteriores a `before`
 // unit: solo compara con sesiones de la misma clase (placas con placas; kg y lb entre sí)
 // rid: solo los entrenos de esa rutina (en cada rutina rindes distinto según el orden y el cansancio); null = todos
-function bestSets(exerciseId, before = db.workouts.length, unit = null, rid = null) {
+function bestSets(exerciseId, before = db.workouts.length, unit = null, rid = null, gym = null) {
   const best = [];
   for (let k = 0; k < before; k++) {
     if (rid && db.workouts[k].routineId !== rid) continue;
     if (db.workouts[k].deload) continue;   // semana de descarga: no es tu marca
     const ex = db.workouts[k].exercises.find(e => e.exerciseId === exerciseId);
     if (!ex || (unit && unitKind(ex.unit) !== unitKind(unit))) continue;
+    if (gymSkip(db.workouts[k], ex, gym, exerciseId)) continue;   // máquina de otro gimnasio
     const bw = bwFor(ex, db.workouts[k].date);   // con peso corporal, cada serie con lo que pesabas ese día
     ex.sets.forEach((s, j) => {
       const c = { w: s.w, r: s.r, ...(isSideSet(s) ? { r2: s.r2 } : {}), rir: s.rir, unit: ex.unit, bw };
@@ -189,13 +218,14 @@ function bestSets(exerciseId, before = db.workouts.length, unit = null, rid = nu
 }
 
 // Mejor bajada de cada serie (best[j][k]: bajada k de la serie j), igual que bestSets
-function bestDrops(exerciseId, before = db.workouts.length, unit = null, rid = null) {
+function bestDrops(exerciseId, before = db.workouts.length, unit = null, rid = null, gym = null) {
   const best = [];
   for (let n = 0; n < before; n++) {
     const w = db.workouts[n];
     if ((rid && w.routineId !== rid) || w.deload) continue;
     const ex = w.exercises.find(e => e.exerciseId === exerciseId);
     if (!ex || (unit && unitKind(ex.unit) !== unitKind(unit))) continue;
+    if (gymSkip(w, ex, gym, exerciseId)) continue;
     const bw = bwFor(ex, w.date);
     ex.sets.forEach((s, j) => (s.drops || []).forEach((x, k) => {
       const c = { w: x.w, r: x.r, unit: ex.unit, bw };
@@ -302,7 +332,7 @@ function entrenoCard() {
   else if (plan === undefined) {
     // Sin programa activo: se sugiere la rutina que hace más tiempo no haces
     const lastDone = id => { for (let k = db.workouts.length - 1; k >= 0; k--) if (db.workouts[k].routineId === id) return db.workouts[k].date; return ''; };
-    const next = db.routines.filter(r => r.exercises.length).map(r => ({ r, at: lastDone(r.id) })).sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0))[0];
+    const next = db.routines.filter(r => r.exercises.length && routineHere(r)).map(r => ({ r, at: lastDone(r.id) })).sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0))[0];
     body = next
       ? `<div class="hub-value">Sugerida: <strong>${esc(next.r.name)}</strong>${next.at ? ` <span class="small">· última vez ${esc(agoText(next.at))}</span>` : ''}</div>
         <div class="hub-btns"><button class="btn primary" data-action="start" data-id="${next.r.id}">Empezar</button><a class="btn center" href="#/rutinas">Otra rutina</a></div>`
@@ -313,8 +343,11 @@ function entrenoCard() {
   else if (trainedOn(t, plan.id)) body = `<span class="muted">Hoy ya entrenaste <strong>${esc(plan.name)}</strong></span>`;
   else body = `<div class="hub-value">Hoy te toca: <strong>${esc(plan.name)}</strong></div>
       <button class="btn primary" data-action="start" data-id="${plan.id}" ${plan.exercises.length ? '' : 'disabled'}>Empezar</button>`;
+  const gymLine = multiGym() && !viewing && !d ? `<div class="gym-line"><span class="muted small">Gimnasio: <strong>${esc(gymName(curGym()))}</strong></span><button class="link small" data-action="gym-pick">${gymPickOpen ? 'Listo' : 'Cambiar'}</button></div>
+      ${gymPickOpen ? gymChips('gym-set') : ''}` : '';
   return `<div class="card hub">
       <a class="hub-top" href="#/rutinas"><span class="hub-icon">🏋️</span><strong>Entreno</strong></a>
+      ${gymLine}
       ${body}
     </div>`;
 }
@@ -1583,12 +1616,13 @@ function viewWater() {
 }
 
 // Última vez que se hizo un ejercicio (antes de la posición `before` del historial)
-function lastFor(exerciseId, before = db.workouts.length, rid = null) {
+function lastFor(exerciseId, before = db.workouts.length, rid = null, gym = null) {
   let deload = null;   // lo de una semana de descarga solo si no hay nada más
   for (let i = before - 1; i >= 0; i--) {
     const w = db.workouts[i];
     if (rid && w.routineId !== rid) continue;
     const ex = w.exercises.find(e => e.exerciseId === exerciseId);
+    if (ex && gymSkip(w, ex, gym, exerciseId)) continue;   // máquina de otro gimnasio: sus pesos no sirven aquí
     if (ex && !w.deload) return { date: w.date, ex };
     if (ex && !deload) deload = { date: w.date, ex };
   }
@@ -1697,6 +1731,7 @@ const cur = () => (isEditing() ? editBuf : db.draft);
 const beforeIndex = d => (d.editOf ? db.workouts.findIndex(w => w.id === d.editOf) : db.workouts.length);
 
 // ---------- Pantallas ----------
+const routineHere = r => !r.gym || r.gym === curGym() || !gymsList().some(g => g.id === r.gym);
 function viewHome() {
   const d = db.draft;
   const resume = d ? `
@@ -1706,12 +1741,14 @@ function viewHome() {
     </a>` : '';
   const last = db.routines.length - 1, todays = plannedRoutine(todayKey());
   const lastDone = id => { for (let k = db.workouts.length - 1; k >= 0; k--) if (db.workouts[k].routineId === id) return db.workouts[k].date; return ''; };
-  const routines = db.routines.map((r, i) => {
+  const order = db.routines.map((r, i) => [r, i]);
+  if (!routineSort && multiGym()) order.sort((a, b) => routineHere(b[0]) - routineHere(a[0]) || a[1] - b[1]);   // las de otro gimnasio al final
+  const routines = order.map(([r, i]) => {
     const at = lastDone(r.id);
     return `
-    <div class="card routine">
+    <div class="card routine${routineHere(r) ? '' : ' other-gym'}">
       <a href="#/rutina/${r.id}">
-        <strong>${esc(r.name) || '(sin nombre)'}${todays && todays.id === r.id ? ' <span class="badge on">Hoy</span>' : ''}</strong>
+        <strong>${esc(r.name) || '(sin nombre)'}${todays && todays.id === r.id ? ' <span class="badge on">Hoy</span>' : ''}${multiGym() && r.gym && gymsList().some(g => g.id === r.gym) ? ` <span class="badge">${esc(gymName(r.gym))}</span>` : ''}</strong>
         <span class="muted small">${plural(r.exercises.length, 'ejercicio')}</span>${at ? `<span class="muted small" title="Última vez que la hiciste">${esc(agoText(at)[0].toUpperCase() + agoText(at).slice(1))}</span>` : ''}
       </a>
       ${routineSort ? `<div class="order">
@@ -1827,7 +1864,7 @@ const INFO = {
   rm: '1RM = el peso máximo que podrías levantar 1 vez. Desdel lo estima con tu 1ª serie (peso y repeticiones), así ves si te estás haciendo más fuerte aunque cambies las repeticiones.',
   rir: 'RIR = repeticiones en reserva: cuántas más podrías haber hecho con buena técnica. RIR 2 es que te quedaban 2; RIR 0, que no podías hacer otra. No es lo mismo que el fallo: al fallo intentas otra repetición y no la completas.',
   prog: 'Escribe una línea por sesión. 8x80% = 1 serie de 8 repeticiones con el 80% de tu 1RM base. 2x8x75% = 2 series de 8 al 75%. Separa con coma lo que va en la misma sesión: 8x80%, 2x8x75%. 4x4 @8 = 4 series de 4 a RPE 8, o sea, te quedan 2 repeticiones (también vale 4x4 rir2); el peso se calcula con tu 1RM. "Intentar récord" = ese día buscas una marca nueva y, si superas tu 1RM base, al terminar te propongo actualizarlo. Los pesos son exactos, sin redondear a discos. Después de la última sesión vuelve a la primera.',
-  opts: 'RIR: al entrenar anotas cuántas repeticiones te quedaban en cada serie (y puedes ponerle un RIR objetivo). Peso corporal: para dominadas, fondos y similares; lo que anotas es el lastre. Unilateral: anotas las repeticiones de cada lado. Calentamiento: al entrenar, arriba de tus series aparecen las series de aproximación con su peso, calculadas desde tu primera serie: el primer ejercicio de cada músculo lleva calentamiento completo y, si el músculo ya trabajó antes en la rutina, una sola aproximación. Si tu primera serie es pesada (1 a 5 repeticiones) lleva una aproximación más y más cerca del peso; si es larga (11 o más), una menos. En dominadas y fondos con lastre, primero sin lastre y después con la mitad. Apágalo en los ejercicios donde no lo quieras.',
+  opts: 'RIR: al entrenar anotas cuántas repeticiones te quedaban en cada serie (y puedes ponerle un RIR objetivo). Peso corporal: para dominadas, fondos y similares; lo que anotas es el lastre. Unilateral: anotas las repeticiones de cada lado. Calentamiento: al entrenar, arriba de tus series aparecen las series de aproximación con su peso, calculadas desde tu primera serie: el primer ejercicio de cada músculo lleva calentamiento completo y, si el músculo ya trabajó antes en la rutina, una sola aproximación. Si tu primera serie es pesada (1 a 5 repeticiones) lleva una aproximación más y más cerca del peso; si es larga (11 o más), una menos. En dominadas y fondos con lastre, primero sin lastre y después con la mitad. Apágalo en los ejercicios donde no lo quieras. Pesos por gimnasio (si entrenas en más de uno): en máquinas y poleas tus pesos y marcas se separan por gimnasio, porque cada máquina pesa distinto; apágalo si en todos los gimnasios pesa igual.',
 };
 const infoOpen = new Set();
 const infoBtn = k => `<button class="info-btn ${infoOpen.has(k) ? 'on' : ''}" data-action="info" data-k="${k}" aria-label="¿Qué es?" aria-expanded="${infoOpen.has(k)}">ⓘ</button>`;
@@ -2015,6 +2052,7 @@ function viewRoutine() {
         <button class="chip toggle ${ex.bw ? 'on' : ''}" data-action="toggle-bw" data-i="${i}" aria-pressed="${!!ex.bw}" title="Dominadas, dips…: lo que anotas es el lastre">Peso corporal</button>
         <button class="chip toggle ${ex.side ? 'on' : ''}" data-action="toggle-side" data-i="${i}" aria-pressed="${!!ex.side}" title="Búlgara, remo a una mano…: repeticiones de cada lado">Unilateral</button>
         <button class="chip toggle ${ex.warm !== 'never' ? 'on' : ''}" data-action="ex-warm" data-i="${i}" aria-pressed="${ex.warm !== 'never'}" title="Series de aproximación sugeridas al entrenar">Calentamiento</button>
+        ${multiGym() && !viewing ? (on => `<button class="chip toggle ${on ? 'on' : ''}" data-action="ex-gym" data-i="${i}" aria-pressed="${on}" title="Máquinas y poleas pesan distinto en cada gimnasio">Pesos por gimnasio</button>`)(gymSplitEx(ex.id, ex)) : ''}
       </div>
       <button class="link small" data-action="info" data-k="opts" style="justify-self:start">${infoOpen.has('opts') ? 'Ocultar' : '¿Qué hace cada opción?'}</button>
       ${infoBox('opts')}
@@ -2043,6 +2081,9 @@ function viewRoutine() {
     <label class="field"><span>Nombre de la rutina</span>
       <input data-bind="routine-name" value="${esc(r.name)}" autocomplete="off">
     </label>
+    ${multiGym() && !viewing ? `<div class="field"><span>¿En qué gimnasio la haces?</span>
+      <div class="gym-chips">${[['', 'En todos'], ...gymsList().map(g => [g.id, g.name])].map(([id, n]) => { const on = (r.gym || '') === id;
+        return `<button class="chip toggle ${on ? 'on' : ''}" data-action="routine-gym" data-id="${id}" aria-pressed="${on}">${esc(n)}</button>`; }).join('')}</div></div>` : ''}
     <section class="card stack edit-hint" style="margin-top:14px">
       <span class="muted small">Aquí armas la rutina: ejercicios, series y repeticiones. Los pesos de cada serie se anotan al entrenar.</span>
       <button class="btn primary block" data-action="start" data-id="${r.id}" ${r.exercises.length ? '' : 'disabled'}>Empezar rutina</button>
@@ -2134,7 +2175,7 @@ function freePickerHtml(d) {
 async function startFree() {
   if (db.draft && !await ask(`Tienes un entrenamiento de "${db.draft.routineName}" sin guardar. ¿Descartarlo y empezar uno nuevo?`, 'Descartar y empezar')) return;
   setTimer(null);
-  db.draft = { free: true, routineId: null, routineName: 'Entreno libre', start: new Date().toISOString(), timer: null, exercises: [] };
+  db.draft = { free: true, routineId: null, routineName: 'Entreno libre', start: new Date().toISOString(), timer: null, gym: curGym(), exercises: [] };
   freeAdd = null; freeQ = '';
   save();
   go('#/entrenar');
@@ -2147,7 +2188,7 @@ function addFreeExercise(n) {
   const sel = $app.querySelector('.free-pick select[name="unit"]');
   if (sel) lastUnit = sel.value;
   const rir = !!(found && found.rir);
-  const sets = prefillSets(lastFor(id, beforeIndex(d)), rir, n).slice(0, n);
+  const sets = prefillSets(lastFor(id, beforeIndex(d), null, draftGym(d)), rir, n).slice(0, n);
   // El que estabas haciendo queda con ✓ si anotaste algo
   const prev = d.exercises[d.pos || 0];
   if (prev && (d.touched || {})[prev.exerciseId] && !(d.done ||= []).includes(prev.exerciseId)) d.done.push(prev.exerciseId);
@@ -2182,8 +2223,9 @@ function viewWorkout() {
   d.done = d.done || [];
   const gi = groupIndex(groups, d.pos), group = groups[gi], isLast = gi === groups.length - 1;
   const ridOf = ex => (ex.extra ? null : d.routineId);
-  const bests = new Map(group.map(k => [k, d.deload ? [] : bestSets(d.exercises[k].exerciseId, before, d.exercises[k].unit, ridOf(d.exercises[k]))]));
-  const dropBests = new Map(group.map(k => [k, d.deload ? [] : bestDrops(d.exercises[k].exerciseId, before, d.exercises[k].unit, ridOf(d.exercises[k]))]));
+  const dg = draftGym(d);
+  const bests = new Map(group.map(k => [k, d.deload ? [] : bestSets(d.exercises[k].exerciseId, before, d.exercises[k].unit, ridOf(d.exercises[k]), dg)]));
+  const dropBests = new Map(group.map(k => [k, d.deload ? [] : bestDrops(d.exercises[k].exerciseId, before, d.exercises[k].unit, ridOf(d.exercises[k]), dg)]));
 
   // "↓ drop" solo en ejercicios marcados como Dropset en la rutina (o que ya tienen bajadas, al editar uno guardado)
   // Fila de una serie, con sus bajadas de dropset debajo (label: "1", o "A1" en un superset)
@@ -2266,7 +2308,7 @@ function viewWorkout() {
         ${ex.progRecord ? `<p class="goal-hint">Hoy toca intentar un récord.${ex.progBase ? ' Si superas tu 1RM base, al terminar te propongo actualizarlo.' : ''}</p>`
           : !ex.progBase ? '<p class="goal-hint">Pon tu 1RM base en Editar rutina para ver los pesos de la progresión.</p>' : ''}`;
     } else if (!editing && !d.deload && (ex.goalReps || hasRepsBy(ex))) {
-      const prev = lastFor(ex.exerciseId, before, ridOf(ex));
+      const prev = lastFor(ex.exerciseId, before, ridOf(ex), dg);
       const done = prev ? prev.ex.sets.filter(x => x.w != null) : [];
       const topOf = j => (repsFor(ex, j) ? rangeTop(repsFor(ex, j)) : Infinity);
       if (done.length && done.length >= (ex.goalSets || 1) && done.every((x, j) => (repsMin(x) || 0) >= topOf(j))) {
@@ -2285,7 +2327,7 @@ function viewWorkout() {
     if (!all.length) return '<p class="muted">Aún no hay historial de este ejercicio.</p>';
     return all.slice(0, n).map(({ w, ex: pex }) => `
       <div class="hist-item">
-        <div class="muted">${fmtDate(w.date)}${w.routineName ? ` · ${esc(w.routineName)}` : ''}</div>
+        <div class="muted">${fmtDate(w.date)}${w.routineName ? ` · ${esc(w.routineName)}` : ''}${multiGym() ? ` · ${esc(gymName(gymOf(w)))}` : ''}</div>
         ${setsChips(pex)}
       </div>`).join('')
       + (all.length > n || n > HIST_FIRST ? `<div class="hist-btns">
@@ -2382,6 +2424,9 @@ function viewWorkout() {
   // Entrenando: cuánto llevas (se actualiza solo). Editando uno guardado: su fecha
   return `${header(title, { back: true, sub: `Ejercicio ${gi + 1} de ${groups.length} · ${editing ? fmtDate(d.start) : `Duración ${elapsedClock(d.start)}`}` })}
     ${steps}
+    ${multiGym() ? (() => { const can = !editing && !d.exercises.some(touchedEx);
+      return `<div class="gym-line"><span class="muted small">Gimnasio: <strong>${esc(gymName(draftGym(d)))}</strong></span>${can ? `<button class="link small" data-action="gym-pick">${gymPickOpen ? 'Listo' : 'Cambiar'}</button>` : ''}</div>
+        ${can && gymPickOpen ? gymChips('gym-draft') : ''}`; })() : ''}
     ${d.deload ? '<p class="deload-tag">Semana de descarga · la mitad de las series y 10% menos de peso</p>' : ''}
     ${group.length > 1 ? supersetBlock(group) : exerciseBlock(d.exercises[group[0]], group[0])}
     ${editing ? '' : '<div id="quizcard" class="quiz card" hidden></div>'}
@@ -2587,6 +2632,17 @@ function viewAccount() {
       <p class="muted" style="margin:0">Usuarios, quién entrena y cuántos entrenos. Solo tú ves esto.</p>
       <a class="btn block center stats-link" href="#/estadisticas" style="margin-top:0">Ver estadísticas</a>
     </section>` : ''}
+
+    <h2>Gimnasios</h2>
+    <section class="card stack gyms-card">
+      <span class="muted small">¿Entrenas en más de un gimnasio? Agrégalo: en máquinas y poleas tus pesos y marcas se separan por gimnasio. Con barra, mancuernas y peso corporal siguen juntos.</span>
+      ${gymsList().map(g => `<div class="gym-row">
+        <input data-bind="gym-name" data-id="${g.id}" value="${esc(g.name)}" maxlength="40" autocomplete="off" aria-label="Nombre del gimnasio">
+        ${g.id === curGym() ? '<span class="badge on">Aquí</span>' : `<button class="btn small-btn" data-action="gym-set" data-id="${g.id}">Estoy aquí</button>`}
+        ${multiGym() ? `<button class="icon small danger" data-action="gym-del" data-id="${g.id}" aria-label="Eliminar ${esc(g.name)}">${TRASH_ICON}</button>` : ''}
+      </div>`).join('')}
+      <button class="btn block" data-action="gym-add" style="margin-top:0">+ Agregar gimnasio</button>
+    </section>
 
     <h2>Tus datos</h2>
     <section class="card stack">
@@ -2944,7 +3000,7 @@ function viewSession(id) {
 
   // Cada serie comparada con la mejor serie de esa posición en los entrenamientos anteriores
   const blocks = w.exercises.map((ex, ei) => {
-    const best = w.deload ? [] : bestSets(ex.exerciseId, k, ex.unit, w.routineId);
+    const best = w.deload ? [] : bestSets(ex.exerciseId, k, ex.unit, w.routineId, gymOf(w));
     const count = { up: 0, eq: 0, down: 0 };
     const chips = ex.sets.map((s, j) => {
       const c = best[j] ? cmpSet({ ...s, unit: ex.unit, bw: bwFor(ex, w.date) }, best[j]) : null;
@@ -2980,7 +3036,7 @@ function viewSession(id) {
         <button type="button" class="link small" data-action="saveas-no" data-id="${w.id}" style="justify-self:start">No, gracias</button>
       </form>`
     : `<button class="btn block" data-action="saveas-open" data-id="${w.id}" style="margin:0 0 10px">Guardar como rutina</button>`;
-  return `${header(w.routineName, { back: true, sub: fmtLongDate(w.date) })}
+  return `${header(w.routineName, { back: true, sub: `${fmtLongDate(w.date)}${multiGym() ? ` · ${gymName(gymOf(w))}` : ''}` })}
     ${summary}
     ${coachCommentHtml(w)}
     ${asRoutine}
@@ -2998,7 +3054,7 @@ function workoutShareText(w, forChat = false) {
   const k = db.workouts.indexOf(w);
   let ups = 0;
   const lines = w.exercises.map(ex => {
-    const best = w.deload ? [] : bestSets(ex.exerciseId, k, ex.unit, w.routineId);
+    const best = w.deload ? [] : bestSets(ex.exerciseId, k, ex.unit, w.routineId, gymOf(w));
     const sets = ex.sets.map((s, j) => {
       const c = best[j] ? cmpSet({ ...s, unit: ex.unit, bw: bwFor(ex, w.date) }, best[j]) : null;
       if (c > 0) ups++;
@@ -3313,7 +3369,7 @@ const coachInviteText = code => `Vincúlate conmigo como tu coach en Desdel 💪
 const VIEW_OK = ['', 'chat', 'rutinas', 'rutina', 'programas', 'miprograma', 'listos', 'programa', 'dieta', 'objetivo', 'historial', 'sesion', 'progreso', 'ejercicio', 'peso', 'grasa', 'medidas', 'fotos', 'nutricion', 'sueno', 'agua'];
 const VIEW_EXIT = ['social', 'gymbro', 'perfil', 'privacidad', 'cuenta', 'alumnos', 'coach', 'asignar', 'estadisticas'];
 // Lo que se puede tocar mirando a un atleta, y lo extra en el editor de rutinas
-const VIEW_SAFE = new Set(['back', 'view-exit', 'rm-calc', 'rm-unit', 'conv', 'video-open', 'vid-toggle', 'info', 'toggle-sec', 'range', 'toggle-history', 'hist-month', 'hist-day', 'skin-view', 'measure-view',
+const VIEW_SAFE = new Set(['back', 'view-exit', 'rm-calc', 'rm-unit', 'conv', 'prog-gym', 'video-open', 'vid-toggle', 'info', 'toggle-sec', 'range', 'toggle-history', 'hist-month', 'hist-day', 'skin-view', 'measure-view',
   'prog-open', 'prog-close', 'prog-filter', 'prog-retry', 'week-sum', 'week-day', 'guide-view', 'guide-close', 'explore-zone', 'explore-open', 'explore-back', 'explore-close', 'go-ex', 'prev-ex', 'next-ex', 'prog-rid', 'thumb-play']);
 const VIEW_ROUTINE = new Set(['exprog-add', 'exprog-rm', 'exprog-pos', 'exprog-del', 'reps-by', 'toggle-drop', 'toggle-bw', 'toggle-ss', 'toggle-rir', 'toggle-unit', 'move', 'ex-open', 'ex-close', 'del-ex', 'dup-routine', 'del-routine',
   'guide-pick', 'guide-change', 'guide-set', 'guide-pick-close', 'explore-list', 'explore-add', 'explore-add-custom']);
@@ -4809,7 +4865,7 @@ function newPRs(w) {
       const est = showsE1rm(ex) ? ` → ${bw ? 'lastre máx.' : '1RM'} ≈ ${bw ? '+' : ''}${fmtNum(round1(e1rmEx(ex, s, w.date)))} ${ex.unit}` : '';
       prs.push({ id: ex.exerciseId, name: ex.name, text: `${ex.name}: ${fmtNum(s.w)} ${ex.unit} × ${isSideSet(s) ? repsText(s) : fmtNum(s.r || 1)}${s.rir != null ? ` · RIR ${fmtNum(s.rir)}` : ''}${bw ? ' + peso corporal' : ''}${est}` });
     }
-    const best = bestSets(ex.exerciseId, idx < 0 ? db.workouts.length : idx, ex.unit, ex.extra ? null : w.routineId);
+    const best = bestSets(ex.exerciseId, idx < 0 ? db.workouts.length : idx, ex.unit, ex.extra ? null : w.routineId, gymOf(w));
     const first = ex.sets.findIndex(x => x.w != null);
     ex.sets.forEach((x, j) => {
       if (j <= first || x.w == null || !best[j]) return;
@@ -5361,6 +5417,7 @@ function viewProfile(arg) {
 const RANGES = [['semana', 'Semana', 7], ['mes', 'Mes', 30], ['3m', '3 meses', 91], ['6m', '6 meses', 182]];      // peso corporal
 const EX_RANGES = [['mes', 'Mes', 30], ['3m', '3 meses', 91], ['6m', '6 meses', 182], ['1a', '1 año', 365]];   // ejercicios
 let progressRange = '3m';   // período del gráfico de ejercicios
+let progressGym = { ex: null, g: '' };   // gimnasio elegido en el gráfico de una máquina
 let progressRid = { ex: null, r: '' };   // rutina elegida en el gráfico de un ejercicio ('' = todas; 'libre' = sin rutina)
 const ridKey = w => w.routineId || 'libre';
 let bwRange = '3m';         // período del gráfico de peso corporal
@@ -5485,8 +5542,8 @@ function e1rmEx(ex, s, dateIso) {
 }
 
 // Un punto por sesión: el 1RM estimado de la primera serie con peso
-function progressPoints(exerciseId, days, rid = '') {
-  const rows = historyFor(exerciseId).reverse().filter(({ w }) => !rid || ridKey(w) === rid);   // de la más antigua a la más reciente
+function progressPoints(exerciseId, days, rid = '', gym = '') {
+  const rows = historyFor(exerciseId).reverse().filter(({ w }) => (!rid || ridKey(w) === rid) && (!gym || gymOf(w) === gym));   // de la más antigua a la más reciente
   if (!rows.length) return { unit: 'kg', points: [] };
   const unit = rows[rows.length - 1].ex.unit;
   const since = Date.now() - days * 86400000;
@@ -6617,11 +6674,17 @@ function viewProgressExercise(id) {
   for (const { w } of rows) if (!rids.has(ridKey(w))) rids.set(ridKey(w), (db.routines.find(r => r.id === w.routineId) || {}).name || w.routineName || 'Sin rutina');
   if (!rids.has(progressRid.r)) progressRid.r = '';
   const rid = progressRid.r;
-  const { unit, points } = progressPoints(id, days, rid);
+  // Máquina o polea en varios gimnasios: el gráfico de uno a la vez (cada máquina pesa distinto)
+  const gyms = gymSplitEx(id, rows[0].ex) ? [...new Set(rows.map(r => gymOf(r.w)))] : [];
+  if (progressGym.ex !== id) progressGym = { ex: id, g: gyms.includes(curGym()) ? curGym() : gyms[0] || '' };
+  const gym = gyms.length > 1 ? progressGym.g : '';
+  const { unit, points } = progressPoints(id, days, rid, gym);
   chart = null;
 
   const range = rangeButtons(EX_RANGES, progressRange, 'ex') + (rids.size > 1 ? `<div class="prog-rids" role="group" aria-label="Rutina">
-      ${[['', 'Todas'], ...rids].map(([k, n]) => `<button class="chip toggle ${rid === k ? 'on' : ''}" data-action="prog-rid" data-r="${esc(k)}" aria-pressed="${rid === k}">${esc(n)}</button>`).join('')}</div>` : '');
+      ${[['', 'Todas'], ...rids].map(([k, n]) => `<button class="chip toggle ${rid === k ? 'on' : ''}" data-action="prog-rid" data-r="${esc(k)}" aria-pressed="${rid === k}">${esc(n)}</button>`).join('')}</div>` : '')
+    + (gyms.length > 1 ? `<div class="prog-rids" role="group" aria-label="Gimnasio">
+      ${gyms.map(k => `<button class="chip toggle ${gym === k ? 'on' : ''}" data-action="prog-gym" data-g="${esc(k)}" aria-pressed="${gym === k}">${esc(gymName(k))}</button>`).join('')}</div>` : '');
   const bwEx = isBwEx({ exerciseId: id, bw: rows[0].ex.bw });
   const sub = bwEx ? 'Lastre máximo estimado' : 'Tu fuerza estimada (1RM)';
   const gidOf = () => (guideFor(name, (rows.find(r => r.ex.guide) || { ex: {} }).ex.guide) || {}).id;
@@ -7008,10 +7071,10 @@ $toast.addEventListener('click', e => {
 // ---------- Entrenamiento ----------
 // Firma de la rutina (para saber si la editaste con el entreno en curso)
 const routineSig = r => { const t = stable(r.exercises); let h = 0; for (let k = 0; k < t.length; k++) h = (h * 31 + t.charCodeAt(k)) | 0; return String(h); };
-const draftEx = (ex, last, rid) => progDraft({
+const draftEx = (ex, last, rid, gym = curGym()) => progDraft({
   exerciseId: ex.id, name: ex.name, unit: ex.unit, rest: ex.rest || 0, rir: !!ex.rir, ...planFields(ex),
   ...(last ? { ssNext: false } : {}),   // el último no se une con nada
-  sets: prefillSets(lastFor(ex.id, db.workouts.length, rid), ex.rir, ex.goalSets),
+  sets: prefillSets(lastFor(ex.id, db.workouts.length, rid, gym), ex.rir, ex.goalSets),
 }, ex);
 // Editaste la rutina del entreno en curso: el entreno toma los cambios sin perder lo que ya anotaste
 function syncDraftRoutine() {
@@ -7028,7 +7091,7 @@ function syncDraftRoutine() {
   const old = new Map(d.exercises.map(e => [e.swapOf || e.exerciseId, e])), lastK = r.exercises.length - 1;
   const out = r.exercises.map((ex0, k) => {
     const o = old.get(ex0.id), ap = o && o.swapOf ? altPlan(ex0, o.exerciseId) : null;
-    const ex = ap ? { ...ap, ssNext: ex0.ssNext } : ex0, fresh = draftEx(ex, k === lastK, r.id);
+    const ex = ap ? { ...ap, ssNext: ex0.ssNext } : ex0, fresh = draftEx(ex, k === lastK, r.id, draftGym(d));
     if (!o) return fresh;
     let sets = o.sets;
     if (fresh.progAt != null || o.progAt != null) {   // con progresión: las series que no anotaste toman la sesión nueva
@@ -7054,6 +7117,19 @@ function syncDraftRoutine() {
   d.pos = Math.max(0, Math.min(posId != null && at(posId) >= 0 ? at(posId) : d.pos || 0, out.length - 1));
   if (d.timer) { const t = timerId != null ? at(timerId) : -1; if (t >= 0) d.timer.i = t; else d.timer = null; }
 }
+function regymDraft(d, gym) {
+  d.gym = gym;
+  db.body.gym = gym;
+  const r = !d.free && db.routines.find(x => x.id === d.routineId);
+  if (r) {
+    d.exercises = r.exercises.map((ex, k) => draftEx(ex, k === r.exercises.length - 1, r.id, gym));
+    d.rsig = routineSig(r); d.pos = 0; d.done = [];
+    if (d.deload) deloadDraft(d);
+  } else for (const ex of d.exercises) ex.sets = prefillSets(lastFor(ex.exerciseId, beforeIndex(d), null, gym), ex.rir, ex.sets.length);
+}
+let gymPickOpen = false;   // elegir gimnasio (Inicio o el entreno recién empezado)
+const gymChips = action => `<div class="gym-chips">${gymsList().map(g => `<button class="chip toggle ${g.id === curGym() ? 'on' : ''}" data-action="${action}" data-id="${g.id}" aria-pressed="${g.id === curGym()}">${esc(g.name)}</button>`).join('')}</div>`;
+
 function startWorkout(r) {
   db.draft = {
     routineId: r.id,
@@ -7061,7 +7137,8 @@ function startWorkout(r) {
     start: new Date().toISOString(),
     timer: null,
     rsig: routineSig(r),
-    exercises: r.exercises.map((ex, k) => draftEx(ex, k === r.exercises.length - 1, r.id)),
+    gym: curGym(),
+    exercises: r.exercises.map((ex, k) => draftEx(ex, k === r.exercises.length - 1, r.id, curGym())),
   };
   if (deloadOn()) deloadDraft(db.draft);
   save();
@@ -7108,7 +7185,7 @@ function finishWorkout() {
   setTimer(null);
   const id = uid();
   const durationSec = Math.max(0, Math.round((Date.now() - new Date(d.start).getTime()) / 1000));
-  const w = { id, routineId: d.routineId, routineName: d.routineName, date: d.start, durationSec, exercises, ...(d.free ? { free: true } : {}), ...(d.deload ? { deload: true } : {}) };
+  const w = { id, routineId: d.routineId, routineName: d.routineName, date: d.start, durationSec, exercises, ...(d.free ? { free: true } : {}), ...(d.deload ? { deload: true } : {}), ...(d.gym && d.gym !== GYM0 ? { gym: d.gym } : {}) };
   db.workouts.push(w);
   const recs = progAdvance(d, w);
   db.draft = null;
@@ -7181,6 +7258,7 @@ function makeEditBuf(id) {
   return {
     editOf: w.id,
     ...(w.deload ? { deload: true } : {}),
+    ...(w.gym ? { gym: w.gym } : {}),
     routineId: w.routineId,
     routineName: w.routineName,
     start: w.date,
@@ -7243,7 +7321,7 @@ function addExtraExercise(name, unit, gid = null) {
     rir: found ? found.rir : false,
     extra: true,   // agregado mientras entrenabas: se puede quitar
     ...(gid ? { guide: gid } : {}),
-    sets: prefillSets(lastFor(id, before), found && found.rir),
+    sets: prefillSets(lastFor(id, before, null, draftGym(d)), found && found.rir),
   });
   d.pos = d.exercises.length - 1;
   save(); render();
@@ -7907,7 +7985,7 @@ function myGuideMap() {
   return map;
 }
 const mineFor = (map, gid) => { const l = map.get(gid) || []; return l.find(c => c.hist) || l[0] || null; };
-const lastSetText = id => { const pv = lastFor(id); const st = pv && pv.ex.sets[0];
+const lastSetText = id => { const pv = lastFor(id, db.workouts.length, null, curGym()); const st = pv && pv.ex.sets[0];
   return st ? `Última vez ${fmtNum(st.w)} ${pv.ex.unit} × ${repsText(st)}` : 'Sin historial todavía'; };
 // Otros ejercicios: los del mismo músculo, o al buscar, cualquiera por su nombre (con tu nombre si ya lo tienes)
 function swapOthers(dx, alts, rex, g, q) {
@@ -7944,7 +8022,7 @@ async function swapExercise(alt, edit = false) {
     exerciseId: alt.id, name: alt.name, unit: alt.unit, rest: plan.rest || 0, rir: !!plan.rir, ...pf,
     ...(alt.guide ? { guide: alt.guide } : {}), ...('ssNext' in dx ? { ssNext: dx.ssNext } : {}), ...(dx.extra ? { extra: true } : {}),
     ...(rex && alt.id !== rex.id ? { swapOf: rex.id } : {}),
-    sets: prefillSets(lastFor(alt.id, db.workouts.length, dx.extra ? null : d.routineId) || lastFor(alt.id), dx.rir, plan.goalSets, plan.dropset),
+    sets: prefillSets(lastFor(alt.id, db.workouts.length, dx.extra ? null : d.routineId, draftGym(d)) || lastFor(alt.id, db.workouts.length, null, draftGym(d)), dx.rir, plan.goalSets, plan.dropset),
   };
   d.done = (d.done || []).filter(x => x !== dx.exerciseId);
   swapPick = null;
@@ -8753,6 +8831,63 @@ $app.addEventListener('click', async e => {
       break;
     case 'saveas-no':
       saveAsDone = el.dataset.id;
+      render();
+      break;
+    case 'gym-add': {
+      const l = ensureGyms();
+      l.push({ id: uid(), name: `Gimnasio ${l.length + 1}` });
+      save(); render();
+      const ins = $app.querySelectorAll('[data-bind="gym-name"]');
+      if (ins.length) { ins[ins.length - 1].focus(); ins[ins.length - 1].select(); }
+      break;
+    }
+    case 'gym-set':
+      ensureGyms();
+      db.body.gym = el.dataset.id;
+      gymPickOpen = false;
+      save(); render();
+      showNote(`Ahora entrenas en ${gymName(el.dataset.id)}`);
+      break;
+    case 'gym-pick':
+      gymPickOpen = !gymPickOpen;
+      render();
+      break;
+    case 'gym-draft': {
+      const d = cur();
+      if (!d || d.exercises.some(touchedEx)) break;
+      regymDraft(d, el.dataset.id);
+      gymPickOpen = false;
+      save(); render();
+      showNote(`Pesos de ${gymName(el.dataset.id)}`);
+      break;
+    }
+    case 'gym-del': {
+      const g = gymsList().find(x => x.id === el.dataset.id);
+      if (!g || !multiGym()) break;
+      const n = db.workouts.filter(w => gymOf(w) === g.id).length;
+      if (n) { notice(`"${g.name}" tiene ${plural(n, 'entreno')} guardados, así que no se puede eliminar. Si quieres, cámbiale el nombre.`); break; }
+      if (!await ask(`¿Eliminar el gimnasio "${g.name}"?`)) break;
+      db.body.gyms = gymsList().filter(x => x.id !== g.id);
+      for (const r of db.routines) if (r.gym === g.id) delete r.gym;
+      if (db.body.gym === g.id) db.body.gym = db.body.gyms[0].id;
+      save(); render();
+      break;
+    }
+    case 'routine-gym': {
+      const r = curRoutine();
+      if (!r) break;
+      if (el.dataset.id) r.gym = el.dataset.id; else delete r.gym;
+      save(); render();
+      break;
+    }
+    case 'ex-gym': {
+      const ex = edEx(i);
+      (db.body.gymEx ||= {})[ex.id] = !gymSplitEx(ex.id, ex);
+      save(); render();
+      break;
+    }
+    case 'prog-gym':
+      progressGym.g = el.dataset.g;
       render();
       break;
     case 'start': {
@@ -9963,6 +10098,11 @@ $app.addEventListener('input', e => {
     if (other) other.value = out;
     return;
   }
+  if (bind === 'gym-name') {
+    const g = ensureGyms().find(x => x.id === el.dataset.id);
+    if (g) { g.name = el.value.slice(0, 40); save(); }
+    return;
+  }
   if (bind === 'food-search') { foodQuery = el.value; filterFoods(); return; }
   if (bind === 'free-q') {
     freeQ = el.value;
@@ -10103,7 +10243,7 @@ $app.addEventListener('input', e => {
     const d = cur(), ex = d.exercises[i];
     ex.sets[j][bind] = el.value;
     const cell = $app.querySelector(`[data-mark="${i}-${j}"]`);
-    if (cell && !d.deload) cell.innerHTML = markSpan(liveCmp(ex.sets[j], ex, bestSets(ex.exerciseId, beforeIndex(d), ex.unit, ex.extra ? null : d.routineId)[j]));
+    if (cell && !d.deload) cell.innerHTML = markSpan(liveCmp(ex.sets[j], ex, bestSets(ex.exerciseId, beforeIndex(d), ex.unit, ex.extra ? null : d.routineId, draftGym(d))[j]));
     const wl = (bind === 'w' || bind === 'r') && j === 0 && $app.querySelector(`[data-warm="${i}"]`);
     if (wl) wl.innerHTML = warmLine(d, i);
   }
@@ -10111,7 +10251,7 @@ $app.addEventListener('input', e => {
     const d = cur(), ex = d.exercises[i], k = +el.dataset.k, x = ex.sets[j].drops[k];
     x[bind === 'dw' ? 'w' : 'r'] = el.value;
     const cell = $app.querySelector(`[data-mark="${i}-${j}-${k}"]`);
-    if (cell && !d.deload) cell.innerHTML = markSpan(dropCmp(x, ex, (bestDrops(ex.exerciseId, beforeIndex(d), ex.unit, ex.extra ? null : d.routineId)[j] || [])[k]));
+    if (cell && !d.deload) cell.innerHTML = markSpan(dropCmp(x, ex, (bestDrops(ex.exerciseId, beforeIndex(d), ex.unit, ex.extra ? null : d.routineId, draftGym(d))[j] || [])[k]));
   }
   else if (bind === 'snote') cur().exercises[i].sets[j].note = el.value;
   else if (bind === 'note') {
@@ -10150,6 +10290,9 @@ $app.addEventListener('focusout', e => {
     refresh();   // al salir del cuadro se recalculan las calorías
   } else if (bind === 'wq-ml') {
     refresh();   // al salir del cuadro se ven los botones rápidos actualizados
+  } else if (bind === 'gym-name') {   // vacío: vuelve a un nombre
+    const g = gymsList().find(x => x.id === e.target.dataset.id);
+    if (g && !g.name.trim()) { g.name = 'Gimnasio'; e.target.value = g.name; save(); }
   } else if (bind === 'exprog-base') {
     const ex = curRoutine() && edEx(+e.target.dataset.i);
     if (ex && ex.prog) { e.target.value = ex.prog.base ? toField(ex.prog.base) : ''; refresh(); }

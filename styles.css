@@ -1442,3 +1442,11 @@ body.viewing .free-start { display: none; }
 .conv-quick { display: grid; gap: 6px; }
 .conv-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; font-size: 14px; font-variant-numeric: tabular-nums; }
 .conv-grid b { font-weight: 700; }
+
+/* Gimnasios */
+.gym-line { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.gym-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+.gym-row { display: flex; align-items: center; gap: 8px; }
+.gym-row input { flex: 1; min-width: 0; }
+.card.routine.other-gym { opacity: .6; }
+.card.routine .badge { white-space: nowrap; }
