@@ -199,7 +199,7 @@ function bestSets(exerciseId, before = db.workouts.length, unit = null, rid = nu
   const best = [];
   for (let k = 0; k < before; k++) {
     if (rid && db.workouts[k].routineId !== rid) continue;
-    if (db.workouts[k].deload) continue;   // semana de descarga: no es tu marca
+    if (db.workouts[k].deload || db.workouts[k].comeback) continue;   // descarga o vuelta de una pausa: no es tu marca
     const ex = db.workouts[k].exercises.find(e => e.exerciseId === exerciseId);
     if (!ex || (unit && unitKind(ex.unit) !== unitKind(unit))) continue;
     if (gymSkip(db.workouts[k], ex, gym, exerciseId)) continue;   // máquina de otro gimnasio
@@ -222,7 +222,7 @@ function bestDrops(exerciseId, before = db.workouts.length, unit = null, rid = n
   const best = [];
   for (let n = 0; n < before; n++) {
     const w = db.workouts[n];
-    if ((rid && w.routineId !== rid) || w.deload) continue;
+    if ((rid && w.routineId !== rid) || w.deload || w.comeback) continue;
     const ex = w.exercises.find(e => e.exerciseId === exerciseId);
     if (!ex || (unit && unitKind(ex.unit) !== unitKind(unit))) continue;
     if (gymSkip(w, ex, gym, exerciseId)) continue;
@@ -1706,8 +1706,13 @@ const unitSelect = () => `<select name="unit" aria-label="Unidad">
   <option ${lastUnit === 'placas' ? 'selected' : ''}>placas</option>
 </select>`;
 
+// Nota del ejercicio: en máquinas y poleas, una por gimnasio (el ajuste del asiento o de la polea cambia); en el primer gimnasio, la de siempre
+function noteKey(exerciseId, i) {
+  const d = cur(), ex = d && d.exercises[i], g = d ? draftGym(d) : GYM0;
+  return ex && g !== GYM0 && gymSplitEx(exerciseId, ex) ? `${exerciseId}@${g}` : exerciseId;
+}
 function noteHtml(exerciseId, i) {
-  const note = db.notes[exerciseId] || '';
+  const note = db.notes[noteKey(exerciseId, i)] || '';
   let inner;
   if (editingNote === exerciseId) {
     inner = `<input class="note-input" data-bind="note" data-i="${i}" value="${esc(note)}" placeholder="Ej. altura asiento 7" enterkeyhint="done" autocomplete="off">`;
@@ -2172,7 +2177,9 @@ function freePickerHtml(d) {
 async function startFree() {
   if (db.draft && !await ask(`Tienes un entrenamiento de "${db.draft.routineName}" sin guardar. ¿Descartarlo y empezar uno nuevo?`, 'Descartar y empezar')) return;
   setTimer(null);
+  await maybeComeback();
   db.draft = { free: true, routineId: null, routineName: 'Entreno libre', start: new Date().toISOString(), timer: null, gym: curGym(), exercises: [] };
+  if (!deloadOn() && comebackOn()) db.draft.comeback = COMEBACK_N - db.body.comeback.left + 1;
   freeAdd = null; freeQ = '';
   save();
   go('#/entrenar');
@@ -2195,6 +2202,7 @@ function addFreeExercise(n) {
     ...(fp.guide ? { guide: fp.guide } : {}),
     sets,
   });
+  if (d.comeback) comebackEx(d, d.exercises[d.exercises.length - 1]);
   d.pos = d.exercises.length - 1;
   freeAdd = null; freeQ = '';
   save(); render();
@@ -2221,8 +2229,9 @@ function viewWorkout() {
   const gi = groupIndex(groups, d.pos), group = groups[gi], isLast = gi === groups.length - 1;
   const ridOf = ex => (ex.extra ? null : d.routineId);
   const dg = draftGym(d);
-  const bests = new Map(group.map(k => [k, d.deload ? [] : bestSets(d.exercises[k].exerciseId, before, d.exercises[k].unit, ridOf(d.exercises[k]), dg)]));
-  const dropBests = new Map(group.map(k => [k, d.deload ? [] : bestDrops(d.exercises[k].exerciseId, before, d.exercises[k].unit, ridOf(d.exercises[k]), dg)]));
+  const noCmp = d.deload || d.comeback;   // descarga o vuelta de una pausa: no se compara con tus marcas
+  const bests = new Map(group.map(k => [k, noCmp ? [] : bestSets(d.exercises[k].exerciseId, before, d.exercises[k].unit, ridOf(d.exercises[k]), dg)]));
+  const dropBests = new Map(group.map(k => [k, noCmp ? [] : bestDrops(d.exercises[k].exerciseId, before, d.exercises[k].unit, ridOf(d.exercises[k]), dg)]));
 
   // "↓ drop" solo en ejercicios marcados como Dropset en la rutina (o que ya tienen bajadas, al editar uno guardado)
   // Fila de una serie, con sus bajadas de dropset debajo (label: "1", o "A1" en un superset)
@@ -2304,7 +2313,7 @@ function viewWorkout() {
       hint = `<p class="prog-line"><strong>Progresión · sesión ${ex.progAt + 1} de ${ex.progN}</strong>${ex.progBase ? ` · 1RM base ${fmtNum(ex.progBase)} ${u}` : ''}</p>
         ${ex.progRecord ? `<p class="goal-hint">Hoy toca intentar un récord.${ex.progBase ? ' Si superas tu 1RM base, al terminar te propongo actualizarlo.' : ''}</p>`
           : !ex.progBase ? '<p class="goal-hint">Pon tu 1RM base en Editar rutina para ver los pesos de la progresión.</p>' : ''}`;
-    } else if (!editing && !d.deload && (ex.goalReps || hasRepsBy(ex))) {
+    } else if (!editing && !noCmp && (ex.goalReps || hasRepsBy(ex))) {
       const prev = lastFor(ex.exerciseId, before, ridOf(ex), dg);
       const done = prev ? prev.ex.sets.filter(x => x.w != null) : [];
       const topOf = j => (repsFor(ex, j) ? rangeTop(repsFor(ex, j)) : Infinity);
@@ -2316,7 +2325,7 @@ function viewWorkout() {
     }
     return `${hint}
       ${noteHtml(ex.exerciseId, i)}
-      ${compact || d.deload || bests.get(i).length ? '' : '<p class="prev">Primera vez</p>'}`;
+      ${compact || noCmp || bests.get(i).length ? '' : '<p class="prev">Primera vez</p>'}`;
   };
   // Historial al entrenar: los últimos 5 entrenos; "Ver más" muestra 10 más cada vez
   const historyHtml = ex => {
@@ -2422,6 +2431,7 @@ function viewWorkout() {
   return `${header(title, { back: true, sub: `Ejercicio ${gi + 1} de ${groups.length} · ${editing ? fmtDate(d.start) : `Duración ${elapsedClock(d.start)}`}` })}
     ${steps}
     ${d.deload ? '<p class="deload-tag">Semana de descarga · la mitad de las series y 10% menos de peso</p>' : ''}
+    ${d.comeback ? `<p class="deload-tag">Volviendo de una pausa · entreno ${d.comeback} de ${COMEBACK_N}: sin comparar con tus marcas, y lo que no has hecho desde la pausa viene con 15% menos de peso</p>` : ''}
     ${group.length > 1 ? supersetBlock(group) : exerciseBlock(d.exercises[group[0]], group[0])}
     ${editing ? '' : '<div id="quizcard" class="quiz card" hidden></div>'}
     ${d.free && isLast ? (freeAdd ? freePickerHtml(d) : '<button class="btn block free-more" data-action="free-open">+ Otro ejercicio</button>') : ''}
@@ -2630,10 +2640,16 @@ function viewAccount() {
     <h2>Gimnasios</h2>
     <section class="card stack gyms-card">
       <span class="muted small">¿Entrenas en más de un gimnasio? Agrégalo: en máquinas y poleas tus pesos y marcas se separan por gimnasio. Con barra, mancuernas y peso corporal siguen juntos.</span>
-      ${gymsList().map(g => `<div class="gym-row">
-        <input data-bind="gym-name" data-id="${g.id}" value="${esc(g.name)}" maxlength="40" autocomplete="off" aria-label="Nombre del gimnasio">
-        ${g.id === curGym() ? '<span class="badge on">Aquí</span>' : `<button class="btn small-btn" data-action="gym-set" data-id="${g.id}">Estoy aquí</button>`}
-        ${multiGym() ? `<button class="icon small danger" data-action="gym-del" data-id="${g.id}" aria-label="Eliminar ${esc(g.name)}">${TRASH_ICON}</button>` : ''}
+      ${gymsList().map(g => `<div class="gym-item">
+        <div class="gym-row">
+          <input data-bind="gym-name" data-id="${g.id}" value="${esc(g.name)}" maxlength="40" autocomplete="off" aria-label="Nombre del gimnasio">
+          ${g.id === curGym() ? '<span class="badge on">Aquí</span>' : `<button class="btn small-btn" data-action="gym-set" data-id="${g.id}">Estoy aquí</button>`}
+          ${multiGym() ? `<button class="icon small danger" data-action="gym-del" data-id="${g.id}" aria-label="Eliminar ${esc(g.name)}">${TRASH_ICON}</button>` : ''}
+        </div>
+        ${multiGym() ? `<label class="gym-unit"><span class="muted small">Máquinas y poleas en</span>
+          <select data-bind="gym-unit" data-id="${g.id}" aria-label="Unidad de las máquinas de ${esc(g.name)}">
+            ${[['', 'su propia unidad'], ['kg', 'kg'], ['lb', 'lb']].map(([v, n]) => `<option value="${v}" ${(g.unit || '') === v ? 'selected' : ''}>${n}</option>`).join('')}
+          </select></label>` : ''}
       </div>`).join('')}
       <button class="btn block" data-action="gym-add" style="margin-top:0">+ Agregar gimnasio</button>
     </section>
@@ -2994,14 +3010,14 @@ function viewSession(id) {
 
   // Cada serie comparada con la mejor serie de esa posición en los entrenamientos anteriores
   const blocks = w.exercises.map((ex, ei) => {
-    const best = w.deload ? [] : bestSets(ex.exerciseId, k, ex.unit, w.routineId, gymOf(w));
+    const best = w.deload || w.comeback ? [] : bestSets(ex.exerciseId, k, ex.unit, w.routineId, gymOf(w));
     const count = { up: 0, eq: 0, down: 0 };
     const chips = ex.sets.map((s, j) => {
       const c = best[j] ? cmpSet({ ...s, unit: ex.unit, bw: bwFor(ex, w.date) }, best[j]) : null;
       if (c != null) count[c > 0 ? 'up' : c < 0 ? 'down' : 'eq']++;
       return `<span>${setText(s, ex.unit)} ${markSpan(c)}${setNoteChip(s)}${s.video ? `<button class="chip-video" data-action="video-open" data-wid="${w.id}" data-e="${ei}" data-j="${j}" aria-label="Ver video de la serie ${j + 1}">${PLAY_ICON}</button>` : ''}</span>`;
     }).join('');
-    const tally = w.deload ? '<span class="muted">Descarga</span>' : !best.length ? '<span class="muted">Primera vez</span>'
+    const tally = w.deload ? '<span class="muted">Descarga</span>' : w.comeback ? '<span class="muted">Volviendo de una pausa</span>' : !best.length ? '<span class="muted">Primera vez</span>'
       : ['up', 'eq', 'down'].filter(k => count[k]).map(k => `<span class="mark ${k}">${count[k]} ${TREND_ICON[k]}</span>`).join(' ')
         || '<span class="muted">Sin series para comparar</span>';
     return `<section class="card">
@@ -3048,7 +3064,7 @@ function workoutShareText(w, forChat = false) {
   const k = db.workouts.indexOf(w);
   let ups = 0;
   const lines = w.exercises.map(ex => {
-    const best = w.deload ? [] : bestSets(ex.exerciseId, k, ex.unit, w.routineId, gymOf(w));
+    const best = w.deload || w.comeback ? [] : bestSets(ex.exerciseId, k, ex.unit, w.routineId, gymOf(w));
     const sets = ex.sets.map((s, j) => {
       const c = best[j] ? cmpSet({ ...s, unit: ex.unit, bw: bwFor(ex, w.date) }, best[j]) : null;
       if (c > 0) ups++;
@@ -3058,7 +3074,7 @@ function workoutShareText(w, forChat = false) {
     return `• ${ex.name} (${ex.unit}):\n${sets.join('\n')}`;   // una serie por línea
   });
   const title = `💪 ${forChat ? w.routineName : `*${w.routineName}*`}${w.durationSec ? ` · ${fmtDuration(w.durationSec)}` : ''}`;
-  const closing = w.deload ? '🧘 Semana de descarga' : ups ? `🔥 Superé mi récord en ${plural(ups, 'serie')}` : '✅ Entrenamiento completado';
+  const closing = w.deload ? '🧘 Semana de descarga' : w.comeback ? '💪 Volviendo de a poco' : ups ? `🔥 Superé mi récord en ${plural(ups, 'serie')}` : '✅ Entrenamiento completado';
   const text = `${title}\n${fmtLongDate(w.date)}\n\n${lines.join('\n')}\n\n${closing}`;
   return forChat ? text : `${text}\n\nDesdel · ${location.origin}${location.pathname}`;
 }
@@ -4842,7 +4858,7 @@ function newPRs(w) {
     return s ? toKg(e1rmEx(ex, s, date), ex.unit) : 0;
   };
   const prs = [], idx = db.workouts.indexOf(w);
-  if (w.deload) return prs;
+  if (w.deload || w.comeback) return prs;
   for (const ex of w.exercises) {
     const cur = firstE1rm(ex, w.date);
     if (!cur) continue;
@@ -7065,11 +7081,17 @@ $toast.addEventListener('click', e => {
 // ---------- Entrenamiento ----------
 // Firma de la rutina (para saber si la editaste con el entreno en curso)
 const routineSig = r => { const t = stable(r.exercises); let h = 0; for (let k = 0; k < t.length; k++) h = (h * 31 + t.charCodeAt(k)) | 0; return String(h); };
-const draftEx = (ex, last, rid, gym = curGym()) => progDraft({
+// Gimnasio con máquinas en kg o en lb: las máquinas y poleas se anotan en esa unidad
+function gymUnitEx(dx, ex, gym) {
+  const u = (gymsList().find(g => g.id === gym) || {}).unit;
+  if (u && dx.unit !== 'placas' && dx.unit !== u && dx.progAt == null && gymSplitEx(ex.id, ex)) dx.unit = u;
+  return dx;
+}
+const draftEx = (ex, last, rid, gym = curGym()) => gymUnitEx(progDraft({
   exerciseId: ex.id, name: ex.name, unit: ex.unit, rest: ex.rest || 0, rir: !!ex.rir, ...planFields(ex),
   ...(last ? { ssNext: false } : {}),   // el último no se une con nada
   sets: prefillSets(lastFor(ex.id, db.workouts.length, rid, gym), ex.rir, ex.goalSets),
-}, ex);
+}, ex), ex, gym);
 // Editaste la rutina del entreno en curso: el entreno toma los cambios sin perder lo que ya anotaste
 function syncDraftRoutine() {
   const d = db.draft;
@@ -7111,6 +7133,44 @@ function syncDraftRoutine() {
   d.pos = Math.max(0, Math.min(posId != null && at(posId) >= 0 ? at(posId) : d.pos || 0, out.length - 1));
   if (d.timer) { const t = timerId != null ? at(timerId) : -1; if (t >= 0) d.timer.i = t; else d.timer = null; }
 }
+// Vuelta de una pausa: 14 días o más sin entrenar. Los 3 entrenos siguientes: los ejercicios que no hiciste desde la pausa
+// traen pesos de referencia 15% más bajos, y nada se compara con tus marcas (como la semana de descarga)
+const PAUSE_DAYS = 14, COMEBACK_N = 3;
+const comebackOn = () => !!(db.body.comeback && db.body.comeback.left > 0);
+async function maybeComeback() {
+  if (viewing || deloadOn() || comebackOn()) return;
+  let last = null;
+  for (let k = db.workouts.length - 1; k >= 0 && !last; k--) if (!db.workouts[k].deload) last = db.workouts[k].date;
+  if (!last || db.body.comebackAsked === last) return;
+  const days = Math.floor((Date.now() - Date.parse(last)) / 864e5);
+  if (days < PAUSE_DAYS) return;
+  db.body.comebackAsked = last;   // se pregunta una sola vez por pausa
+  const yes = await dialog(`Llevas ${days >= 21 ? plural(Math.floor(days / 7), 'semana') : plural(days, 'día')} sin entrenar. ¿Vuelves de una pausa?\n\nLos próximos ${COMEBACK_N} entrenos te sugiero pesos un 15% más bajos y no se comparan con tus marcas, para que vuelvas de a poco.`,
+    { ok: 'Sí, volver de a poco', cancel: 'No' });
+  if (yes) db.body.comeback = { left: COMEBACK_N, since: last };
+  save();
+}
+const cutW = (v, unit, k) => {
+  const n = num(v);
+  if (n == null || n <= 0) return v;
+  if (unit === 'placas') return toField(Math.max(1, Math.floor(n * k)));
+  const step = unit === 'lb' ? (n >= 40 ? 5 : 1) : n >= 20 ? 2.5 : 0.5;
+  return toField(Math.round((n * k) / step) * step);
+};
+// Un ejercicio del entreno de vuelta: si lo último que tienes es de antes de la pausa, 15% menos
+function comebackEx(d, ex) {
+  const cb = db.body.comeback, pv = lastFor(ex.exerciseId, db.workouts.length, null, draftGym(d));
+  if (!cb || !pv || pv.date > cb.since) return;
+  for (const st of ex.sets) {
+    if (st.pw !== undefined) st.pw = cutW(st.pw, ex.unit, 0.85);
+    for (const x of st.drops || []) if (x.pw !== undefined) x.pw = cutW(x.pw, ex.unit, 0.85);
+  }
+}
+function comebackDraft(d) {
+  d.comeback = COMEBACK_N - db.body.comeback.left + 1;   // entreno n.º 1, 2 o 3 de la vuelta
+  for (const ex of d.exercises) comebackEx(d, ex);
+}
+
 function startWorkout(r) {
   db.draft = {
     routineId: r.id,
@@ -7122,6 +7182,7 @@ function startWorkout(r) {
     exercises: r.exercises.map((ex, k) => draftEx(ex, k === r.exercises.length - 1, r.id, curGym())),
   };
   if (deloadOn()) deloadDraft(db.draft);
+  else if (comebackOn()) comebackDraft(db.draft);
   save();
   go('#/entrenar');
 }
@@ -7166,9 +7227,13 @@ function finishWorkout() {
   setTimer(null);
   const id = uid();
   const durationSec = Math.max(0, Math.round((Date.now() - new Date(d.start).getTime()) / 1000));
-  const w = { id, routineId: d.routineId, routineName: d.routineName, date: d.start, durationSec, exercises, ...(d.free ? { free: true } : {}), ...(d.deload ? { deload: true } : {}), ...(d.gym && d.gym !== GYM0 ? { gym: d.gym } : {}) };
+  const w = { id, routineId: d.routineId, routineName: d.routineName, date: d.start, durationSec, exercises, ...(d.free ? { free: true } : {}), ...(d.deload ? { deload: true } : {}), ...(d.gym && d.gym !== GYM0 ? { gym: d.gym } : {}), ...(d.comeback ? { comeback: true } : {}) };
   db.workouts.push(w);
   const recs = progAdvance(d, w);
+  if (d.comeback && db.body.comeback) {   // un entreno menos de la vuelta
+    db.body.comeback.left -= 1;
+    if (db.body.comeback.left <= 0) delete db.body.comeback;
+  }
   db.draft = null;
   save();
   announcePRs(w);
@@ -7240,6 +7305,7 @@ function makeEditBuf(id) {
     editOf: w.id,
     ...(w.deload ? { deload: true } : {}),
     ...(w.gym ? { gym: w.gym } : {}),
+    ...(w.comeback ? { comeback: true } : {}),
     routineId: w.routineId,
     routineName: w.routineName,
     start: w.date,
@@ -7304,6 +7370,7 @@ function addExtraExercise(name, unit, gid = null) {
     ...(gid ? { guide: gid } : {}),
     sets: prefillSets(lastFor(id, before, null, draftGym(d)), found && found.rir),
   });
+  if (d.comeback) comebackEx(d, d.exercises[d.exercises.length - 1]);
   d.pos = d.exercises.length - 1;
   save(); render();
   $app.querySelector(`[data-ex="${d.exercises.length - 1}"]`)?.scrollIntoView({ block: 'center' });
@@ -7522,7 +7589,14 @@ function unifyExerciseIds() {
   const remap = list => { const ids = list.map(e => m(e.exerciseId)); list.forEach((e, k) => { if (ids.indexOf(ids[k]) === ids.lastIndexOf(ids[k])) e.exerciseId = ids[k]; }); };
   for (const w of db.workouts) remap(w.exercises);
   if (db.draft) { remap(db.draft.exercises); for (const e of db.draft.exercises) if (e.swapOf) e.swapOf = m(e.swapOf); }
-  for (const [a, b] of to) { if (db.notes[a] && !db.notes[b]) db.notes[b] = db.notes[a]; delete db.notes[a]; }
+  for (const [a, b] of to) {
+    for (const k of Object.keys(db.notes)) {   // también las notas de cada gimnasio (id@gimnasio)
+      if (k !== a && !k.startsWith(`${a}@`)) continue;
+      const nk = b + k.slice(a.length);
+      if (!db.notes[nk]) db.notes[nk] = db.notes[k];
+      delete db.notes[k];
+    }
+  }
   if (db.body.prPick) db.body.prPick = [...new Set(db.body.prPick.map(m))];
   return true;
 }
@@ -8861,6 +8935,7 @@ $app.addEventListener('click', async e => {
       const r = db.routines.find(x => x.id === id);
       if (!r) return;
       if (db.draft && !await ask(`Tienes un entrenamiento de "${db.draft.routineName}" sin guardar. ¿Descartarlo y empezar "${r.name}"?`, 'Descartar y empezar')) return;
+      await maybeComeback();
       startWorkout(r);
       break;
     }
@@ -10065,6 +10140,11 @@ $app.addEventListener('input', e => {
     if (other) other.value = out;
     return;
   }
+  if (bind === 'gym-unit') {
+    const g = ensureGyms().find(x => x.id === el.dataset.id);
+    if (g) { if (el.value) g.unit = el.value; else delete g.unit; save(); }
+    return;
+  }
   if (bind === 'gym-name') {
     const g = ensureGyms().find(x => x.id === el.dataset.id);
     if (g) { g.name = el.value.slice(0, 40); save(); }
@@ -10210,7 +10290,7 @@ $app.addEventListener('input', e => {
     const d = cur(), ex = d.exercises[i];
     ex.sets[j][bind] = el.value;
     const cell = $app.querySelector(`[data-mark="${i}-${j}"]`);
-    if (cell && !d.deload) cell.innerHTML = markSpan(liveCmp(ex.sets[j], ex, bestSets(ex.exerciseId, beforeIndex(d), ex.unit, ex.extra ? null : d.routineId, draftGym(d))[j]));
+    if (cell && !d.deload && !d.comeback) cell.innerHTML = markSpan(liveCmp(ex.sets[j], ex, bestSets(ex.exerciseId, beforeIndex(d), ex.unit, ex.extra ? null : d.routineId, draftGym(d))[j]));
     const wl = (bind === 'w' || bind === 'r') && j === 0 && $app.querySelector(`[data-warm="${i}"]`);
     if (wl) wl.innerHTML = warmLine(d, i);
   }
@@ -10218,12 +10298,12 @@ $app.addEventListener('input', e => {
     const d = cur(), ex = d.exercises[i], k = +el.dataset.k, x = ex.sets[j].drops[k];
     x[bind === 'dw' ? 'w' : 'r'] = el.value;
     const cell = $app.querySelector(`[data-mark="${i}-${j}-${k}"]`);
-    if (cell && !d.deload) cell.innerHTML = markSpan(dropCmp(x, ex, (bestDrops(ex.exerciseId, beforeIndex(d), ex.unit, ex.extra ? null : d.routineId, draftGym(d))[j] || [])[k]));
+    if (cell && !d.deload && !d.comeback) cell.innerHTML = markSpan(dropCmp(x, ex, (bestDrops(ex.exerciseId, beforeIndex(d), ex.unit, ex.extra ? null : d.routineId, draftGym(d))[j] || [])[k]));
   }
   else if (bind === 'snote') cur().exercises[i].sets[j].note = el.value;
   else if (bind === 'note') {
-    const exId = cur().exercises[i].exerciseId, text = el.value.trim();
-    if (text) db.notes[exId] = text; else delete db.notes[exId];
+    const key = noteKey(cur().exercises[i].exerciseId, i), text = el.value.trim();
+    if (text) db.notes[key] = text; else delete db.notes[key];
   }
   // Anotaste series en este ejercicio: al saltar a otro, queda con ✓
   if (['w', 'r', 'r2', 'rir', 'dw', 'dr'].includes(bind)) { const d = cur(); (d.touched ||= {})[d.exercises[i].exerciseId] = true; }

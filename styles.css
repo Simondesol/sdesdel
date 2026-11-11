@@ -1450,3 +1450,6 @@ body.viewing .free-start { display: none; }
 .gym-row input { flex: 1; min-width: 0; }
 .card.routine.other-gym { opacity: .6; }
 .card.routine .badge { white-space: nowrap; }
+.gym-item { display: grid; gap: 6px; }
+.gym-unit { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.gym-unit select { flex: 1; min-width: 0; }
