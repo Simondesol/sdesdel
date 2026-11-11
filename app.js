@@ -343,11 +343,8 @@ function entrenoCard() {
   else if (trainedOn(t, plan.id)) body = `<span class="muted">Hoy ya entrenaste <strong>${esc(plan.name)}</strong></span>`;
   else body = `<div class="hub-value">Hoy te toca: <strong>${esc(plan.name)}</strong></div>
       <button class="btn primary" data-action="start" data-id="${plan.id}" ${plan.exercises.length ? '' : 'disabled'}>Empezar</button>`;
-  const gymLine = multiGym() && !viewing && !d ? `<div class="gym-line"><span class="muted small">Gimnasio: <strong>${esc(gymName(curGym()))}</strong></span><button class="link small" data-action="gym-pick">${gymPickOpen ? 'Listo' : 'Cambiar'}</button></div>
-      ${gymPickOpen ? gymChips('gym-set') : ''}` : '';
   return `<div class="card hub">
       <a class="hub-top" href="#/rutinas"><span class="hub-icon">🏋️</span><strong>Entreno</strong></a>
-      ${gymLine}
       ${body}
     </div>`;
 }
@@ -2424,9 +2421,6 @@ function viewWorkout() {
   // Entrenando: cuánto llevas (se actualiza solo). Editando uno guardado: su fecha
   return `${header(title, { back: true, sub: `Ejercicio ${gi + 1} de ${groups.length} · ${editing ? fmtDate(d.start) : `Duración ${elapsedClock(d.start)}`}` })}
     ${steps}
-    ${multiGym() ? (() => { const can = !editing && !d.exercises.some(touchedEx);
-      return `<div class="gym-line"><span class="muted small">Gimnasio: <strong>${esc(gymName(draftGym(d)))}</strong></span>${can ? `<button class="link small" data-action="gym-pick">${gymPickOpen ? 'Listo' : 'Cambiar'}</button>` : ''}</div>
-        ${can && gymPickOpen ? gymChips('gym-draft') : ''}`; })() : ''}
     ${d.deload ? '<p class="deload-tag">Semana de descarga · la mitad de las series y 10% menos de peso</p>' : ''}
     ${group.length > 1 ? supersetBlock(group) : exerciseBlock(d.exercises[group[0]], group[0])}
     ${editing ? '' : '<div id="quizcard" class="quiz card" hidden></div>'}
@@ -7117,19 +7111,6 @@ function syncDraftRoutine() {
   d.pos = Math.max(0, Math.min(posId != null && at(posId) >= 0 ? at(posId) : d.pos || 0, out.length - 1));
   if (d.timer) { const t = timerId != null ? at(timerId) : -1; if (t >= 0) d.timer.i = t; else d.timer = null; }
 }
-function regymDraft(d, gym) {
-  d.gym = gym;
-  db.body.gym = gym;
-  const r = !d.free && db.routines.find(x => x.id === d.routineId);
-  if (r) {
-    d.exercises = r.exercises.map((ex, k) => draftEx(ex, k === r.exercises.length - 1, r.id, gym));
-    d.rsig = routineSig(r); d.pos = 0; d.done = [];
-    if (d.deload) deloadDraft(d);
-  } else for (const ex of d.exercises) ex.sets = prefillSets(lastFor(ex.exerciseId, beforeIndex(d), null, gym), ex.rir, ex.sets.length);
-}
-let gymPickOpen = false;   // elegir gimnasio (Inicio o el entreno recién empezado)
-const gymChips = action => `<div class="gym-chips">${gymsList().map(g => `<button class="chip toggle ${g.id === curGym() ? 'on' : ''}" data-action="${action}" data-id="${g.id}" aria-pressed="${g.id === curGym()}">${esc(g.name)}</button>`).join('')}</div>`;
-
 function startWorkout(r) {
   db.draft = {
     routineId: r.id,
@@ -8844,23 +8825,9 @@ $app.addEventListener('click', async e => {
     case 'gym-set':
       ensureGyms();
       db.body.gym = el.dataset.id;
-      gymPickOpen = false;
       save(); render();
       showNote(`Ahora entrenas en ${gymName(el.dataset.id)}`);
       break;
-    case 'gym-pick':
-      gymPickOpen = !gymPickOpen;
-      render();
-      break;
-    case 'gym-draft': {
-      const d = cur();
-      if (!d || d.exercises.some(touchedEx)) break;
-      regymDraft(d, el.dataset.id);
-      gymPickOpen = false;
-      save(); render();
-      showNote(`Pesos de ${gymName(el.dataset.id)}`);
-      break;
-    }
     case 'gym-del': {
       const g = gymsList().find(x => x.id === el.dataset.id);
       if (!g || !multiGym()) break;
