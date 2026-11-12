@@ -2256,8 +2256,6 @@ function viewWorkout() {
         <button class="set-pop-item danger" role="menuitem" data-action="del-set" data-i="${i}" data-j="${j}">${TRASH_ICON}Borrar serie</button>
       </div>
     </div>` : '');
-  // Máquina o polea con más de un gimnasio: su unidad se cambia tocándola
-  const unitTap = ex => multiGym() && !editing && ex.unit !== 'placas' && gymSplitEx(ex.exerciseId, ex);
   // badge: en un superset, la letra de color (va junto a los ⋮)
   const setRow = (ex, i, s, j, label, badge = '') => {
     const best = bests.get(i);
@@ -2294,7 +2292,7 @@ function viewWorkout() {
       <div class="set ${ex.rir ? 'has-rir' : ''}">
         <span class="n">${dots}</span>
         <input inputmode="decimal" enterkeyhint="next" data-bind="w" data-i="${i}" data-j="${j}" value="${esc(s.w)}" placeholder="${esc(wPh)}" aria-label="${ex.unit === 'placas' ? 'Placas' : isBwEx(ex) ? 'Lastre' : 'Peso'} serie ${label}">
-        ${unitTap(ex) ? `<button type="button" class="u u-btn" data-action="ex-unit" data-i="${i}" aria-label="Cambiar entre kg y lb (esta máquina, en este gimnasio)">${unitShort(ex.unit)}</button>` : `<span class="u">${unitShort(ex.unit)}</span>`}
+        <span class="u">${unitShort(ex.unit)}</span>
         <span class="x">×</span>
         <input inputmode="numeric" enterkeyhint="next" data-bind="r" data-i="${i}" data-j="${j}" value="${esc(s.r)}" placeholder="${esc(repsFor(ex, j) || s.pr || 'reps')}" aria-label="Repeticiones serie ${label}">
         ${ex.rir ? `<input class="rir" inputmode="numeric" enterkeyhint="next" data-bind="rir" data-i="${i}" data-j="${j}" value="${esc(s.rir ?? '')}" placeholder="${esc(rirFor(ex, j) || s.prir || 'RIR')}" aria-label="RIR serie ${label}">` : ''}
@@ -7079,18 +7077,11 @@ $toast.addEventListener('click', e => {
 // ---------- Entrenamiento ----------
 // Firma de la rutina (para saber si la editaste con el entreno en curso)
 const routineSig = r => { const t = stable(r.exercises); let h = 0; for (let k = 0; k < t.length; k++) h = (h * 31 + t.charCodeAt(k)) | 0; return String(h); };
-// Máquinas y poleas: cada una recuerda su unidad (kg o lb) en cada gimnasio, la de la última vez que la hiciste ahí
-function gymUnitEx(dx, ex, gym) {
-  if (!multiGym() || dx.unit === 'placas' || dx.progAt != null || !gymSplitEx(ex.id, ex)) return dx;
-  const pv = lastFor(ex.id, db.workouts.length, null, gym);
-  if (pv && pv.ex.unit !== 'placas' && unitKind(pv.ex.unit) === unitKind(dx.unit)) dx.unit = pv.ex.unit;
-  return dx;
-}
-const draftEx = (ex, last, rid, gym = curGym()) => gymUnitEx(progDraft({
+const draftEx = (ex, last, rid, gym = curGym()) => progDraft({
   exerciseId: ex.id, name: ex.name, unit: ex.unit, rest: ex.rest || 0, rir: !!ex.rir, ...planFields(ex),
   ...(last ? { ssNext: false } : {}),   // el último no se une con nada
   sets: prefillSets(lastFor(ex.id, db.workouts.length, rid, gym), ex.rir, ex.goalSets),
-}, ex), ex, gym);
+}, ex);
 // Editaste la rutina del entreno en curso: el entreno toma los cambios sin perder lo que ya anotaste
 function syncDraftRoutine() {
   const d = db.draft;
@@ -8901,14 +8892,6 @@ $app.addEventListener('click', async e => {
       save(); render();
       showNote(`Ahora entrenas en ${gymName(el.dataset.id)}`);
       break;
-    case 'ex-unit': {   // la máquina de este gimnasio está en la otra unidad (lo anotado no se convierte: es lo que marca la máquina)
-      const d = cur(), ex = d && d.exercises[i];
-      if (!ex || ex.unit === 'placas') break;
-      ex.unit = ex.unit === 'lb' ? 'kg' : 'lb';
-      save(); render();
-      showNote(`${ex.name} en ${ex.unit} en ${gymName(draftGym(d))}`);
-      break;
-    }
     case 'gym-del': {
       const g = gymsList().find(x => x.id === el.dataset.id);
       if (!g || !multiGym()) break;
