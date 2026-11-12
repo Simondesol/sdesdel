@@ -2256,6 +2256,8 @@ function viewWorkout() {
         <button class="set-pop-item danger" role="menuitem" data-action="del-set" data-i="${i}" data-j="${j}">${TRASH_ICON}Borrar serie</button>
       </div>
     </div>` : '');
+  // Máquina o polea con más de un gimnasio: su unidad se cambia tocándola
+  const unitTap = ex => multiGym() && !editing && ex.unit !== 'placas' && gymSplitEx(ex.exerciseId, ex);
   // badge: en un superset, la letra de color (va junto a los ⋮)
   const setRow = (ex, i, s, j, label, badge = '') => {
     const best = bests.get(i);
@@ -2292,7 +2294,7 @@ function viewWorkout() {
       <div class="set ${ex.rir ? 'has-rir' : ''}">
         <span class="n">${dots}</span>
         <input inputmode="decimal" enterkeyhint="next" data-bind="w" data-i="${i}" data-j="${j}" value="${esc(s.w)}" placeholder="${esc(wPh)}" aria-label="${ex.unit === 'placas' ? 'Placas' : isBwEx(ex) ? 'Lastre' : 'Peso'} serie ${label}">
-        <span class="u">${unitShort(ex.unit)}</span>
+        ${unitTap(ex) ? `<button type="button" class="u u-btn" data-action="ex-unit" data-i="${i}" aria-label="Cambiar entre kg y lb (esta máquina, en este gimnasio)">${unitShort(ex.unit)}</button>` : `<span class="u">${unitShort(ex.unit)}</span>`}
         <span class="x">×</span>
         <input inputmode="numeric" enterkeyhint="next" data-bind="r" data-i="${i}" data-j="${j}" value="${esc(s.r)}" placeholder="${esc(repsFor(ex, j) || s.pr || 'reps')}" aria-label="Repeticiones serie ${label}">
         ${ex.rir ? `<input class="rir" inputmode="numeric" enterkeyhint="next" data-bind="rir" data-i="${i}" data-j="${j}" value="${esc(s.rir ?? '')}" placeholder="${esc(rirFor(ex, j) || s.prir || 'RIR')}" aria-label="RIR serie ${label}">` : ''}
@@ -2646,10 +2648,6 @@ function viewAccount() {
           ${g.id === curGym() ? '<span class="badge on">Aquí</span>' : `<button class="btn small-btn" data-action="gym-set" data-id="${g.id}">Estoy aquí</button>`}
           ${multiGym() ? `<button class="icon small danger" data-action="gym-del" data-id="${g.id}" aria-label="Eliminar ${esc(g.name)}">${TRASH_ICON}</button>` : ''}
         </div>
-        ${multiGym() ? `<label class="gym-unit"><span class="muted small">Máquinas y poleas en</span>
-          <select data-bind="gym-unit" data-id="${g.id}" aria-label="Unidad de las máquinas de ${esc(g.name)}">
-            ${[['', 'su propia unidad'], ['kg', 'kg'], ['lb', 'lb']].map(([v, n]) => `<option value="${v}" ${(g.unit || '') === v ? 'selected' : ''}>${n}</option>`).join('')}
-          </select></label>` : ''}
       </div>`).join('')}
       <button class="btn block" data-action="gym-add" style="margin-top:0">+ Agregar gimnasio</button>
     </section>
@@ -7081,10 +7079,11 @@ $toast.addEventListener('click', e => {
 // ---------- Entrenamiento ----------
 // Firma de la rutina (para saber si la editaste con el entreno en curso)
 const routineSig = r => { const t = stable(r.exercises); let h = 0; for (let k = 0; k < t.length; k++) h = (h * 31 + t.charCodeAt(k)) | 0; return String(h); };
-// Gimnasio con máquinas en kg o en lb: las máquinas y poleas se anotan en esa unidad
+// Máquinas y poleas: cada una recuerda su unidad (kg o lb) en cada gimnasio, la de la última vez que la hiciste ahí
 function gymUnitEx(dx, ex, gym) {
-  const u = (gymsList().find(g => g.id === gym) || {}).unit;
-  if (u && dx.unit !== 'placas' && dx.unit !== u && dx.progAt == null && gymSplitEx(ex.id, ex)) dx.unit = u;
+  if (!multiGym() || dx.unit === 'placas' || dx.progAt != null || !gymSplitEx(ex.id, ex)) return dx;
+  const pv = lastFor(ex.id, db.workouts.length, null, gym);
+  if (pv && pv.ex.unit !== 'placas' && unitKind(pv.ex.unit) === unitKind(dx.unit)) dx.unit = pv.ex.unit;
   return dx;
 }
 const draftEx = (ex, last, rid, gym = curGym()) => gymUnitEx(progDraft({
@@ -8902,6 +8901,14 @@ $app.addEventListener('click', async e => {
       save(); render();
       showNote(`Ahora entrenas en ${gymName(el.dataset.id)}`);
       break;
+    case 'ex-unit': {   // la máquina de este gimnasio está en la otra unidad (lo anotado no se convierte: es lo que marca la máquina)
+      const d = cur(), ex = d && d.exercises[i];
+      if (!ex || ex.unit === 'placas') break;
+      ex.unit = ex.unit === 'lb' ? 'kg' : 'lb';
+      save(); render();
+      showNote(`${ex.name} en ${ex.unit} en ${gymName(draftGym(d))}`);
+      break;
+    }
     case 'gym-del': {
       const g = gymsList().find(x => x.id === el.dataset.id);
       if (!g || !multiGym()) break;
@@ -10138,11 +10145,6 @@ $app.addEventListener('input', e => {
     const out = v == null || !(v >= 0) ? '' : toField(round1(toKgSide ? v * LB : v / LB));
     lbConv = toKgSide ? { lb: el.value, kg: out } : { lb: out, kg: el.value };
     if (other) other.value = out;
-    return;
-  }
-  if (bind === 'gym-unit') {
-    const g = ensureGyms().find(x => x.id === el.dataset.id);
-    if (g) { if (el.value) g.unit = el.value; else delete g.unit; save(); }
     return;
   }
   if (bind === 'gym-name') {

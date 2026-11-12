@@ -1451,5 +1451,4 @@ body.viewing .free-start { display: none; }
 .card.routine.other-gym { opacity: .6; }
 .card.routine .badge { white-space: nowrap; }
 .gym-item { display: grid; gap: 6px; }
-.gym-unit { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.gym-unit select { flex: 1; min-width: 0; }
+.u.u-btn { all: unset; cursor: pointer; text-align: center; color: var(--accent); text-decoration: underline dotted; text-underline-offset: 3px; }
