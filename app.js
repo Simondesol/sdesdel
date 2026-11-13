@@ -192,17 +192,24 @@ function gymSplitEx(exerciseId, ex) {
 // ¿Este entreno no cuenta para comparar? (otro gimnasio y el ejercicio es de máquina o polea)
 const gymSkip = (w, ex, gym, exerciseId) => !!gym && gymOf(w) !== gym && gymSplitEx(exerciseId, ex);
 
+// ---------- Otra máquina del mismo ejercicio ----------
+// db.body.machines[exerciseId] = [{ id, name, gym }]: máquinas iguales (2 pec decks, 2 poleas) que pesan distinto.
+// Cada entreno guarda ex.machine (sin machine = la principal) y cada máquina se compara solo con sus entrenos.
+const machinesOf = (exerciseId, gym) => ((db.body.machines || {})[exerciseId] || []).filter(m => (m.gym || GYM0) === gym);
+const machineName = (exerciseId, id) => (((db.body.machines || {})[exerciseId] || []).find(m => m.id === id) || {}).name || 'Otra máquina';
+const machineSkip = (ex, machine) => machine != null && (ex.machine || '') !== machine;
+
 // Mejor serie de cada posición (serie 1, serie 2...) en los entrenamientos anteriores a `before`
 // unit: solo compara con sesiones de la misma clase (placas con placas; kg y lb entre sí)
 // rid: solo los entrenos de esa rutina (en cada rutina rindes distinto según el orden y el cansancio); null = todos
-function bestSets(exerciseId, before = db.workouts.length, unit = null, rid = null, gym = null) {
+function bestSets(exerciseId, before = db.workouts.length, unit = null, rid = null, gym = null, machine = '') {
   const best = [];
   for (let k = 0; k < before; k++) {
     if (rid && db.workouts[k].routineId !== rid) continue;
     if (db.workouts[k].deload || db.workouts[k].comeback) continue;   // descarga o vuelta de una pausa: no es tu marca
     const ex = db.workouts[k].exercises.find(e => e.exerciseId === exerciseId);
     if (!ex || (unit && unitKind(ex.unit) !== unitKind(unit))) continue;
-    if (gymSkip(db.workouts[k], ex, gym, exerciseId)) continue;   // máquina de otro gimnasio
+    if (gymSkip(db.workouts[k], ex, gym, exerciseId) || machineSkip(ex, machine)) continue;   // máquina de otro gimnasio u otra máquina
     const bw = bwFor(ex, db.workouts[k].date);   // con peso corporal, cada serie con lo que pesabas ese día
     ex.sets.forEach((s, j) => {
       const c = { w: s.w, r: s.r, ...(isSideSet(s) ? { r2: s.r2 } : {}), rir: s.rir, unit: ex.unit, bw };
@@ -218,14 +225,14 @@ function bestSets(exerciseId, before = db.workouts.length, unit = null, rid = nu
 }
 
 // Mejor bajada de cada serie (best[j][k]: bajada k de la serie j), igual que bestSets
-function bestDrops(exerciseId, before = db.workouts.length, unit = null, rid = null, gym = null) {
+function bestDrops(exerciseId, before = db.workouts.length, unit = null, rid = null, gym = null, machine = '') {
   const best = [];
   for (let n = 0; n < before; n++) {
     const w = db.workouts[n];
     if ((rid && w.routineId !== rid) || w.deload || w.comeback) continue;
     const ex = w.exercises.find(e => e.exerciseId === exerciseId);
     if (!ex || (unit && unitKind(ex.unit) !== unitKind(unit))) continue;
-    if (gymSkip(w, ex, gym, exerciseId)) continue;
+    if (gymSkip(w, ex, gym, exerciseId) || machineSkip(ex, machine)) continue;
     const bw = bwFor(ex, w.date);
     ex.sets.forEach((s, j) => (s.drops || []).forEach((x, k) => {
       const c = { w: x.w, r: x.r, unit: ex.unit, bw };
@@ -1613,13 +1620,13 @@ function viewWater() {
 }
 
 // Última vez que se hizo un ejercicio (antes de la posición `before` del historial)
-function lastFor(exerciseId, before = db.workouts.length, rid = null, gym = null) {
+function lastFor(exerciseId, before = db.workouts.length, rid = null, gym = null, machine = '') {
   let deload = null;   // lo de una semana de descarga solo si no hay nada más
   for (let i = before - 1; i >= 0; i--) {
     const w = db.workouts[i];
     if (rid && w.routineId !== rid) continue;
     const ex = w.exercises.find(e => e.exerciseId === exerciseId);
-    if (ex && gymSkip(w, ex, gym, exerciseId)) continue;   // máquina de otro gimnasio: sus pesos no sirven aquí
+    if (ex && (gymSkip(w, ex, gym, exerciseId) || machineSkip(ex, machine))) continue;   // otro gimnasio u otra máquina: sus pesos no sirven aquí
     if (ex && !w.deload) return { date: w.date, ex };
     if (ex && !deload) deload = { date: w.date, ex };
   }
@@ -2230,8 +2237,8 @@ function viewWorkout() {
   const ridOf = ex => (ex.extra ? null : d.routineId);
   const dg = draftGym(d);
   const noCmp = d.deload || d.comeback;   // descarga o vuelta de una pausa: no se compara con tus marcas
-  const bests = new Map(group.map(k => [k, noCmp ? [] : bestSets(d.exercises[k].exerciseId, before, d.exercises[k].unit, ridOf(d.exercises[k]), dg)]));
-  const dropBests = new Map(group.map(k => [k, noCmp ? [] : bestDrops(d.exercises[k].exerciseId, before, d.exercises[k].unit, ridOf(d.exercises[k]), dg)]));
+  const bests = new Map(group.map(k => [k, noCmp ? [] : bestSets(d.exercises[k].exerciseId, before, d.exercises[k].unit, ridOf(d.exercises[k]), dg, d.exercises[k].machine || '')]));
+  const dropBests = new Map(group.map(k => [k, noCmp ? [] : bestDrops(d.exercises[k].exerciseId, before, d.exercises[k].unit, ridOf(d.exercises[k]), dg, d.exercises[k].machine || '')]));
 
   // "↓ drop" solo en ejercicios marcados como Dropset en la rutina (o que ya tienen bajadas, al editar uno guardado)
   // Fila de una serie, con sus bajadas de dropset debajo (label: "1", o "A1" en un superset)
@@ -2314,7 +2321,7 @@ function viewWorkout() {
         ${ex.progRecord ? `<p class="goal-hint">Hoy toca intentar un récord.${ex.progBase ? ' Si superas tu 1RM base, al terminar te propongo actualizarlo.' : ''}</p>`
           : !ex.progBase ? '<p class="goal-hint">Pon tu 1RM base en Editar rutina para ver los pesos de la progresión.</p>' : ''}`;
     } else if (!editing && !noCmp && (ex.goalReps || hasRepsBy(ex))) {
-      const prev = lastFor(ex.exerciseId, before, ridOf(ex), dg);
+      const prev = lastFor(ex.exerciseId, before, ridOf(ex), dg, ex.machine || '');
       const done = prev ? prev.ex.sets.filter(x => x.w != null) : [];
       const topOf = j => (repsFor(ex, j) ? rangeTop(repsFor(ex, j)) : Infinity);
       if (done.length && done.length >= (ex.goalSets || 1) && done.every((x, j) => (repsMin(x) || 0) >= topOf(j))) {
@@ -2333,7 +2340,7 @@ function viewWorkout() {
     if (!all.length) return '<p class="muted">Aún no hay historial de este ejercicio.</p>';
     return all.slice(0, n).map(({ w, ex: pex }) => `
       <div class="hist-item">
-        <div class="muted">${fmtDate(w.date)}${w.routineName ? ` · ${esc(w.routineName)}` : ''}${multiGym() ? ` · ${esc(gymName(gymOf(w)))}` : ''}</div>
+        <div class="muted">${fmtDate(w.date)}${w.routineName ? ` · ${esc(w.routineName)}` : ''}${multiGym() ? ` · ${esc(gymName(gymOf(w)))}` : ''}${pex.machine ? ` · ${esc(machineName(pex.exerciseId, pex.machine))}` : ''}</div>
         ${setsChips(pex)}
       </div>`).join('')
       + (all.length > n || n > HIST_FIRST ? `<div class="hist-btns">
@@ -2367,7 +2374,7 @@ function viewWorkout() {
     const open = openHistory.has(ex.exerciseId);
     const tab = muscleTab([ex]);
     return `<section class="card${tab ? ' has-tab' : ''}" data-ex="${i}">${tab}
-      <div class="ex-head">${exTitle(ex, esc(ex.name))}${dropBadge(ex)}${swapBtn(i)}${techBtn(i)}</div>
+      <div class="ex-head">${exTitle(ex, `${esc(ex.name)}${ex.machine ? ` <span class="machine-tag">${esc(machineName(ex.exerciseId, ex.machine))}</span>` : ''}`)}${dropBadge(ex)}${swapBtn(i)}${techBtn(i)}</div>
       ${exInfo(ex, i)}
       ${editing ? '' : `<p class="warm-line" data-warm="${i}">${warmLine(d, i)}</p>`}
       <div class="sets">${setHead([ex])}${ex.sets.map((st, j) => setRow(ex, i, st, j, j + 1)).join('')}</div>
@@ -2397,7 +2404,7 @@ function viewWorkout() {
     return `<section class="card superset${tab ? ' has-tab' : ''}" data-ex="${idx[0]}">${tab}
       <div class="ss-tag">Superset · alterna una serie de cada uno</div>
       ${idx.map((k, n) => `<div class="ss-ex">
-        <div class="ss-line">${letter(n)}<strong class="grow">${esc(d.exercises[k].name)}</strong>${dropBadge(d.exercises[k])}${swapBtn(k)}${techBtn(k)}</div>
+        <div class="ss-line">${letter(n)}<strong class="grow">${esc(d.exercises[k].name)}${d.exercises[k].machine ? ` <span class="machine-tag">${esc(machineName(d.exercises[k].exerciseId, d.exercises[k].machine))}</span>` : ''}</strong>${dropBadge(d.exercises[k])}${swapBtn(k)}${techBtn(k)}</div>
         ${exInfo(d.exercises[k], k, true)}
         ${editing ? '' : `<p class="warm-line" data-warm="${k}">${warmLine(d, k)}</p>`}
       </div>`).join('')}
@@ -3006,7 +3013,7 @@ function viewSession(id) {
 
   // Cada serie comparada con la mejor serie de esa posición en los entrenamientos anteriores
   const blocks = w.exercises.map((ex, ei) => {
-    const best = w.deload || w.comeback ? [] : bestSets(ex.exerciseId, k, ex.unit, w.routineId, gymOf(w));
+    const best = w.deload || w.comeback ? [] : bestSets(ex.exerciseId, k, ex.unit, w.routineId, gymOf(w), ex.machine || '');
     const count = { up: 0, eq: 0, down: 0 };
     const chips = ex.sets.map((s, j) => {
       const c = best[j] ? cmpSet({ ...s, unit: ex.unit, bw: bwFor(ex, w.date) }, best[j]) : null;
@@ -3060,7 +3067,7 @@ function workoutShareText(w, forChat = false) {
   const k = db.workouts.indexOf(w);
   let ups = 0;
   const lines = w.exercises.map(ex => {
-    const best = w.deload || w.comeback ? [] : bestSets(ex.exerciseId, k, ex.unit, w.routineId, gymOf(w));
+    const best = w.deload || w.comeback ? [] : bestSets(ex.exerciseId, k, ex.unit, w.routineId, gymOf(w), ex.machine || '');
     const sets = ex.sets.map((s, j) => {
       const c = best[j] ? cmpSet({ ...s, unit: ex.unit, bw: bwFor(ex, w.date) }, best[j]) : null;
       if (c > 0) ups++;
@@ -3375,7 +3382,7 @@ const coachInviteText = code => `Vincúlate conmigo como tu coach en Desdel 💪
 const VIEW_OK = ['', 'chat', 'rutinas', 'rutina', 'programas', 'miprograma', 'listos', 'programa', 'dieta', 'objetivo', 'historial', 'sesion', 'progreso', 'ejercicio', 'peso', 'grasa', 'medidas', 'fotos', 'nutricion', 'sueno', 'agua'];
 const VIEW_EXIT = ['social', 'gymbro', 'perfil', 'privacidad', 'cuenta', 'alumnos', 'coach', 'asignar', 'estadisticas'];
 // Lo que se puede tocar mirando a un atleta, y lo extra en el editor de rutinas
-const VIEW_SAFE = new Set(['back', 'view-exit', 'rm-calc', 'rm-unit', 'conv', 'prog-gym', 'video-open', 'vid-toggle', 'info', 'toggle-sec', 'range', 'toggle-history', 'hist-month', 'hist-day', 'skin-view', 'measure-view',
+const VIEW_SAFE = new Set(['back', 'view-exit', 'rm-calc', 'rm-unit', 'conv', 'prog-gym', 'prog-mach', 'video-open', 'vid-toggle', 'info', 'toggle-sec', 'range', 'toggle-history', 'hist-month', 'hist-day', 'skin-view', 'measure-view',
   'prog-open', 'prog-close', 'prog-filter', 'prog-retry', 'week-sum', 'week-day', 'guide-view', 'guide-close', 'explore-zone', 'explore-open', 'explore-back', 'explore-close', 'go-ex', 'prev-ex', 'next-ex', 'prog-rid', 'thumb-play']);
 const VIEW_ROUTINE = new Set(['exprog-add', 'exprog-rm', 'exprog-pos', 'exprog-del', 'reps-by', 'toggle-drop', 'toggle-bw', 'toggle-ss', 'toggle-rir', 'toggle-unit', 'move', 'ex-open', 'ex-close', 'del-ex', 'dup-routine', 'del-routine',
   'guide-pick', 'guide-change', 'guide-set', 'guide-pick-close', 'explore-list', 'explore-add', 'explore-add-custom']);
@@ -4871,7 +4878,7 @@ function newPRs(w) {
       const est = showsE1rm(ex) ? ` → ${bw ? 'lastre máx.' : '1RM'} ≈ ${bw ? '+' : ''}${fmtNum(round1(e1rmEx(ex, s, w.date)))} ${ex.unit}` : '';
       prs.push({ id: ex.exerciseId, name: ex.name, text: `${ex.name}: ${fmtNum(s.w)} ${ex.unit} × ${isSideSet(s) ? repsText(s) : fmtNum(s.r || 1)}${s.rir != null ? ` · RIR ${fmtNum(s.rir)}` : ''}${bw ? ' + peso corporal' : ''}${est}` });
     }
-    const best = bestSets(ex.exerciseId, idx < 0 ? db.workouts.length : idx, ex.unit, ex.extra ? null : w.routineId, gymOf(w));
+    const best = bestSets(ex.exerciseId, idx < 0 ? db.workouts.length : idx, ex.unit, ex.extra ? null : w.routineId, gymOf(w), ex.machine || '');
     const first = ex.sets.findIndex(x => x.w != null);
     ex.sets.forEach((x, j) => {
       if (j <= first || x.w == null || !best[j]) return;
@@ -5423,7 +5430,8 @@ function viewProfile(arg) {
 const RANGES = [['semana', 'Semana', 7], ['mes', 'Mes', 30], ['3m', '3 meses', 91], ['6m', '6 meses', 182]];      // peso corporal
 const EX_RANGES = [['mes', 'Mes', 30], ['3m', '3 meses', 91], ['6m', '6 meses', 182], ['1a', '1 año', 365]];   // ejercicios
 let progressRange = '3m';   // período del gráfico de ejercicios
-let progressGym = { ex: null, g: '' };   // gimnasio elegido en el gráfico de una máquina
+let progressGym = { ex: null, g: '' };
+let progressMach = { ex: null, m: '' };   // máquina elegida en el gráfico ('' = la principal)   // gimnasio elegido en el gráfico de una máquina
 let progressRid = { ex: null, r: '' };   // rutina elegida en el gráfico de un ejercicio ('' = todas; 'libre' = sin rutina)
 const ridKey = w => w.routineId || 'libre';
 let bwRange = '3m';         // período del gráfico de peso corporal
@@ -5548,8 +5556,8 @@ function e1rmEx(ex, s, dateIso) {
 }
 
 // Un punto por sesión: el 1RM estimado de la primera serie con peso
-function progressPoints(exerciseId, days, rid = '', gym = '') {
-  const rows = historyFor(exerciseId).reverse().filter(({ w }) => (!rid || ridKey(w) === rid) && (!gym || gymOf(w) === gym));   // de la más antigua a la más reciente
+function progressPoints(exerciseId, days, rid = '', gym = '', machine = null) {
+  const rows = historyFor(exerciseId).reverse().filter(({ w, ex }) => (!rid || ridKey(w) === rid) && (!gym || gymOf(w) === gym) && (machine == null || (ex.machine || '') === machine));   // de la más antigua a la más reciente
   if (!rows.length) return { unit: 'kg', points: [] };
   const unit = rows[rows.length - 1].ex.unit;
   const since = Date.now() - days * 86400000;
@@ -6684,11 +6692,17 @@ function viewProgressExercise(id) {
   const gyms = gymSplitEx(id, rows[0].ex) ? [...new Set(rows.map(r => gymOf(r.w)))] : [];
   if (progressGym.ex !== id) progressGym = { ex: id, g: gyms.includes(curGym()) ? curGym() : gyms[0] || '' };
   const gym = gyms.length > 1 ? progressGym.g : '';
-  const { unit, points } = progressPoints(id, days, rid, gym);
+  // Otra máquina igual (2 pec decks…): el gráfico de una a la vez, partiendo por la principal
+  const machs = [...new Set(rows.map(r => r.ex.machine || ''))];
+  if (progressMach.ex !== id || !machs.includes(progressMach.m)) progressMach = { ex: id, m: machs.includes('') ? '' : machs[0] };
+  const mach = machs.length > 1 ? progressMach.m : null;
+  const { unit, points } = progressPoints(id, days, rid, gym, mach);
   chart = null;
 
   const range = rangeButtons(EX_RANGES, progressRange, 'ex') + (rids.size > 1 ? `<div class="prog-rids" role="group" aria-label="Rutina">
       ${[['', 'Todas'], ...rids].map(([k, n]) => `<button class="chip toggle ${rid === k ? 'on' : ''}" data-action="prog-rid" data-r="${esc(k)}" aria-pressed="${rid === k}">${esc(n)}</button>`).join('')}</div>` : '')
+    + (machs.length > 1 ? `<div class="prog-rids" role="group" aria-label="Máquina">
+      ${machs.map(k => `<button class="chip toggle ${mach === k ? 'on' : ''}" data-action="prog-mach" data-m="${esc(k)}" aria-pressed="${mach === k}">${esc(k ? machineName(id, k) : 'Principal')}</button>`).join('')}</div>` : '')
     + (gyms.length > 1 ? `<div class="prog-rids" role="group" aria-label="Gimnasio">
       ${gyms.map(k => `<button class="chip toggle ${gym === k ? 'on' : ''}" data-action="prog-gym" data-g="${esc(k)}" aria-pressed="${gym === k}">${esc(gymName(k))}</button>`).join('')}</div>` : '');
   const bwEx = isBwEx({ exerciseId: id, bw: rows[0].ex.bw });
@@ -7110,7 +7124,7 @@ function syncDraftRoutine() {
     }
     if (ex.rir && !o.rir) sets = sets.map(x => ({ rir: '', ...x }));
     const { sets: _, ...plan } = fresh;
-    const keep = o.swapOf ? { exerciseId: o.exerciseId, name: o.name, unit: o.unit, swapOf: o.swapOf, ...(o.guide ? { guide: o.guide } : {}) } : {};
+    const keep = { ...(o.swapOf ? { exerciseId: o.exerciseId, name: o.name, unit: o.unit, swapOf: o.swapOf, ...(o.guide ? { guide: o.guide } : {}) } : {}), ...(o.machine ? { machine: o.machine } : {}) };
     return { ...plan, ...keep, sets };
   });
   // Los que sacaste de la rutina: se quedan si ya anotaste algo (o si los agregaste mientras entrenabas)
@@ -7189,6 +7203,7 @@ const cleanExercises = d => d.exercises
     ...(ex.bw ? { bw: true } : {}),
     ...(ex.guide && ex.guide !== 'none' ? { guide: ex.guide } : {}),   // su técnica: así se reconoce aunque lo saques de la rutina
     ...(ex.side ? { side: true } : {}),
+    ...(ex.machine ? { machine: ex.machine } : {}),   // otra máquina igual (sin machine = la principal)
     // Serie sin peso ni repeticiones anotados = no la hiciste (no se guarda). Si anotaste uno, el otro sale de la vez pasada
     sets: ex.sets
       .filter(s => typedSet(s) && (!lastreEx(ex) || bwEff(s, true).r !== ''))
@@ -7301,7 +7316,7 @@ function makeEditBuf(id) {
     start: w.date,
     exercises: w.exercises.map(ex => ({
       exerciseId: ex.exerciseId, name: ex.name, unit: ex.unit, rest: 0,
-      rir: !!ex.rir, ...(ex.bw ? { bw: true } : {}), ...(ex.side ? { side: true } : {}), ...(ex.guide ? { guide: ex.guide } : {}),
+      rir: !!ex.rir, ...(ex.bw ? { bw: true } : {}), ...(ex.side ? { side: true } : {}), ...(ex.guide ? { guide: ex.guide } : {}), ...(ex.machine ? { machine: ex.machine } : {}),
       sets: ex.sets.map(s => ({
         w: toField(s.w), r: toField(s.r), ...(isSideSet(s) ? { r2: toField(s.r2) } : {}), ...(s.note ? { note: s.note } : {}), ...(s.video ? { video: s.video } : {}), ...(ex.rir ? { rir: toField(s.rir) } : {}),
         ...(s.drops ? { drops: s.drops.map(x => ({ w: toField(x.w), r: toField(x.r) })) } : {}),
@@ -7973,6 +7988,21 @@ const planOf = x => Object.fromEntries(PLAN_KEYS.filter(k => x[k] != null && x[k
 const altOf = x => ({ id: x.id, name: x.name, unit: x.unit, ...(x.guide && x.guide !== 'none' ? { guide: x.guide } : {}), ...planOf(x), own: true });
 // Configuración con la que se entrena una alternativa: la suya, o (alternativas antiguas) la del ejercicio de la rutina
 const altPlan = (rex, id) => { const a = rex && (rex.alts || []).find(x => x.id === id); return a && a.own ? a : null; };
+// El ejercicio pasa a otra máquina (o vuelve a la principal): las referencias en gris son las de esa máquina
+function remachine(d, i, machine) {
+  const ex = d.exercises[i];
+  if (machine) ex.machine = machine; else delete ex.machine;
+  if (ex.progAt != null) return;   // con progresión, los pesos salen de la progresión
+  const g = draftGym(d), rid = ex.extra ? null : d.routineId;
+  const pv = lastFor(ex.exerciseId, beforeIndex(d), rid, g, machine || '') || lastFor(ex.exerciseId, beforeIndex(d), null, g, machine || '');
+  const fresh = prefillSets(pv, ex.rir, ex.sets.length);
+  ex.sets = ex.sets.map((st, j) => {
+    const fr = fresh[j] || {}, o = { ...st };
+    for (const k of ['pw', 'pr', 'pr2', 'prir', 'pnote']) { if (fr[k] !== undefined) o[k] = fr[k]; else delete o[k]; }
+    return o;
+  });
+  if (d.comeback) comebackEx(d, ex);
+}
 function swapSheetHtml() {
   const d = db.draft, dx = swapPick && d && d.exercises[swapPick.i];
   if (!dx) return '';
@@ -8003,7 +8033,14 @@ function swapSheetHtml() {
     <div class="modal-back" data-action="swap-close"></div>
     <section class="modal card guide-modal swap-modal" role="dialog" aria-modal="true" aria-label="Cambiar ejercicio">
       <div class="guide-head"><h2>Cambiar ${esc(dx.name)}</h2><button class="icon small" data-action="swap-close" aria-label="Cerrar">✕</button></div>
-      <p class="muted small" style="margin:0">Elige por cuál lo cambias${rex ? '; después te pregunta si es solo hoy o siempre en la rutina' : ''}.</p>
+      ${(ms => `<h3 class="guide-zone">El mismo ejercicio, en otra máquina</h3>
+      <p class="muted small" style="margin:0">¿La tuya está ocupada? Cada máquina guarda sus propios pesos y marcas.</p>
+      <div class="gym-chips">${[{ id: '', name: 'Principal' }, ...ms].map(m => { const on = (dx.machine || '') === m.id;
+        return `<button class="chip toggle ${on ? 'on' : ''}" data-action="machine-pick" data-id="${m.id}" aria-pressed="${on}">${esc(m.name)}</button>`; }).join('')}
+        ${swapPick.newMachine == null ? '<button class="chip" data-action="machine-new">+ Otra máquina</button>' : ''}</div>
+      ${swapPick.newMachine != null ? `<div class="add-row" style="margin-top:0"><input data-bind="machine-name" value="${esc(swapPick.newMachine)}" maxlength="30" placeholder="Ej. la del fondo" aria-label="Nombre de la máquina" autocomplete="off"><button class="btn" data-action="machine-create">Usar</button></div>` : ''}`)(machinesOf(dx.exerciseId, draftGym(d)))}
+      <hr class="swap-sep">
+      <p class="muted small" style="margin:0">O cámbialo por otro ejercicio${rex ? '; después te pregunta si es solo hoy o siempre en la rutina' : ''}.</p>
       ${alts.length ? `<h3 class="guide-zone">Tus alternativas</h3><div class="guide-list">${alts.map(altRow).join('')}</div>` : ''}
       <h3 class="guide-zone">${g ? `Otros de ${GUIDE_ZONES[g.zone]}` : 'Otros ejercicios'}</h3>
       <input data-bind="swap-q" value="${esc(swapPick.q || '')}" placeholder="Buscar cualquier ejercicio" autocomplete="off" aria-label="Buscar ejercicio">
@@ -8917,6 +8954,10 @@ $app.addEventListener('click', async e => {
       save(); render();
       break;
     }
+    case 'prog-mach':
+      progressMach.m = el.dataset.m;
+      render();
+      break;
     case 'prog-gym':
       progressGym.g = el.dataset.g;
       render();
@@ -9444,6 +9485,36 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       render();
       syncModalHistory();
       break;
+    case 'machine-new': {
+      const d = cur(), dx = swapPick && d && d.exercises[swapPick.i];
+      if (!dx) break;
+      swapPick.newMachine = `Máquina ${machinesOf(dx.exerciseId, draftGym(d)).length + 2}`;
+      render();
+      const inp = document.querySelector('[data-bind="machine-name"]');
+      if (inp) { inp.focus(); inp.select(); }
+      break;
+    }
+    case 'machine-create': {
+      const d = cur(), k = swapPick && swapPick.i, dx = d && d.exercises[k];
+      if (!dx) break;
+      const name = (swapPick.newMachine || '').trim() || `Máquina ${machinesOf(dx.exerciseId, draftGym(d)).length + 2}`;
+      const m = { id: uid(), name: name.slice(0, 30), gym: draftGym(d) };
+      ((db.body.machines ||= {})[dx.exerciseId] ||= []).push(m);
+      remachine(d, k, m.id);
+      swapPick = null;
+      save(); render(); syncModalHistory();
+      showNote(`${dx.name}: ${m.name}`);
+      break;
+    }
+    case 'machine-pick': {
+      const d = cur(), k = swapPick && swapPick.i, dx = d && d.exercises[k];
+      if (!dx) break;
+      remachine(d, k, el.dataset.id || '');
+      swapPick = null;
+      save(); render(); syncModalHistory();
+      showNote(`${dx.name}: ${el.dataset.id ? machineName(dx.exerciseId, el.dataset.id) : 'máquina principal'}`);
+      break;
+    }
     case 'swap-open':
       swapPick = { i, always: false, q: '' };
       render(); syncModalHistory();
@@ -10130,6 +10201,7 @@ $app.addEventListener('input', e => {
     if (other) other.value = out;
     return;
   }
+  if (bind === 'machine-name') { if (swapPick) swapPick.newMachine = el.value; return; }
   if (bind === 'gym-name') {
     const g = ensureGyms().find(x => x.id === el.dataset.id);
     if (g) { g.name = el.value.slice(0, 40); save(); }
@@ -10275,7 +10347,7 @@ $app.addEventListener('input', e => {
     const d = cur(), ex = d.exercises[i];
     ex.sets[j][bind] = el.value;
     const cell = $app.querySelector(`[data-mark="${i}-${j}"]`);
-    if (cell && !d.deload && !d.comeback) cell.innerHTML = markSpan(liveCmp(ex.sets[j], ex, bestSets(ex.exerciseId, beforeIndex(d), ex.unit, ex.extra ? null : d.routineId, draftGym(d))[j]));
+    if (cell && !d.deload && !d.comeback) cell.innerHTML = markSpan(liveCmp(ex.sets[j], ex, bestSets(ex.exerciseId, beforeIndex(d), ex.unit, ex.extra ? null : d.routineId, draftGym(d), ex.machine || '')[j]));
     const wl = (bind === 'w' || bind === 'r') && j === 0 && $app.querySelector(`[data-warm="${i}"]`);
     if (wl) wl.innerHTML = warmLine(d, i);
   }
@@ -10283,7 +10355,7 @@ $app.addEventListener('input', e => {
     const d = cur(), ex = d.exercises[i], k = +el.dataset.k, x = ex.sets[j].drops[k];
     x[bind === 'dw' ? 'w' : 'r'] = el.value;
     const cell = $app.querySelector(`[data-mark="${i}-${j}-${k}"]`);
-    if (cell && !d.deload && !d.comeback) cell.innerHTML = markSpan(dropCmp(x, ex, (bestDrops(ex.exerciseId, beforeIndex(d), ex.unit, ex.extra ? null : d.routineId, draftGym(d))[j] || [])[k]));
+    if (cell && !d.deload && !d.comeback) cell.innerHTML = markSpan(dropCmp(x, ex, (bestDrops(ex.exerciseId, beforeIndex(d), ex.unit, ex.extra ? null : d.routineId, draftGym(d), ex.machine || '')[j] || [])[k]));
   }
   else if (bind === 'snote') cur().exercises[i].sets[j].note = el.value;
   else if (bind === 'note') {

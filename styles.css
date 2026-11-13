@@ -1451,3 +1451,7 @@ body.viewing .free-start { display: none; }
 .card.routine.other-gym { opacity: .6; }
 .card.routine .badge { white-space: nowrap; }
 .gym-item { display: grid; gap: 6px; }
+
+/* Otra máquina del mismo ejercicio */
+.machine-tag { display: inline-block; margin-left: 4px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--accent); color: var(--accent); font-size: 12px; font-weight: 700; vertical-align: middle; white-space: nowrap; }
+.swap-sep { border: 0; border-top: 1px solid var(--border); margin: 6px 0 0; width: 100%; }
