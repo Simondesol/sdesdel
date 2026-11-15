@@ -2662,9 +2662,8 @@ function viewAccount() {
 
     <h2>Tus datos</h2>
     <section class="card stack">
-      <p class="muted" style="margin:0">Descarga tu historial en un archivo que se abre en Excel o Google Sheets.</p>
-      <button class="btn block" data-action="export-workouts" style="margin-top:0">Descargar entrenamientos</button>
-      <button class="btn block" data-action="export-body" style="margin-top:0">Descargar peso y medidas</button>
+      <p class="muted" style="margin:0">Descarga tu historial en un Excel ordenado: resumen y progreso de cada ejercicio, cada entreno y serie, y tu peso y medidas.</p>
+      <button class="btn block" data-action="export-excel" style="margin-top:0">Descargar mi historial (Excel)</button>
     </section>
 
     <h2>Ideas</h2>
@@ -2710,9 +2709,8 @@ function viewDeleteAccount() {
       ${students.length ? `<p class="del-warn">Tus ${plural(students.length, 'atleta')} dejan de estar vinculados contigo.</p>` : ''}
     </section>
     <section class="card stack" style="margin-top:12px">
-      <span class="muted small">¿Quieres guardar tu historial antes? Descárgalo en un archivo para Excel o Google Sheets.</span>
-      <button class="btn block" data-action="export-workouts" style="margin-top:0">Descargar entrenamientos</button>
-      <button class="btn block" data-action="export-body" style="margin-top:0">Descargar peso y medidas</button>
+      <span class="muted small">¿Quieres guardar tu historial antes? Descárgalo en un Excel.</span>
+      <button class="btn block" data-action="export-excel" style="margin-top:0">Descargar mi historial (Excel)</button>
     </section>
     <form class="stack card" data-form="delete-account" novalidate style="margin-top:12px">
       <label class="field"><span>Escribe tu contraseña para confirmar</span>
@@ -3313,6 +3311,191 @@ function downloadCsv(name, rows) {
   setTimeout(() => URL.revokeObjectURL(url), 10000);
   showNote(`Descargado: ${name}`);
 }
+// ---------- Excel (.xlsx) ----------
+// Un .xlsx es un zip de archivos XML. Aquí se arma sin librerías: zip sin comprimir (STORE) y hojas con estilos.
+// sheets: [{ name, cols: [ancho], rows: [[celda]] }]; celda = texto | número | null | { v, s } (s = estilo) | { d: 'aaaa-mm-dd' }
+const XS = { head: 1, date: 2, dec: 3, pct: 4, int: 5, bold: 6, up: 7, down: 8, muted: 9 };
+const crcTable = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+const crc32 = b => { let c = 0xffffffff; for (let i = 0; i < b.length; i++) c = crcTable[(c ^ b[i]) & 255] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
+function zipStore(files) {   // [{ name, text }] → Blob
+  const enc = new TextEncoder(), parts = [], central = [];
+  let off = 0;
+  for (const f of files) {
+    const name = enc.encode(f.name), data = enc.encode(f.text), crc = crc32(data);
+    const h = new DataView(new ArrayBuffer(30));
+    h.setUint32(0, 0x04034b50, true); h.setUint16(4, 20, true); h.setUint16(6, 0x0800, true); h.setUint16(8, 0, true);
+    h.setUint16(10, 0, true); h.setUint16(12, 0x21, true); h.setUint32(14, crc, true); h.setUint32(18, data.length, true);
+    h.setUint32(22, data.length, true); h.setUint16(26, name.length, true); h.setUint16(28, 0, true);
+    parts.push(h, name, data);
+    const c = new DataView(new ArrayBuffer(46));
+    c.setUint32(0, 0x02014b50, true); c.setUint16(4, 20, true); c.setUint16(6, 20, true); c.setUint16(8, 0x0800, true);
+    c.setUint16(10, 0, true); c.setUint16(12, 0, true); c.setUint16(14, 0x21, true); c.setUint32(16, crc, true);
+    c.setUint32(20, data.length, true); c.setUint32(24, data.length, true); c.setUint16(28, name.length, true);
+    c.setUint32(42, off, true);
+    central.push(c, name);
+    off += 30 + name.length + data.length;
+  }
+  const size = central.reduce((a, x) => a + x.byteLength, 0), end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 0x06054b50, true); end.setUint16(8, files.length, true); end.setUint16(10, files.length, true);
+  end.setUint32(12, size, true); end.setUint32(16, off, true);
+  return new Blob([...parts, ...central, end], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+}
+const xmlEsc = t => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '');
+const colName = n => { let s = ''; for (n++; n > 0; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(65 + ((n - 1) % 26)) + s; return s; };
+const excelDate = key => { const [y, m, d] = key.split('-').map(Number); return (Date.UTC(y, m - 1, d) - Date.UTC(1899, 11, 30)) / 864e5; };
+function sheetXml(sh) {
+  const rows = sh.rows.map((row, r) => `<row r="${r + 1}">${row.map((cell, c) => {
+    if (cell == null || cell === '') return '';
+    const ref = `${colName(c)}${r + 1}`, o = typeof cell === 'object' ? cell : { v: cell };
+    const st = r === 0 ? XS.head : o.s || 0;
+    if (o.d) return `<c r="${ref}" s="${o.s || XS.date}"><v>${excelDate(o.d)}</v></c>`;
+    if (typeof o.v === 'number' && Number.isFinite(o.v)) return `<c r="${ref}" s="${st}"><v>${o.v}</v></c>`;
+    return `<c r="${ref}" t="inlineStr" s="${st}"><is><t xml:space="preserve">${xmlEsc(o.v)}</t></is></c>`;
+  }).join('')}</row>`).join('');
+  const last = `${colName(Math.max(0, (sh.rows[0] || []).length - 1))}${sh.rows.length}`;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+<sheetViews><sheetView workbookViewId="0"${sh.freezeCol ? '' : ''}><pane ${sh.freezeCol ? 'xSplit="1" ' : ''}ySplit="1" topLeftCell="${sh.freezeCol ? 'B2' : 'A2'}" activePane="${sh.freezeCol ? 'bottomRight' : 'bottomLeft'}" state="frozen"/></sheetView></sheetViews>
+<sheetFormatPr defaultRowHeight="18"/>
+<cols>${sh.cols.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>`).join('')}</cols>
+<sheetData>${rows}</sheetData>${sh.rows.length > 1 ? `<autoFilter ref="A1:${last}"/>` : ''}
+</worksheet>`;
+}
+function buildXlsx(sheets) {
+  const W = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main', R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+  const styles = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="${W}">
+<numFmts count="3"><numFmt numFmtId="164" formatCode="dd-mm-yyyy"/><numFmt numFmtId="165" formatCode="#,##0.0"/><numFmt numFmtId="166" formatCode="+0.0%;-0.0%;0.0%"/></numFmts>
+<fonts count="6"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font>
+<font><b/><sz val="11"/><color rgb="FF2E7D32"/><name val="Calibri"/></font><font><b/><sz val="11"/><color rgb="FFC62828"/><name val="Calibri"/></font><font><sz val="11"/><color rgb="FF777777"/><name val="Calibri"/></font></fonts>
+<fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF3E8E2A"/><bgColor indexed="64"/></patternFill></fill></fills>
+<borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left/><right/><top/><bottom style="thin"><color rgb="FFDDDDDD"/></bottom><diagonal/></border></borders>
+<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
+<cellXfs count="10">
+<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1"/>
+<xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>
+<xf numFmtId="164" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1"/>
+<xf numFmtId="165" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1"/>
+<xf numFmtId="166" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1"/>
+<xf numFmtId="1" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1"/>
+<xf numFmtId="0" fontId="2" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1"/>
+<xf numFmtId="0" fontId="3" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1"/>
+<xf numFmtId="0" fontId="4" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1"/>
+<xf numFmtId="0" fontId="5" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1"/>
+</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`;
+  const names = sheets.map(sh => sh.name.replace(/[\\/?*[\]:]/g, ' ').slice(0, 31));
+  return zipStore([
+    { name: '[Content_Types].xml', text: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>
+<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+${sheets.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('')}</Types>` },
+    { name: '_rels/.rels', text: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>` },
+    { name: 'xl/workbook.xml', text: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="${W}" xmlns:r="${R}"><sheets>${names.map((n, i) => `<sheet name="${xmlEsc(n)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('')}</sheets>
+${(dn => (dn ? `<definedNames>${dn}</definedNames>` : ''))(sheets.map((sh, i) => (sh.rows.length > 1 ? `<definedName name="_xlnm._FilterDatabase" localSheetId="${i}" hidden="1">'${xmlEsc(names[i])}'!$A$1:$${colName(sh.rows[0].length - 1)}$${sh.rows.length}</definedName>` : '')).join(''))}</workbook>` },
+    { name: 'xl/_rels/workbook.xml.rels', text: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${sheets.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join('')}
+<Relationship Id="rId${sheets.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>` },
+    { name: 'xl/styles.xml', text: styles },
+    ...sheets.map((sh, i) => ({ name: `xl/worksheets/sheet${i + 1}.xml`, text: sheetXml(sh) })),
+  ]);
+}
+function downloadFile(name, blob) {
+  const file = new File([blob], name, { type: blob.type });
+  // iPhone con la app instalada: no descarga, así que se abre el menú para guardarlo (Archivos, Drive, WhatsApp…)
+  if (navigator.standalone && navigator.canShare && navigator.canShare({ files: [file] })) { navigator.share({ files: [file] }).catch(() => {}); return; }
+  const url = URL.createObjectURL(file), a = document.createElement('a');
+  a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  showNote(`Descargado: ${name}`);
+}
+// Tu historial en un Excel: resumen por ejercicio, progreso del 1RM, cada entreno, cada serie y peso y medidas
+function exportExcel() {
+  const ws = db.workouts.slice().sort((a, b) => (a.date < b.date ? -1 : 1));
+  const hasBody = db.bodyweight.length || db.measures.length;
+  if (!ws.length && !hasBody) { notice('Todavía no tienes datos para descargar.'); return; }
+  const n1 = x => (x == null || !Number.isFinite(+x) ? null : round1(+x));
+  const sheets = [];
+  if (ws.length) {
+    const machineLbl = ex => (ex.machine ? ` (${machineName(ex.exerciseId, ex.machine)})` : '');
+    const firstW = ex => ex.sets.find(x => x.w != null);
+    const rmOf = (w, ex) => { const st = firstW(ex); return st ? round1(e1rmEx(ex, st, w.date)) : null; };
+    const setsTxt = ex => ex.sets.map(st => `${fmtNum(st.w)}×${repsText(st).replace(' / ', '/')}${st.rir != null ? ` RIR ${fmtNum(st.rir)}` : ''}${dropsText(st)}`).join('  ·  ');
+    // Por ejercicio: sus entrenos en orden
+    const byEx = new Map();
+    for (const w of ws) for (const ex of w.exercises) { const k = ex.exerciseId; if (!byEx.has(k)) byEx.set(k, []); byEx.get(k).push({ w, ex }); }
+    const exs = [...byEx.entries()].sort((a, b) => b[1].length - a[1].length);
+    // 1. Resumen por ejercicio
+    const sum = [['Ejercicio', 'Músculo', 'Veces', 'Primera vez', 'Última vez', '1RM al inicio', 'Mejor 1RM', '1RM último', 'Cambio', 'Cambio %', 'Unidad', 'Mejor serie']];
+    for (const [, list] of exs) {
+      const last = list[list.length - 1].ex, unit = last.unit, pts = list.map(({ w, ex }) => ({ w, y: rmOf(w, ex) == null ? null : round1(convertWeight(rmOf(w, ex), ex.unit, unit)) })).filter(p => p.y != null);
+      let best = null;
+      for (const { w, ex } of list) for (const st of ex.sets) { if (st.w == null) continue; const c = { ...st, unit: ex.unit, bw: bwFor(ex, w.date) }; if (!best || cmpSet(c, best) > 0) best = c; }
+      const a = pts[0] && pts[0].y, b = pts.length ? Math.max(...pts.map(p => p.y)) : null, z = pts.length ? pts[pts.length - 1].y : null;
+      const g = guideFor(last.name, last.guide);
+      sum.push([{ v: last.name, s: XS.bold }, g ? GUIDE_ZONES[g.zone] : '', { v: list.length, s: XS.int }, { d: dayKeyOf(list[0].w.date) }, { d: dayKeyOf(list[list.length - 1].w.date) },
+        a != null ? { v: a, s: XS.dec } : null, b != null ? { v: b, s: XS.dec } : null, z != null ? { v: z, s: XS.dec } : null,
+        a != null && z != null ? { v: round1(z - a), s: XS.dec } : null, a ? { v: (z - a) / a, s: XS.pct } : null, unit,
+        best ? `${fmtNum(best.w)} ${best.unit} × ${repsText(best)}${best.rir != null ? ` RIR ${fmtNum(best.rir)}` : ''}` : '']);
+    }
+    sheets.push({ name: 'Resumen', cols: [30, 16, 8, 12, 12, 13, 12, 12, 10, 10, 8, 26], rows: sum });
+    // 2. Progreso del 1RM: una fila por día y una columna por ejercicio (los 12 que más haces) → listo para hacer un gráfico
+    const top = exs.slice(0, 12).filter(([, list]) => list.some(({ w, ex }) => rmOf(w, ex) != null));
+    if (top.length) {
+      const days = [...new Set(ws.map(w => dayKeyOf(w.date)))];
+      const val = new Map();
+      for (const [id, list] of top) for (const { w, ex } of list) { const y = rmOf(w, ex); if (y != null) val.set(`${id}|${dayKeyOf(w.date)}`, Math.max(val.get(`${id}|${dayKeyOf(w.date)}`) || 0, y)); }
+      const rows = [['Fecha', ...top.map(([, list]) => `${list[list.length - 1].ex.name} (${list[list.length - 1].ex.unit})`)]];
+      for (const d of days) { if (!top.some(([id]) => val.has(`${id}|${d}`))) continue; rows.push([{ d }, ...top.map(([id]) => (val.has(`${id}|${d}`) ? { v: val.get(`${id}|${d}`), s: XS.dec } : null))]); }
+      sheets.push({ name: 'Progreso 1RM', cols: [12, ...top.map(() => 16)], rows, freezeCol: true });
+    }
+    // 3. Cada entreno: una fila por ejercicio, con sus series en una celda y si subiste o bajaste
+    const multi = multiGym(), prevRm = new Map();
+    const ent = [['Fecha', 'Rutina', ...(multi ? ['Gimnasio'] : []), 'Ejercicio', 'Series', 'N.º series', 'Volumen (peso × reps)', '1RM estimado', 'vs la vez anterior', 'Notas']];
+    for (const w of ws) for (const ex of w.exercises) {
+      const rm = rmOf(w, ex), key = `${ex.exerciseId}|${ex.machine || ''}`, prev = prevRm.get(key);
+      const vol = ex.sets.reduce((a, st) => a + (st.w || 0) * (repsMin(st) || 0) + (st.drops || []).reduce((b, x) => b + (x.w || 0) * (x.r || 0), 0), 0);
+      const cmp = w.deload ? { v: 'Descarga', s: XS.muted } : w.comeback ? { v: 'Vuelta de pausa', s: XS.muted } : rm == null || prev == null ? null
+        : rm > prev * 1.005 ? { v: `▲ +${fmtNum(round1(rm - prev))}`, s: XS.up } : rm < prev * 0.995 ? { v: `▼ ${fmtNum(round1(rm - prev))}`, s: XS.down } : { v: '= igual', s: XS.muted };
+      if (rm != null && !w.deload && !w.comeback) prevRm.set(key, rm);
+      ent.push([{ d: dayKeyOf(w.date) }, w.routineName || 'Libre', ...(multi ? [gymName(gymOf(w))] : []), { v: `${ex.name}${machineLbl(ex)}`, s: XS.bold }, setsTxt(ex),
+        { v: ex.sets.length, s: XS.int }, vol ? { v: round1(vol), s: XS.dec } : null, rm != null ? { v: rm, s: XS.dec } : null, cmp,
+        ex.sets.map(st => st.note).filter(Boolean).join(' · ')]);
+    }
+    sheets.push({ name: 'Entrenos', cols: [12, 18, ...(multi ? [16] : []), 30, 44, 9, 14, 12, 14, 30], rows: ent });
+    // 4. Cada serie (para filtrar o hacer tus propias tablas)
+    const ser = [['Fecha', 'Rutina', 'Ejercicio', 'Serie', 'Peso', 'Unidad', 'Repeticiones', 'Reps derecha (unilateral)', 'RIR', 'Nota']];
+    for (const w of ws) for (const ex of w.exercises) {
+      const unit = `${ex.unit}${ex.bw && ex.unit !== 'placas' ? ' (lastre)' : ''}`;
+      ex.sets.forEach((st, j) => {
+        ser.push([{ d: dayKeyOf(w.date) }, w.routineName || 'Libre', `${ex.name}${machineLbl(ex)}`, { v: j + 1, s: XS.int }, n1(st.w) != null ? { v: n1(st.w), s: XS.dec } : null, unit,
+          st.r != null ? { v: st.r, s: XS.int } : null, ex.side && st.r2 != null ? { v: st.r2, s: XS.int } : null, st.rir != null ? { v: st.rir, s: XS.int } : null, st.note || '']);
+        for (const dr of st.drops || []) ser.push([{ d: dayKeyOf(w.date) }, w.routineName || 'Libre', `${ex.name}${machineLbl(ex)}`, `${j + 1} (dropset)`, n1(dr.w) != null ? { v: n1(dr.w), s: XS.dec } : null, unit, dr.r != null ? { v: dr.r, s: XS.int } : null, null, null, '']);
+      });
+    }
+    sheets.push({ name: 'Series', cols: [12, 18, 30, 12, 9, 12, 12, 14, 6, 30], rows: ser });
+  }
+  // 5. Peso y medidas
+  if (hasBody) {
+    const byDay = new Map(), at = d => byDay.get(d) || byDay.set(d, {}).get(d);
+    for (const e of db.bodyweight) Object.assign(at(e.date), { kg: e.kg, bf: e.bf });
+    for (const e of db.measures) Object.assign(at(e.date), e.m);
+    const sites = MEASURE_SITES.filter(([k]) => db.measures.some(e => e.m[k] != null));
+    const rows = [['Fecha', 'Peso (kg)', 'Cambio de peso', '% de grasa', ...sites.map(([, label]) => `${label} (cm)`)]];
+    let first = null;
+    for (const d of [...byDay.keys()].sort()) {
+      const e = byDay.get(d);
+      if (e.kg != null && first == null) first = e.kg;
+      rows.push([{ d }, e.kg != null ? { v: e.kg, s: XS.dec } : null, e.kg != null && first != null ? { v: round1(e.kg - first), s: XS.dec } : null,
+        e.bf != null ? { v: e.bf, s: XS.dec } : null, ...sites.map(([k]) => (e[k] != null ? { v: e[k], s: XS.dec } : null))]);
+    }
+    sheets.push({ name: 'Peso y medidas', cols: [12, 10, 14, 10, ...sites.map(() => 12)], rows });
+  }
+  downloadFile(`desdel-historial-${todayKey()}.xlsx`, buildXlsx(sheets));
+}
+
 function exportWorkouts() {
   if (!db.workouts.length) { notice('Todavía no tienes entrenamientos para descargar.'); return; }
   const rows = [['Fecha', 'Rutina', 'Ejercicio', 'Serie', 'Peso', 'Unidad', 'Repeticiones', 'Repeticiones derecha (unilateral)', 'RIR', 'Nota']];
@@ -10048,6 +10231,9 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       showNote(`${(st && st.studentName) || 'Tu atleta'} no aparecerá en el cuadro por 7 días.`);
       break;
     }
+    case 'export-excel':
+      exportExcel();
+      break;
     case 'export-workouts':
       exportWorkouts();
       break;
