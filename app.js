@@ -3312,9 +3312,11 @@ function downloadCsv(name, rows) {
   showNote(`Descargado: ${name}`);
 }
 // ---------- Excel (.xlsx) ----------
-// Un .xlsx es un zip de archivos XML. Aquí se arma sin librerías: zip sin comprimir (STORE) y hojas con estilos.
-// sheets: [{ name, cols: [ancho], rows: [[celda]] }]; celda = texto | número | null | { v, s } (s = estilo) | { d: 'aaaa-mm-dd' }
-const XS = { head: 1, date: 2, dec: 3, pct: 4, int: 5, bold: 6, up: 7, down: 8, muted: 9 };
+// Un .xlsx es un zip de archivos XML. Aquí se arma sin librerías: zip sin comprimir (STORE), hojas con estilos y gráficos.
+// sheets: [{ name, cols: [ancho], rows: [[celda]], merges: ['A5:D5'], heights: { fila: alto }, charts: [gráfico] }]
+// celda = texto | número | null | { v, s } (s = estilo de XS) | { d: 'aaaa-mm-dd', s }
+// gráfico = { title, r1, r2 (filas de los datos, desde 0), catCol, valCol, cats: [fechas Excel], vals: [números | null], at: [col, fila, colFin, filaFin] }
+const XS = { head: 1, date: 2, dec: 3, pct: 4, int: 5, bold: 6, up: 7, down: 8, muted: 9, title: 10, sub: 11, block: 12, sumUp: 13, sumDown: 14, text: 15, delta: 16 };
 const crcTable = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
 const crc32 = b => { let c = 0xffffffff; for (let i = 0; i < b.length; i++) c = crcTable[(c ^ b[i]) & 255] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
 function zipStore(files) {   // [{ name, text }] → Blob
@@ -3344,61 +3346,118 @@ const xmlEsc = t => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').repla
 const colName = n => { let s = ''; for (n++; n > 0; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(65 + ((n - 1) % 26)) + s; return s; };
 const excelDate = key => { const [y, m, d] = key.split('-').map(Number); return (Date.UTC(y, m - 1, d) - Date.UTC(1899, 11, 30)) / 864e5; };
 function sheetXml(sh) {
-  const rows = sh.rows.map((row, r) => `<row r="${r + 1}">${row.map((cell, c) => {
+  const H = sh.heights || {};
+  const rows = sh.rows.map((row, r) => `<row r="${r + 1}"${H[r] ? ` ht="${H[r]}" customHeight="1"` : ''}>${row.map((cell, c) => {
     if (cell == null || cell === '') return '';
-    const ref = `${colName(c)}${r + 1}`, o = typeof cell === 'object' ? cell : { v: cell };
-    const st = r === 0 ? XS.head : o.s || 0;
+    const ref = `${colName(c)}${r + 1}`, o = typeof cell === 'object' ? cell : { v: cell }, st = o.s || 0;
     if (o.d) return `<c r="${ref}" s="${o.s || XS.date}"><v>${excelDate(o.d)}</v></c>`;
+    if (o.v == null || o.v === '') return `<c r="${ref}" s="${st}"/>`;
     if (typeof o.v === 'number' && Number.isFinite(o.v)) return `<c r="${ref}" s="${st}"><v>${o.v}</v></c>`;
     return `<c r="${ref}" t="inlineStr" s="${st}"><is><t xml:space="preserve">${xmlEsc(o.v)}</t></is></c>`;
   }).join('')}</row>`).join('');
-  const last = `${colName(Math.max(0, (sh.rows[0] || []).length - 1))}${sh.rows.length}`;
+  const merges = sh.merges || [];
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
-<sheetViews><sheetView workbookViewId="0"${sh.freezeCol ? '' : ''}><pane ${sh.freezeCol ? 'xSplit="1" ' : ''}ySplit="1" topLeftCell="${sh.freezeCol ? 'B2' : 'A2'}" activePane="${sh.freezeCol ? 'bottomRight' : 'bottomLeft'}" state="frozen"/></sheetView></sheetViews>
+<sheetViews><sheetView workbookViewId="0" showGridLines="0"/></sheetViews>
 <sheetFormatPr defaultRowHeight="18"/>
 <cols>${sh.cols.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>`).join('')}</cols>
-<sheetData>${rows}</sheetData>${sh.rows.length > 1 ? `<autoFilter ref="A1:${last}"/>` : ''}
+<sheetData>${rows}</sheetData>${merges.length ? `<mergeCells count="${merges.length}">${merges.map(m => `<mergeCell ref="${m}"/>`).join('')}</mergeCells>` : ''}
+<pageMargins left="0.5" right="0.5" top="0.6" bottom="0.6" header="0.3" footer="0.3"/>${(sh.charts || []).length ? '<drawing r:id="rId1"/>' : ''}
 </worksheet>`;
+}
+// Gráfico de línea (verde, con puntos y el valor arriba de cada punto si son pocos)
+function chartXml(sheet, ch) {
+  const ref = c => `'${sheet.replace(/'/g, "''")}'!$${colName(c)}$${ch.r1 + 1}:$${colName(c)}$${ch.r2 + 1}`;
+  const cache = (vals, fmt) => `<c:numCache><c:formatCode>${fmt}</c:formatCode><c:ptCount val="${vals.length}"/>${vals.map((v, i) => (v == null ? '' : `<c:pt idx="${i}"><c:v>${v}</c:v></c:pt>`)).join('')}</c:numCache>`;
+  const txt = (sz, color, b) => `<c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="${sz}"${b ? ' b="1"' : ''}><a:solidFill><a:srgbClr val="${color}"/></a:solidFill></a:defRPr></a:pPr><a:endParaRPr lang="es-CL"/></a:p></c:txPr>`;
+  // Eje vertical con saltos redondos (1, 2, 2,5, 5, 10…) y unas 5 líneas; eje de fechas con ~6 fechas
+  const ys = ch.vals.filter(v => v != null), lo = Math.min(...ys), hi = Math.max(...ys), pad = Math.max((hi - lo) * 0.25, hi * 0.03, 1);
+  const raw = (hi - lo + 2 * pad) / 5, mag = 10 ** Math.floor(Math.log10(raw));
+  const step = Math.max(ch.fmt === '0' ? 1 : 0, [1, 2, 2.5, 5, 10].map(x => x * mag).find(x => x >= raw));
+  const yMin = Math.max(0, Math.floor((lo - pad) / step) * step), yMax = Math.ceil((hi + pad) / step) * step;
+  const days = Math.max(...ch.cats) - Math.min(...ch.cats), xStep = Math.max(1, Math.ceil(days / 6));
+  const G = '3E8E2A', noLine = '<c:spPr><a:noFill/><a:ln><a:noFill/></a:ln></c:spPr>';
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><c:roundedCorners val="0"/>
+<c:chart><c:title><c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="1100" b="1"/></a:pPr><a:r><a:rPr lang="es-CL" sz="1100" b="1"><a:solidFill><a:srgbClr val="333333"/></a:solidFill></a:rPr><a:t>${xmlEsc(ch.title)}</a:t></a:r></a:p></c:rich></c:tx><c:overlay val="0"/></c:title><c:autoTitleDeleted val="0"/>
+<c:plotArea><c:layout/><c:lineChart><c:grouping val="standard"/><c:varyColors val="0"/>
+<c:ser><c:idx val="0"/><c:order val="0"/><c:tx><c:v>${xmlEsc(ch.title)}</c:v></c:tx>
+<c:spPr><a:ln w="28575" cap="rnd"><a:solidFill><a:srgbClr val="${G}"/></a:solidFill><a:round/></a:ln></c:spPr>
+<c:marker><c:symbol val="circle"/><c:size val="6"/><c:spPr><a:solidFill><a:srgbClr val="${G}"/></a:solidFill><a:ln w="9525"><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill></a:ln></c:spPr></c:marker>
+${ys.length <= 12 ? `<c:dLbls><c:numFmt formatCode="${ch.fmt || '#,##0.0'}" sourceLinked="0"/>${noLine}${txt(800, '2E7D32', true)}<c:dLblPos val="t"/><c:showLegendKey val="0"/><c:showVal val="1"/><c:showCatName val="0"/><c:showSerName val="0"/><c:showPercent val="0"/><c:showBubbleSize val="0"/></c:dLbls>` : ''}
+<c:cat><c:numRef><c:f>${xmlEsc(ref(ch.catCol))}</c:f>${cache(ch.cats, 'dd-mm')}</c:numRef></c:cat>
+<c:val><c:numRef><c:f>${xmlEsc(ref(ch.valCol))}</c:f>${cache(ch.vals, 'General')}</c:numRef></c:val><c:smooth val="0"/></c:ser>
+<c:marker val="1"/><c:axId val="501"/><c:axId val="502"/></c:lineChart>
+<c:dateAx><c:axId val="501"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/><c:axPos val="b"/><c:numFmt formatCode="dd-mm" sourceLinked="0"/><c:majorTickMark val="none"/><c:minorTickMark val="none"/><c:tickLblPos val="low"/>
+<c:spPr><a:ln w="9525"><a:solidFill><a:srgbClr val="CCCCCC"/></a:solidFill></a:ln></c:spPr>${txt(800, '666666')}<c:crossAx val="502"/><c:crosses val="autoZero"/><c:auto val="0"/><c:lblOffset val="100"/><c:baseTimeUnit val="days"/><c:majorUnit val="${xStep}"/><c:majorTimeUnit val="days"/></c:dateAx>
+<c:valAx><c:axId val="502"/><c:scaling><c:orientation val="minMax"/><c:max val="${yMax}"/><c:min val="${yMin}"/></c:scaling><c:delete val="0"/><c:axPos val="l"/>
+<c:majorGridlines><c:spPr><a:ln w="6350"><a:solidFill><a:srgbClr val="E6E6E6"/></a:solidFill></a:ln></c:spPr></c:majorGridlines><c:numFmt formatCode="${step < 1 || step % 1 ? '#,##0.0' : '0'}" sourceLinked="0"/><c:majorTickMark val="none"/><c:minorTickMark val="none"/><c:tickLblPos val="nextTo"/>
+<c:spPr><a:ln><a:noFill/></a:ln></c:spPr>${txt(800, '666666')}<c:crossAx val="501"/><c:crosses val="autoZero"/><c:crossBetween val="between"/><c:majorUnit val="${step}"/></c:valAx>${noLine}</c:plotArea>
+<c:plotVisOnly val="1"/><c:dispBlanksAs val="span"/></c:chart>
+<c:spPr><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill><a:ln w="9525"><a:solidFill><a:srgbClr val="DDDDDD"/></a:solidFill></a:ln></c:spPr></c:chartSpace>`;
+}
+function drawingXml(charts) {
+  const pos = (c, r) => `<xdr:col>${c}</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>${r}</xdr:row><xdr:rowOff>0</xdr:rowOff>`;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">${charts.map((ch, j) => `
+<xdr:twoCellAnchor editAs="oneCell"><xdr:from>${pos(ch.at[0], ch.at[1])}</xdr:from><xdr:to>${pos(ch.at[2], ch.at[3])}</xdr:to>
+<xdr:graphicFrame macro=""><xdr:nvGraphicFramePr><xdr:cNvPr id="${j + 2}" name="Gráfico ${j + 1}"/><xdr:cNvGraphicFramePr/></xdr:nvGraphicFramePr><xdr:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/></xdr:xfrm>
+<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/chart"><c:chart xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:id="rId${j + 1}"/></a:graphicData></a:graphic></xdr:graphicFrame><xdr:clientData/></xdr:twoCellAnchor>`).join('')}
+</xdr:wsDr>`;
 }
 function buildXlsx(sheets) {
   const W = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main', R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+  const PR = 'http://schemas.openxmlformats.org/package/2006/relationships', CT = 'application/vnd.openxmlformats-officedocument';
+  const font = (o = {}) => `<font>${o.b ? '<b/>' : ''}<sz val="${o.sz || 11}"/>${o.color ? `<color rgb="FF${o.color}"/>` : ''}<name val="Calibri"/></font>`;
+  const fonts = [font(), font({ b: 1, color: '1F5E14' }), font({ b: 1 }), font({ b: 1, color: '2E7D32' }), font({ b: 1, color: 'C62828' }), font({ color: '777777' }), font({ b: 1, sz: 18, color: '3E8E2A' }), font({ b: 1, sz: 13, color: 'FFFFFF' })];
+  // estilo: [formato de número, letra, relleno, borde, alineación]
+  const xf = ([num, f, fill, b, al]) => `<xf numFmtId="${num}" fontId="${f}" fillId="${fill}" borderId="${b}" xfId="0"${num ? ' applyNumberFormat="1"' : ''}${f ? ' applyFont="1"' : ''}${fill ? ' applyFill="1"' : ''}${b ? ' applyBorder="1"' : ''}${al ? ` applyAlignment="1"><alignment ${al}/></xf>` : '/>'}`;
+  const xfs = [[0, 0, 0, 0], [0, 1, 3, 1, 'vertical="center"'], [164, 0, 0, 1, 'horizontal="left"'], [165, 0, 0, 1], [166, 0, 0, 1], [1, 0, 0, 1], [0, 2, 0, 1], [0, 3, 0, 1], [0, 4, 0, 1], [0, 5, 0, 1],
+    [0, 6, 0, 0, 'vertical="center"'], [0, 5, 0, 0], [0, 7, 2, 0, 'vertical="center" indent="1"'], [0, 3, 0, 0], [0, 4, 0, 0], [0, 0, 0, 1], [167, 5, 0, 1]];
   const styles = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="${W}">
-<numFmts count="3"><numFmt numFmtId="164" formatCode="dd-mm-yyyy"/><numFmt numFmtId="165" formatCode="#,##0.0"/><numFmt numFmtId="166" formatCode="+0.0%;-0.0%;0.0%"/></numFmts>
-<fonts count="6"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font>
-<font><b/><sz val="11"/><color rgb="FF2E7D32"/><name val="Calibri"/></font><font><b/><sz val="11"/><color rgb="FFC62828"/><name val="Calibri"/></font><font><sz val="11"/><color rgb="FF777777"/><name val="Calibri"/></font></fonts>
-<fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF3E8E2A"/><bgColor indexed="64"/></patternFill></fill></fills>
+<numFmts count="4"><numFmt numFmtId="164" formatCode="dd-mm-yyyy"/><numFmt numFmtId="165" formatCode="#,##0.0"/><numFmt numFmtId="166" formatCode="+0.0%;-0.0%;0.0%"/><numFmt numFmtId="167" formatCode="+#,##0.0;-#,##0.0;0"/></numFmts>
+<fonts count="${fonts.length}">${fonts.join('')}</fonts>
+<fills count="4"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF3E8E2A"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFE8F3E4"/><bgColor indexed="64"/></patternFill></fill></fills>
 <borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left/><right/><top/><bottom style="thin"><color rgb="FFDDDDDD"/></bottom><diagonal/></border></borders>
 <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-<cellXfs count="10">
-<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1"/>
-<xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>
-<xf numFmtId="164" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1"/>
-<xf numFmtId="165" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1"/>
-<xf numFmtId="166" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1"/>
-<xf numFmtId="1" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1"/>
-<xf numFmtId="0" fontId="2" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1"/>
-<xf numFmtId="0" fontId="3" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1"/>
-<xf numFmtId="0" fontId="4" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1"/>
-<xf numFmtId="0" fontId="5" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1"/>
-</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`;
+<cellXfs count="${xfs.length}">${xfs.map(xf).join('')}</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`;
   const names = sheets.map(sh => sh.name.replace(/[\\/?*[\]:]/g, ' ').slice(0, 31));
+  const files = [], over = [];
+  let k = 0;   // gráficos numerados en todo el libro
+  sheets.forEach((sh, i) => {
+    files.push({ name: `xl/worksheets/sheet${i + 1}.xml`, text: sheetXml(sh) });
+    over.push(`<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="${CT}.spreadsheetml.worksheet+xml"/>`);
+    const charts = sh.charts || [];
+    if (!charts.length) return;
+    files.push({ name: `xl/worksheets/_rels/sheet${i + 1}.xml.rels`, text: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="${PR}"><Relationship Id="rId1" Type="${R}/drawing" Target="../drawings/drawing${i + 1}.xml"/></Relationships>` });
+    files.push({ name: `xl/drawings/drawing${i + 1}.xml`, text: drawingXml(charts) });
+    over.push(`<Override PartName="/xl/drawings/drawing${i + 1}.xml" ContentType="${CT}.drawing+xml"/>`);
+    const rels = [];
+    charts.forEach((ch, j) => {
+      k++;
+      files.push({ name: `xl/charts/chart${k}.xml`, text: chartXml(names[i], ch) });
+      over.push(`<Override PartName="/xl/charts/chart${k}.xml" ContentType="${CT}.drawingml.chart+xml"/>`);
+      rels.push(`<Relationship Id="rId${j + 1}" Type="${R}/chart" Target="../charts/chart${k}.xml"/>`);
+    });
+    files.push({ name: `xl/drawings/_rels/drawing${i + 1}.xml.rels`, text: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="${PR}">${rels.join('')}</Relationships>` });
+  });
   return zipStore([
     { name: '[Content_Types].xml', text: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>
-<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
-${sheets.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('')}</Types>` },
+<Override PartName="/xl/workbook.xml" ContentType="${CT}.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="${CT}.spreadsheetml.styles+xml"/>
+${over.join('')}</Types>` },
     { name: '_rels/.rels', text: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>` },
+<Relationships xmlns="${PR}"><Relationship Id="rId1" Type="${R}/officeDocument" Target="xl/workbook.xml"/></Relationships>` },
     { name: 'xl/workbook.xml', text: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<workbook xmlns="${W}" xmlns:r="${R}"><sheets>${names.map((n, i) => `<sheet name="${xmlEsc(n)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('')}</sheets>
-${(dn => (dn ? `<definedNames>${dn}</definedNames>` : ''))(sheets.map((sh, i) => (sh.rows.length > 1 ? `<definedName name="_xlnm._FilterDatabase" localSheetId="${i}" hidden="1">'${xmlEsc(names[i])}'!$A$1:$${colName(sh.rows[0].length - 1)}$${sh.rows.length}</definedName>` : '')).join(''))}</workbook>` },
+<workbook xmlns="${W}" xmlns:r="${R}"><sheets>${names.map((n, i) => `<sheet name="${xmlEsc(n)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('')}</sheets></workbook>` },
     { name: 'xl/_rels/workbook.xml.rels', text: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${sheets.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join('')}
-<Relationship Id="rId${sheets.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>` },
+<Relationships xmlns="${PR}">${sheets.map((_, i) => `<Relationship Id="rId${i + 1}" Type="${R}/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join('')}
+<Relationship Id="rId${sheets.length + 1}" Type="${R}/styles" Target="styles.xml"/></Relationships>` },
     { name: 'xl/styles.xml', text: styles },
-    ...sheets.map((sh, i) => ({ name: `xl/worksheets/sheet${i + 1}.xml`, text: sheetXml(sh) })),
+    ...files,
   ]);
 }
 function downloadFile(name, blob) {
@@ -3411,87 +3470,124 @@ function downloadFile(name, blob) {
   setTimeout(() => URL.revokeObjectURL(url), 10000);
   showNote(`Descargado: ${name}`);
 }
-// Tu historial en un Excel: resumen por ejercicio, progreso del 1RM, cada entreno, cada serie y peso y medidas
+// Tu historial en un Excel con 2 hojas:
+// "Mi progreso": un bloque por ejercicio (título, cuánto subió, gráfico del 1RM y la mejor serie de cada día)
+// "Peso y medidas": tu peso con su gráfico y tus medidas
 function exportExcel() {
   const ws = db.workouts.slice().sort((a, b) => (a.date < b.date ? -1 : 1));
-  const hasBody = db.bodyweight.length || db.measures.length;
-  if (!ws.length && !hasBody) { notice('Todavía no tienes datos para descargar.'); return; }
-  const n1 = x => (x == null || !Number.isFinite(+x) ? null : round1(+x));
+  const bws = db.bodyweight.filter(e => e.kg != null).sort((a, b) => (a.date < b.date ? -1 : 1));
+  const meas = db.measures.slice().sort((a, b) => (a.date < b.date ? -1 : 1));
+  if (!ws.length && !bws.length && !meas.length) { notice('Todavía no tienes datos para descargar.'); return; }
+  const dd = key => key.split('-').reverse().join('-');
+  const CH = 14;   // filas que ocupa cada gráfico (13 de gráfico + 1 de aire)
   const sheets = [];
+  // Título de un bloque: barra verde que cubre las columnas de la tabla
+  const block = (sh, text, cols) => { const r = sh.rows.length; sh.rows.push([{ v: text, s: XS.block }, ...Array.from({ length: cols - 1 }, () => ({ v: '', s: XS.block }))]); sh.merges.push(`A${r + 1}:${colName(cols - 1)}${r + 1}`); sh.heights[r] = 26; };
   if (ws.length) {
-    const machineLbl = ex => (ex.machine ? ` (${machineName(ex.exerciseId, ex.machine)})` : '');
-    const firstW = ex => ex.sets.find(x => x.w != null);
-    const rmOf = (w, ex) => { const st = firstW(ex); return st ? round1(e1rmEx(ex, st, w.date)) : null; };
-    const setsTxt = ex => ex.sets.map(st => `${fmtNum(st.w)}×${repsText(st).replace(' / ', '/')}${st.rir != null ? ` RIR ${fmtNum(st.rir)}` : ''}${dropsText(st)}`).join('  ·  ');
-    // Por ejercicio: sus entrenos en orden
+    const sh = { name: 'Mi progreso', cols: [13, 30, 13, 20], rows: [], merges: [], heights: { 0: 32 }, charts: [] };
+    sh.rows.push([{ v: 'Mi progreso en Desdel', s: XS.title }]);
+    sh.rows.push([{ v: `${plural(ws.length, 'entreno')} entre el ${dd(dayKeyOf(ws[0].date))} y el ${dd(dayKeyOf(ws[ws.length - 1].date))}`, s: XS.sub }]);
+    sh.rows.push([{ v: 'De cada ejercicio: la mejor serie de cada día y tu 1RM estimado (lo máximo que podrías levantar 1 vez).', s: XS.sub }]);
+    sh.rows.push([]);
+    // Un bloque por ejercicio (y por máquina), primero los que más haces
     const byEx = new Map();
-    for (const w of ws) for (const ex of w.exercises) { const k = ex.exerciseId; if (!byEx.has(k)) byEx.set(k, []); byEx.get(k).push({ w, ex }); }
-    const exs = [...byEx.entries()].sort((a, b) => b[1].length - a[1].length);
-    // 1. Resumen por ejercicio
-    const sum = [['Ejercicio', 'Músculo', 'Veces', 'Primera vez', 'Última vez', '1RM al inicio', 'Mejor 1RM', '1RM último', 'Cambio', 'Cambio %', 'Unidad', 'Mejor serie']];
-    for (const [, list] of exs) {
-      const last = list[list.length - 1].ex, unit = last.unit, pts = list.map(({ w, ex }) => ({ w, y: rmOf(w, ex) == null ? null : round1(convertWeight(rmOf(w, ex), ex.unit, unit)) })).filter(p => p.y != null);
-      let best = null;
-      for (const { w, ex } of list) for (const st of ex.sets) { if (st.w == null) continue; const c = { ...st, unit: ex.unit, bw: bwFor(ex, w.date) }; if (!best || cmpSet(c, best) > 0) best = c; }
-      const a = pts[0] && pts[0].y, b = pts.length ? Math.max(...pts.map(p => p.y)) : null, z = pts.length ? pts[pts.length - 1].y : null;
-      const g = guideFor(last.name, last.guide);
-      sum.push([{ v: last.name, s: XS.bold }, g ? GUIDE_ZONES[g.zone] : '', { v: list.length, s: XS.int }, { d: dayKeyOf(list[0].w.date) }, { d: dayKeyOf(list[list.length - 1].w.date) },
-        a != null ? { v: a, s: XS.dec } : null, b != null ? { v: b, s: XS.dec } : null, z != null ? { v: z, s: XS.dec } : null,
-        a != null && z != null ? { v: round1(z - a), s: XS.dec } : null, a ? { v: (z - a) / a, s: XS.pct } : null, unit,
-        best ? `${fmtNum(best.w)} ${best.unit} × ${repsText(best)}${best.rir != null ? ` RIR ${fmtNum(best.rir)}` : ''}` : '']);
-    }
-    sheets.push({ name: 'Resumen', cols: [30, 16, 8, 12, 12, 13, 12, 12, 10, 10, 8, 26], rows: sum });
-    // 2. Progreso del 1RM: una fila por día y una columna por ejercicio (los 12 que más haces) → listo para hacer un gráfico
-    const top = exs.slice(0, 12).filter(([, list]) => list.some(({ w, ex }) => rmOf(w, ex) != null));
-    if (top.length) {
-      const days = [...new Set(ws.map(w => dayKeyOf(w.date)))];
-      const val = new Map();
-      for (const [id, list] of top) for (const { w, ex } of list) { const y = rmOf(w, ex); if (y != null) val.set(`${id}|${dayKeyOf(w.date)}`, Math.max(val.get(`${id}|${dayKeyOf(w.date)}`) || 0, y)); }
-      const rows = [['Fecha', ...top.map(([, list]) => `${list[list.length - 1].ex.name} (${list[list.length - 1].ex.unit})`)]];
-      for (const d of days) { if (!top.some(([id]) => val.has(`${id}|${d}`))) continue; rows.push([{ d }, ...top.map(([id]) => (val.has(`${id}|${d}`) ? { v: val.get(`${id}|${d}`), s: XS.dec } : null))]); }
-      sheets.push({ name: 'Progreso 1RM', cols: [12, ...top.map(() => 16)], rows, freezeCol: true });
-    }
-    // 3. Cada entreno: una fila por ejercicio, con sus series en una celda y si subiste o bajaste
-    const multi = multiGym(), prevRm = new Map();
-    const ent = [['Fecha', 'Rutina', ...(multi ? ['Gimnasio'] : []), 'Ejercicio', 'Series', 'N.º series', 'Volumen (peso × reps)', '1RM estimado', 'vs la vez anterior', 'Notas']];
     for (const w of ws) for (const ex of w.exercises) {
-      const rm = rmOf(w, ex), key = `${ex.exerciseId}|${ex.machine || ''}`, prev = prevRm.get(key);
-      const vol = ex.sets.reduce((a, st) => a + (st.w || 0) * (repsMin(st) || 0) + (st.drops || []).reduce((b, x) => b + (x.w || 0) * (x.r || 0), 0), 0);
-      const cmp = w.deload ? { v: 'Descarga', s: XS.muted } : w.comeback ? { v: 'Vuelta de pausa', s: XS.muted } : rm == null || prev == null ? null
-        : rm > prev * 1.005 ? { v: `▲ +${fmtNum(round1(rm - prev))}`, s: XS.up } : rm < prev * 0.995 ? { v: `▼ ${fmtNum(round1(rm - prev))}`, s: XS.down } : { v: '= igual', s: XS.muted };
-      if (rm != null && !w.deload && !w.comeback) prevRm.set(key, rm);
-      ent.push([{ d: dayKeyOf(w.date) }, w.routineName || 'Libre', ...(multi ? [gymName(gymOf(w))] : []), { v: `${ex.name}${machineLbl(ex)}`, s: XS.bold }, setsTxt(ex),
-        { v: ex.sets.length, s: XS.int }, vol ? { v: round1(vol), s: XS.dec } : null, rm != null ? { v: rm, s: XS.dec } : null, cmp,
-        ex.sets.map(st => st.note).filter(Boolean).join(' · ')]);
+      if (!ex.sets.some(st => st.w != null || st.r != null)) continue;
+      const k = `${ex.exerciseId}|${ex.machine || ''}`;
+      if (!byEx.has(k)) byEx.set(k, []);
+      byEx.get(k).push({ w, ex });
     }
-    sheets.push({ name: 'Entrenos', cols: [12, 18, ...(multi ? [16] : []), 30, 44, 9, 14, 12, 14, 30], rows: ent });
-    // 4. Cada serie (para filtrar o hacer tus propias tablas)
-    const ser = [['Fecha', 'Rutina', 'Ejercicio', 'Serie', 'Peso', 'Unidad', 'Repeticiones', 'Reps derecha (unilateral)', 'RIR', 'Nota']];
-    for (const w of ws) for (const ex of w.exercises) {
-      const unit = `${ex.unit}${ex.bw && ex.unit !== 'placas' ? ' (lastre)' : ''}`;
-      ex.sets.forEach((st, j) => {
-        ser.push([{ d: dayKeyOf(w.date) }, w.routineName || 'Libre', `${ex.name}${machineLbl(ex)}`, { v: j + 1, s: XS.int }, n1(st.w) != null ? { v: n1(st.w), s: XS.dec } : null, unit,
-          st.r != null ? { v: st.r, s: XS.int } : null, ex.side && st.r2 != null ? { v: st.r2, s: XS.int } : null, st.rir != null ? { v: st.rir, s: XS.int } : null, st.note || '']);
-        for (const dr of st.drops || []) ser.push([{ d: dayKeyOf(w.date) }, w.routineName || 'Libre', `${ex.name}${machineLbl(ex)}`, `${j + 1} (dropset)`, n1(dr.w) != null ? { v: n1(dr.w), s: XS.dec } : null, unit, dr.r != null ? { v: dr.r, s: XS.int } : null, null, null, '']);
-      });
+    const setText = b => `${b.w ? `${b.bw ? '+' : ''}${fmtNum(b.w)} ${b.unit} × ` : ''}${repsText(b)} reps${b.rir != null ? ` · RIR ${fmtNum(b.rir)}` : ''}`;
+    // Sin peso (ni lastre ni peso corporal anotado) se compara por repeticiones
+    const cmpB = (a, b) => (a.w || b.w || a.bw || b.bw ? cmpSet(a, b) : Math.sign((repsMin(a) || 0) - (repsMin(b) || 0)));
+    for (const list of [...byEx.values()].sort((a, b) => b.length - a.length)) {
+      const lastEx = list[list.length - 1].ex, u = lastEx.unit;
+      const items = list.map(({ w, ex }) => {
+        let best = null, rm = null;
+        const withW = ex.sets.filter(st => st.w != null);
+        for (const st of withW.length ? withW : ex.sets.filter(st => st.r != null).map(st => ({ ...st, w: 0 }))) {
+          const c = { ...st, unit: ex.unit, bw: bwFor(ex, w.date) };
+          if (!best || cmpB(c, best) > 0) best = c;
+          if (st.w && repsMin(st)) { const y = e1rmEx(ex, st, w.date); if (Number.isFinite(y) && (rm == null || y > rm)) rm = y; }
+        }
+        return { w, best, rm: rm == null ? null : round1(convertWeight(rm, ex.unit, u)) };
+      }).filter(x => x.best);
+      if (!items.length) continue;
+      // Sin ningún 1RM (ejercicio sin peso): la columna y el gráfico son de repeticiones
+      const repsMode = !items.some(x => x.rm != null);
+      if (repsMode) for (const x of items) x.reps = repsMin(x.best);
+      const valOf = x => (repsMode ? x.reps : x.rm), vu = repsMode ? 'reps' : u;
+      // Resumen del bloque: cuánto subió el 1RM desde la primera vez (sin contar descargas ni vueltas de pausa)
+      const real = items.filter(x => x.rm != null && !x.w.deload && !x.w.comeback);
+      const veces = plural(items.length, 'vez', 'veces');
+      let sum = `${veces} · mejor serie: ${setText(items.reduce((a, x) => (cmpB(x.best, a.best) > 0 ? x : a)).best)}`, sumS = XS.sub;
+      const realR = repsMode ? items.filter(x => x.reps != null && !x.w.deload && !x.w.comeback) : [];
+      if (realR.length >= 2) {
+        const d = realR[realR.length - 1].reps - realR[0].reps;
+        sum = d > 0 ? `Subiste ${plural(d, 'rep')}: de ${realR[0].reps} a ${realR[realR.length - 1].reps} reps · ${veces}` : d < 0 ? `Bajaste ${plural(-d, 'rep')}: de ${realR[0].reps} a ${realR[realR.length - 1].reps} reps · ${veces}` : `Te mantienes en ${realR[0].reps} reps · ${veces}`;
+        sumS = d > 0 ? XS.sumUp : d < 0 ? XS.sumDown : XS.sub;
+      }
+      if (real.length >= 2) {
+        const a = real[0].rm, z = real[real.length - 1].rm, top = Math.max(...real.map(x => x.rm)), d = round1(z - a), pc = a ? fmtNum(Math.round(Math.abs(z - a) / a * 1000) / 10) : '0';
+        sum = d > 0 ? `Tu 1RM subió ${fmtNum(d)} ${u} (+${pc}%): de ${fmtNum(a)} a ${fmtNum(z)} ${u} · récord ${fmtNum(top)} ${u} · ${veces}`
+          : d < 0 ? `Tu 1RM bajó ${fmtNum(-d)} ${u} (-${pc}%): de ${fmtNum(a)} a ${fmtNum(z)} ${u} · récord ${fmtNum(top)} ${u} · ${veces}`
+          : `Tu 1RM se mantiene en ${fmtNum(z)} ${u} · récord ${fmtNum(top)} ${u} · ${veces}`;
+        sumS = d > 0 ? XS.sumUp : d < 0 ? XS.sumDown : XS.sub;
+      }
+      block(sh, `${lastEx.name}${lastEx.machine ? ` (${machineName(lastEx.exerciseId, lastEx.machine)})` : ''}`, 4);
+      sh.rows.push([{ v: sum, s: sumS }]);
+      const pts = items.filter(x => valOf(x) != null).length, chartAt = sh.rows.length;
+      if (pts >= 2) for (let i = 0; i < CH; i++) sh.rows.push([]);
+      sh.rows.push([{ v: 'Fecha', s: XS.head }, { v: 'Mejor serie', s: XS.head }, { v: repsMode ? 'Reps' : `1RM (${u})`, s: XS.head }, { v: 'vs la vez anterior', s: XS.head }]);
+      const r1 = sh.rows.length;
+      let prev = null, prevBest = null;
+      for (const it of items) {
+        let cmp = { v: '', s: XS.text };
+        const y = valOf(it);
+        if (it.w.deload) cmp = { v: 'Descarga', s: XS.muted };
+        else if (it.w.comeback) cmp = { v: 'Vuelta de pausa', s: XS.muted };
+        else if (y != null && prev != null) {
+          const d = round1(y - prev), tol = repsMode ? 0 : prev * 0.005;
+          cmp = y > prev + tol ? { v: `▲ +${fmtNum(d)} ${vu}`, s: XS.up } : y < prev - tol ? { v: `▼ ${fmtNum(d)} ${vu}`, s: XS.down } : { v: '= igual', s: XS.muted };
+        } else if (y == null && prevBest) {
+          const c = cmpB(it.best, prevBest);
+          cmp = c > 0 ? { v: '▲ subiste', s: XS.up } : c < 0 ? { v: '▼ bajaste', s: XS.down } : { v: '= igual', s: XS.muted };
+        }
+        if (!it.w.deload && !it.w.comeback) { if (y != null) prev = y; prevBest = it.best; }
+        sh.rows.push([{ d: dayKeyOf(it.w.date) }, { v: setText(it.best), s: XS.text }, y != null ? { v: y, s: repsMode ? XS.int : XS.dec } : { v: '', s: XS.text }, cmp]);
+      }
+      if (pts >= 2) sh.charts.push({ title: repsMode ? 'Repeticiones (mejor serie)' : `1RM estimado (${u})`, r1, r2: sh.rows.length - 1, catCol: 0, valCol: 2, fmt: repsMode ? '0' : '',
+        cats: items.map(x => excelDate(dayKeyOf(x.w.date))), vals: items.map(valOf), at: [0, chartAt, 4, chartAt + CH - 1] });
+      sh.rows.push([], []);
     }
-    sheets.push({ name: 'Series', cols: [12, 18, 30, 12, 9, 12, 12, 14, 6, 30], rows: ser });
+    sheets.push(sh);
   }
-  // 5. Peso y medidas
-  if (hasBody) {
-    const byDay = new Map(), at = d => byDay.get(d) || byDay.set(d, {}).get(d);
-    for (const e of db.bodyweight) Object.assign(at(e.date), { kg: e.kg, bf: e.bf });
-    for (const e of db.measures) Object.assign(at(e.date), e.m);
-    const sites = MEASURE_SITES.filter(([k]) => db.measures.some(e => e.m[k] != null));
-    const rows = [['Fecha', 'Peso (kg)', 'Cambio de peso', '% de grasa', ...sites.map(([, label]) => `${label} (cm)`)]];
-    let first = null;
-    for (const d of [...byDay.keys()].sort()) {
-      const e = byDay.get(d);
-      if (e.kg != null && first == null) first = e.kg;
-      rows.push([{ d }, e.kg != null ? { v: e.kg, s: XS.dec } : null, e.kg != null && first != null ? { v: round1(e.kg - first), s: XS.dec } : null,
-        e.bf != null ? { v: e.bf, s: XS.dec } : null, ...sites.map(([k]) => (e[k] != null ? { v: e[k], s: XS.dec } : null))]);
+  if (bws.length || meas.length) {
+    const sites = MEASURE_SITES.filter(([k]) => meas.some(e => e.m[k] != null));
+    const hasBf = bws.some(e => e.bf != null), n = hasBf ? 4 : 3;
+    const sh = { name: 'Peso y medidas', cols: [13, 13, ...Array.from({ length: Math.max(2, sites.length - 1) }, () => 14)], rows: [], merges: [], heights: { 0: 32 }, charts: [] };
+    sh.rows.push([{ v: 'Mi peso y medidas', s: XS.title }]);
+    if (bws.length) {
+      const a = bws[0].kg, z = bws[bws.length - 1].kg, d = round1(z - a);
+      sh.rows.push([{ v: bws.length > 1 ? `Empezaste en ${fmtNum(a)} kg y ahora pesas ${fmtNum(z)} kg (${d > 0 ? '+' : ''}${fmtNum(d)} kg)` : `Pesas ${fmtNum(z)} kg`, s: XS.sub }]);
+      sh.rows.push([]);
+      block(sh, 'Peso corporal', n);
+      const chartAt = sh.rows.length;
+      if (bws.length >= 2) for (let i = 0; i < CH; i++) sh.rows.push([]);
+      sh.rows.push([{ v: 'Fecha', s: XS.head }, { v: 'Peso (kg)', s: XS.head }, { v: 'Cambio', s: XS.head }, ...(hasBf ? [{ v: '% de grasa', s: XS.head }] : [])]);
+      const r1 = sh.rows.length;
+      bws.forEach((e, i) => sh.rows.push([{ d: e.date }, { v: e.kg, s: XS.dec }, i ? { v: round1(e.kg - bws[i - 1].kg), s: XS.delta } : { v: '', s: XS.text },
+        ...(hasBf ? [e.bf != null ? { v: e.bf, s: XS.dec } : { v: '', s: XS.text }] : [])]));
+      if (bws.length >= 2) sh.charts.push({ title: 'Peso (kg)', r1, r2: sh.rows.length - 1, catCol: 0, valCol: 1,
+        cats: bws.map(e => excelDate(e.date)), vals: bws.map(e => e.kg), at: [0, chartAt, n, chartAt + CH - 1] });
+      sh.rows.push([], []);
+    } else sh.rows.push([]);
+    if (meas.length && sites.length) {
+      block(sh, 'Medidas (cm)', sites.length + 1);
+      sh.rows.push([{ v: 'Fecha', s: XS.head }, ...sites.map(([, label]) => ({ v: label, s: XS.head }))]);
+      for (const e of meas) sh.rows.push([{ d: e.date }, ...sites.map(([k]) => (e.m[k] != null ? { v: e.m[k], s: XS.dec } : { v: '', s: XS.text }))]);
     }
-    sheets.push({ name: 'Peso y medidas', cols: [12, 10, 14, 10, ...sites.map(() => 12)], rows });
+    sheets.push(sh);
   }
   downloadFile(`desdel-historial-${todayKey()}.xlsx`, buildXlsx(sheets));
 }
