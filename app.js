@@ -1785,6 +1785,7 @@ function viewHome() {
     ${resume}
     ${free}
     ${routines || '<p class="empty">O arma tu propia rutina: escribe su nombre abajo.</p>'}
+    <a class="btn block center rt-ready-btn" href="#/rutinas-listas">Rutinas listas</a>
     <form class="add-row" data-form="new-routine">
       <input name="title" placeholder="Nueva rutina (ej. Brazo)" autocomplete="off" required>
       <button class="btn">Crear</button>
@@ -6869,6 +6870,7 @@ function render() {
     case 'ejercicios': location.replace('#/rutinas'); return;   // antes: pestaña Ejercicios (ahora está al editar una rutina)
     case 'miprograma': html = viewMyProgram(arg); break;
     case 'listos': html = viewReadyPrograms(); break;
+    case 'rutinas-listas': html = viewReadyRoutines(); break;
     case 'programa': html = viewProgram(arg); break;
     case 'medidas': html = viewMeasures(); break;
     case 'fotos': html = viewProgressPhotos(); break;
@@ -6907,7 +6909,7 @@ function render() {
     else if (chip) steps.scrollLeft = chip.offsetLeft - (steps.clientWidth - chip.offsetWidth) / 2;
   }
   const NAV = {
-    rutinas: 'entreno', rutina: 'entreno', programas: 'entreno', miprograma: 'entreno', listos: 'entreno', programa: 'entreno',
+    rutinas: 'entreno', rutina: 'entreno', programas: 'entreno', miprograma: 'entreno', listos: 'entreno', programa: 'entreno', 'rutinas-listas': 'entreno',
     historial: 'entreno', sesion: 'entreno', progreso: 'entreno', ejercicio: 'entreno',
     nutricion: 'nutricion', alimento: 'nutricion', dieta: 'nutricion', objetivo: 'nutricion', compras: 'nutricion',
     peso: 'cuerpo', grasa: 'cuerpo', pliegues: 'cuerpo', medidas: 'cuerpo', fotos: 'cuerpo',
@@ -7876,6 +7878,56 @@ function viewProgram(id) {
 }
 
 // Copia una rutina del programa a tus rutinas (si ya hiciste ese ejercicio, se usa el tuyo para mantener tu historial)
+// ---------- Rutinas listas: todas las rutinas de los splits listos, para buscarlas sin pasar por un split ----------
+const RT_TYPES = [['full', 'Cuerpo completo', /cuerpo completo/i], ['torso', 'Torso', /torso/i], ['pierna', 'Pierna', /pierna|cu[aá]driceps|cadena posterior/i],
+  ['empuje', 'Empuje', /empuje/i], ['tiron', 'Tirón', /tir[oó]n/i], ['brazo', 'Brazo y hombro', /brazo/i], ['grupos', 'Por grupos', /./]];
+let rtType = '', rtQ = '';
+const rtOpen = new Set();
+let readyRtCache = null;
+// [{ key, level, rt, type, from: [nombres de splits], zones: [músculos] }] sin repetidas (la misma rutina está en varios splits)
+function readyRoutines() {
+  if (readyRtCache) return readyRtCache;
+  const out = [], byObj = new Map();
+  for (const p of PROGRAMS) for (const [lvl, lv] of Object.entries(p.levels)) for (const rt of Object.values(lv.routines)) {
+    let it = byObj.get(rt);
+    if (!it) {
+      const sets = new Map();
+      for (const [gid, n] of rt.ex) { const g = GUIDE_BY_ID.get(gid); if (g) sets.set(g.zone, (sets.get(g.zone) || 0) + n); }
+      const zones = [...sets].sort((a, b) => b[1] - a[1]).map(([z]) => GUIDE_ZONES[z]);
+      it = { key: `${lvl}${out.length}`, level: lvl, rt, type: RT_TYPES.find(t => t[2].test(rt.name))[0], from: [], zones };
+      byObj.set(rt, it); out.push(it);
+    }
+    const label = `${p.name} (${p.days} días)`;
+    if (!it.from.includes(label)) it.from.push(label);
+  }
+  return (readyRtCache = out);
+}
+function readyRtListHtml() {
+  const q = normText(rtQ.trim());
+  const list = readyRoutines().filter(x => x.level === progLevel && (!rtType || x.type === rtType)
+    && (!q || normText(`${x.rt.name} ${x.zones.join(' ')} ${x.rt.ex.map(([gid]) => (GUIDE_BY_ID.get(gid) || {}).name || '').join(' ')}`).includes(q)));
+  if (!list.length) return '<p class="empty">Ninguna rutina coincide. Prueba con otro tipo o nivel.</p>';
+  return list.map(x => { const open = rtOpen.has(x.key);
+    return `<section class="card prog-routine rt-ready">
+      <button type="button" class="rt-head" data-action="rt-open" data-k="${x.key}" aria-expanded="${open}">
+        <span class="grow"><strong>${esc(x.rt.name)}</strong>
+          <span class="muted small">${plural(x.rt.ex.length, 'ejercicio')} · ${esc(x.zones.slice(0, 4).join(', '))}</span>
+          <span class="muted small">De: ${esc(x.from.join(' · '))}</span></span>
+        <span class="chev">${open ? '▴' : '▾'}</span></button>
+      ${open ? `<ul class="prog-ex">${x.rt.ex.map(([gid, sets, reps, rir, rest]) => `<li><span>${esc((GUIDE_BY_ID.get(gid) || {}).name || gid)}</span>
+        <span class="muted small">${sets} × ${reps} · RIR ${rir} · ${fmtRest(rest)}</span></li>`).join('')}</ul>` : ''}
+      <button class="btn block" data-action="rt-add" data-k="${x.key}">Agregar a mis rutinas</button>
+    </section>`; }).join('');
+}
+function viewReadyRoutines() {
+  return `${header('Rutinas listas', { back: true, sub: 'Hechas por un coach' })}
+    <p class="muted" style="margin:0 0 12px">Busca una rutina y agrégala a las tuyas: trae sus series, repeticiones, RIR, descanso y la técnica de cada ejercicio.</p>
+    ${levelToggle()}
+    <div class="skin-views rt-types">${[['', 'Todas'], ...RT_TYPES.map(([k, n]) => [k, n])].map(([k, n]) => `<button class="chip toggle ${k === rtType ? 'on' : ''}" data-action="rt-type" data-t="${k}" aria-pressed="${k === rtType}">${n}</button>`).join('')}</div>
+    <input class="search" type="search" data-bind="rt-q" value="${esc(rtQ)}" placeholder="🔍 Buscar (ej. glúteo, banca)" autocomplete="off" aria-label="Buscar rutina">
+    <div class="rt-list">${readyRtListHtml()}</div>`;
+}
+
 function routineFromProgram(rt) {
   const used = new Set();
   const taken = name => db.routines.some(r => sameName(r.name, name));
@@ -9388,6 +9440,25 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       if (p) addReadyProgram(p);
       break;
     }
+    case 'rt-type':
+      rtType = el.dataset.t || '';
+      render();
+      break;
+    case 'rt-open': {
+      const k = el.dataset.k;
+      if (rtOpen.has(k)) rtOpen.delete(k); else rtOpen.add(k);
+      render();
+      break;
+    }
+    case 'rt-add': {
+      const x = readyRoutines().find(y => y.key === el.dataset.k);
+      if (!x) break;
+      const r = routineFromProgram(x.rt);
+      db.routines.push(r);
+      save(); render();
+      showUndo(`Rutina "${r.name}" agregada a tus rutinas`, () => { db.routines = db.routines.filter(y => y.id !== r.id); save(); render(); });
+      break;
+    }
     case 'prog-add-one': {
       const p = progById(routeParts()[1]), rt = p && p.levels[progLevel].routines[el.dataset.k];
       if (!rt) return;
@@ -10188,6 +10259,12 @@ $app.addEventListener('input', e => {
   }
   if (!bind) return;
   if (bind === 'progress-search') { progressQuery = el.value; filterProgress(); return; }
+  if (bind === 'rt-q') {   // sin redibujar todo (para no cerrar el teclado)
+    rtQ = el.value;
+    const box = $app.querySelector('.rt-list');
+    if (box) box.innerHTML = readyRtListHtml();
+    return;
+  }
   if (rmCalc && (bind === 'rm-w' || bind === 'rm-r' || bind === 'rm-rir')) {
     rmCalc[bind.slice(3)] = el.value;
     const out = $app.querySelector('[data-rm-out]');
