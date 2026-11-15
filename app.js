@@ -1716,6 +1716,7 @@ const unitSelect = () => `<select name="unit" aria-label="Unidad">
 // Nota del ejercicio: en máquinas y poleas, una por gimnasio (el ajuste del asiento o de la polea cambia); en el primer gimnasio, la de siempre
 function noteKey(exerciseId, i) {
   const d = cur(), ex = d && d.exercises[i], g = d ? draftGym(d) : GYM0;
+  if (ex && ex.machine) return `${exerciseId}@m:${ex.machine}`;   // otra máquina igual: su propia nota (el ajuste cambia)
   return ex && g !== GYM0 && gymSplitEx(exerciseId, ex) ? `${exerciseId}@${g}` : exerciseId;
 }
 function noteHtml(exerciseId, i) {
@@ -2337,8 +2338,9 @@ function viewWorkout() {
   };
   // Historial al entrenar: los últimos 5 entrenos; "Ver más" muestra 10 más cada vez
   const historyHtml = ex => {
-    const all = historyFor(ex.exerciseId, d.editOf), n = histShown.get(ex.exerciseId) || HIST_FIRST;
-    if (!all.length) return '<p class="muted">Aún no hay historial de este ejercicio.</p>';
+    // Solo los entrenos en la misma máquina (la principal o la otra que elegiste en Cambiar)
+    const all = historyFor(ex.exerciseId, d.editOf).filter(({ ex: pex }) => (pex.machine || '') === (ex.machine || '')), n = histShown.get(ex.exerciseId) || HIST_FIRST;
+    if (!all.length) return `<p class="muted">${ex.machine ? `Aún no hay historial en ${esc(machineName(ex.exerciseId, ex.machine))}.` : 'Aún no hay historial de este ejercicio.'}</p>`;
     return all.slice(0, n).map(({ w, ex: pex }) => `
       <div class="hist-item">
         <div class="muted">${fmtDate(w.date)}${w.routineName ? ` · ${esc(w.routineName)}` : ''}${multiGym() ? ` · ${esc(gymName(gymOf(w)))}` : ''}${pex.machine ? ` · ${esc(machineName(pex.exerciseId, pex.machine))}` : ''}</div>
