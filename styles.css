@@ -1458,7 +1458,7 @@ body.viewing .free-start { display: none; }
 
 /* Rutinas listas */
 .rt-actions { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 8px; margin: 0 0 12px; }
-.rt-actions .btn { margin: 0; padding: 10px 6px; min-height: 54px; font-size: 14px; line-height: 1.2; display: flex; align-items: center; justify-content: center; text-align: center; }
+.rt-actions .btn { margin: 0; padding: 6px 8px; line-height: 1.2; display: flex; align-items: center; justify-content: center; text-align: center; }   /* mismo alto que los de Progreso; solo crece si el texto va en 2 líneas */
 .free-start .rt-actions { margin: 0; }
 .rt-types { margin: 10px 0; }
 .rt-list { display: grid; gap: 10px; margin-top: 10px; }
@@ -1466,4 +1466,5 @@ body.viewing .free-start { display: none; }
 .rt-head { all: unset; cursor: pointer; display: flex; align-items: flex-start; gap: 10px; }
 .rt-head .grow { display: grid; gap: 2px; }
 .rt-ready .btn { margin: 0; }
-.rt-actions .btn svg { width: 18px; height: 18px; flex: none; margin-right: 6px; }
+.rt-actions .btn svg { width: 18px; height: 18px; flex: none; }
+.rt-actions .btn.scan-wide { gap: 6px; white-space: nowrap; }
