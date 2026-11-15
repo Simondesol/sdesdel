@@ -665,7 +665,7 @@ function viewFoods() {
       </div><span class="chev">›</span>
     </a>`).join('');
   return `${header('Nutrición', {})}${nutriTabs('alimentos')}
-    <div class="ex-actions foods-top"><a class="btn primary center" href="#/alimento/nuevo">+ Nuevo alimento</a>
+    <div class="rt-actions"><a class="btn center" href="#/alimento/nuevo">Nuevo alimento</a>
       <button class="btn scan-wide" data-action="scan">${BARCODE_ICON}Escanear código</button></div>
     <input class="search" type="search" data-bind="food-search" value="${esc(foodQuery)}" placeholder="🔍 Buscar en mis alimentos y en la base…" autocomplete="off" aria-label="Buscar alimento">
     <div class="food-list">${list || '<p class="empty">Todavía no agregas alimentos propios. Al armar tu dieta puedes usar los de la base de Desdel, o crear los tuyos con su etiqueta.</p>'}</div>
@@ -956,11 +956,11 @@ function viewDiets() {
     </a>`;
   }).join('');
   return `${header('Nutrición', {})}${nutriTabs('dietas')}
+    <div class="rt-actions"><button class="btn" data-action="diet-new">Crear dieta</button>
+      ${N().diets.some(d => d.meals.some(m => m.items.length)) ? '<a class="btn center" href="#/compras">Lista de compras</a>' : ''}</div>
     ${targetBanner()}
     ${averageCard()}
-    <button class="btn primary block" data-action="diet-new" style="margin:0 0 12px">+ Crear dieta</button>
-    ${N().diets.some(d => d.meals.some(m => m.items.length)) ? '<a class="btn block center" href="#/compras" style="margin:0 0 12px">Lista de compras</a>' : ''}
-    ${list || `<p class="empty">${N().foods.length ? 'Crea tu primera dieta.' : 'Todavía no tienes dietas. Toca "+ Crear dieta" para armar la primera.'}</p>`}
+    ${list || `<p class="empty">${N().foods.length ? 'Crea tu primera dieta.' : 'Todavía no tienes dietas. Toca "Crear dieta" para armar la primera.'}</p>`}
     ${importForm('Importar dieta con código', 'dieta')}`;
 }
 
@@ -7828,13 +7828,11 @@ function viewPrograms() {
         <span class="muted small prog-week">${esc(myWeekLine(p)) || 'Sin días todavía'}</span></div>
       <span class="chev">›</span></a>`).join('');
   return `${header('Entreno', {})}${entrenoTabs('programas')}
+    <div class="rt-actions"><button class="btn" data-action="myprog-new">Crear split</button>
+      <a class="btn center" href="#/listos">Splits listos</a></div>
     <h2>Mis splits</h2>
     <p class="muted small split-help">Qué rutina toca cada día</p>
-    ${mine || '<p class="muted small" style="margin:0 0 8px">Elige uno listo o arma el tuyo con tus rutinas, para usarlo como tu plan o enviárselo a un gymbro.</p>'}
-    <div class="prog-actions">
-      <button class="btn" data-action="myprog-new">+ Crear split</button>
-      <a class="btn primary" href="#/listos">Splits listos</a>
-    </div>`;
+    ${mine || '<p class="muted small" style="margin:0 0 8px">Elige uno listo o arma el tuyo con tus rutinas, para usarlo como tu plan o enviárselo a un gymbro.</p>'}`;
 }
 
 // Programas listos (hechos por un coach): se abren desde el botón en Programas

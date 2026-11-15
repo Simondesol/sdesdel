@@ -1466,3 +1466,4 @@ body.viewing .free-start { display: none; }
 .rt-head { all: unset; cursor: pointer; display: flex; align-items: flex-start; gap: 10px; }
 .rt-head .grow { display: grid; gap: 2px; }
 .rt-ready .btn { margin: 0; }
+.rt-actions .btn svg { width: 18px; height: 18px; flex: none; margin-right: 6px; }
