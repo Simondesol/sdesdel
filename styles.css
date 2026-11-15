@@ -1457,7 +1457,9 @@ body.viewing .free-start { display: none; }
 .swap-sep { border: 0; border-top: 1px solid var(--border); margin: 6px 0 0; width: 100%; }
 
 /* Rutinas listas */
-.rt-ready-btn { margin: 4px 0 10px; }
+.rt-actions { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 8px; margin: 0 0 12px; }
+.rt-actions .btn { margin: 0; padding: 10px 6px; min-height: 54px; font-size: 14px; line-height: 1.2; display: flex; align-items: center; justify-content: center; text-align: center; }
+.free-start .rt-actions { margin: 0; }
 .rt-types { margin: 10px 0; }
 .rt-list { display: grid; gap: 10px; margin-top: 10px; }
 .rt-ready { display: grid; gap: 8px; }

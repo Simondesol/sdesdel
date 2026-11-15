@@ -1774,23 +1774,23 @@ function viewHome() {
       ${restoreOpen ? `<section class="card restore-list">${deletedRoutines().map(x => `<div class="prog-row"><span class="grow"><strong>${esc(x.name)}</strong>
         <span class="muted small">${plural(x.count, 'entreno')} · última vez ${esc(agoText(x.date))}</span></span>
         <button class="btn small-btn" data-action="restore-routine" data-id="${esc(x.id)}">Recuperar</button></div>`).join('')}</section>` : ''}` : '');
-  const free = d ? '' : routines
-    ? '<button class="btn block" data-action="start-free" style="margin:0 0 12px">Entrenar sin rutina</button>'
+  // Las 3 formas de partir, juntas arriba
+  const startBtns = `<div class="rt-actions">
+      ${d ? '' : '<button class="btn" data-action="start-free">Entrenar sin rutina</button>'}
+      <button class="btn" data-action="routine-new">Crear rutina</button>
+      <a class="btn center" href="#/rutinas-listas">Rutinas listas</a>
+    </div>`;
+  const free = routines ? startBtns
     : `<section class="card stack free-start">
         <strong>¿Vas a entrenar ahora?</strong>
-        <span class="muted small">Anota tus ejercicios a medida que los haces, sin armar nada antes.</span>
-        <button class="btn primary block" data-action="start-free">Entrenar sin rutina</button>
-        <a class="btn block center" href="#/programas">Elegir un split</a>
+        <span class="muted small">Anota tus ejercicios a medida que los haces, arma tu rutina o usa una lista.</span>
+        ${startBtns}
+        <a class="link small" href="#/programas" style="justify-self:start">O elige un split completo ›</a>
       </section>`;
   return `${header('Entreno', {})}${entrenoTabs('rutinas')}
     ${resume}
     ${free}
-    ${routines || '<p class="empty">O arma tu propia rutina: escribe su nombre abajo.</p>'}
-    <a class="btn block center rt-ready-btn" href="#/rutinas-listas">Rutinas listas</a>
-    <form class="add-row" data-form="new-routine">
-      <input name="title" placeholder="Nueva rutina (ej. Brazo)" autocomplete="off" required>
-      <button class="btn">Crear</button>
-    </form>
+    ${routines}
     ${importForm('Importar rutina con código', 'rutina')}`;
 }
 
@@ -3385,7 +3385,7 @@ const coachInviteText = code => `Vincúlate conmigo como tu coach en Desdel 💪
 const VIEW_OK = ['', 'chat', 'rutinas', 'rutina', 'programas', 'miprograma', 'listos', 'programa', 'dieta', 'objetivo', 'historial', 'sesion', 'progreso', 'ejercicio', 'peso', 'grasa', 'medidas', 'fotos', 'nutricion', 'sueno', 'agua'];
 const VIEW_EXIT = ['social', 'gymbro', 'perfil', 'privacidad', 'cuenta', 'alumnos', 'coach', 'asignar', 'estadisticas'];
 // Lo que se puede tocar mirando a un atleta, y lo extra en el editor de rutinas
-const VIEW_SAFE = new Set(['back', 'view-exit', 'rm-calc', 'rm-unit', 'conv', 'prog-gym', 'prog-mach', 'video-open', 'vid-toggle', 'info', 'toggle-sec', 'range', 'toggle-history', 'hist-month', 'hist-day', 'skin-view', 'measure-view',
+const VIEW_SAFE = new Set(['back', 'view-exit', 'rm-calc', 'rm-unit', 'conv', 'prog-gym', 'prog-mach', 'routine-new', 'video-open', 'vid-toggle', 'info', 'toggle-sec', 'range', 'toggle-history', 'hist-month', 'hist-day', 'skin-view', 'measure-view',
   'prog-open', 'prog-close', 'prog-filter', 'prog-retry', 'week-sum', 'week-day', 'guide-view', 'guide-close', 'explore-zone', 'explore-open', 'explore-back', 'explore-close', 'go-ex', 'prev-ex', 'next-ex', 'prog-rid', 'thumb-play']);
 const VIEW_ROUTINE = new Set(['exprog-add', 'exprog-rm', 'exprog-pos', 'exprog-del', 'reps-by', 'toggle-drop', 'toggle-bw', 'toggle-ss', 'toggle-rir', 'toggle-unit', 'move', 'ex-open', 'ex-close', 'del-ex', 'dup-routine', 'del-routine',
   'guide-pick', 'guide-change', 'guide-set', 'guide-pick-close', 'explore-list', 'explore-add', 'explore-add-custom']);
@@ -9440,6 +9440,14 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
     case 'prog-add': {
       const p = progById(routeParts()[1]);
       if (p) addReadyProgram(p);
+      break;
+    }
+    case 'routine-new': {   // rutina nueva: se abre el editor con el nombre listo para escribir
+      const r = { id: uid(), name: uniqueRoutineName('Nueva rutina'), exercises: [] };
+      db.routines.push(r);
+      save();
+      go('#/rutina/' + r.id);
+      setTimeout(() => { const inp = $app.querySelector('[data-bind="routine-name"]'); if (inp) { inp.focus(); inp.select(); } }, 250);
       break;
     }
     case 'rt-type':
