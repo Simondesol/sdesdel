@@ -1796,9 +1796,9 @@ function viewHome() {
 
 // Formulario para pegar un código (sirve tanto para rutinas como para dietas)
 // kind: qué se espera importar en esa pantalla ('rutina', 'dieta' o 'gymbro'), para el botón y el mensaje de error
+// Un solo botón: al tocarlo lee el código copiado (o abre el cuadro para escribirlo)
 const importForm = (label, kind = '') => `<section class="import-box">
-    <div class="muted small">${label}</div>
-    ${importOpen ? `
+    ${importOpen ? `<div class="muted small">${label}</div>
     <form class="stack" data-form="import-code" data-kind="${kind}" novalidate>
       <div class="add-row">
         <input name="code" placeholder="Código (ej. K7P-9XQ)" autocomplete="off" autocapitalize="characters" maxlength="9" aria-label="Código">
@@ -1807,7 +1807,7 @@ const importForm = (label, kind = '') => `<section class="import-box">
       <p class="muted small" style="margin:0">Escribe el código que te pasaron y toca ${kind === 'gymbro' ? 'Agregar' : 'Importar'}.</p>
       <p class="form-msg" hidden></p>
     </form>`
-    : '<button class="btn block" data-action="paste-import">📋 Pegar código</button>'}
+    : `<button class="btn block" data-action="paste-import">${label}</button>`}
   </section>`;
 
 // Saca el código de lo copiado: el código solo ("K7P-9XQ"), el link (?r=K7P9XQ) o el mensaje completo
@@ -4494,7 +4494,7 @@ function viewAddGymbro() {
       : '<p class="muted">Creando tu código…</p>'}
       <p class="muted hint">Mándale tu link a un amigo. Cuando lo toque quedan conectados como gymbros y pueden chatear. Solo puede agregarte quien tenga tu código.</p>
     </section>
-    ${importForm('¿Te pasaron un código de gymbro?', 'gymbro')}`;
+    ${importForm('Agregar gymbro con código', 'gymbro')}`;
 }
 
 // Crea tu código de gymbro la primera vez (si ya existe ese código se prueba otro)
