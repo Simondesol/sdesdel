@@ -3316,7 +3316,7 @@ function downloadCsv(name, rows) {
 // sheets: [{ name, cols: [ancho], rows: [[celda]], merges: ['A5:D5'], heights: { fila: alto }, charts: [gráfico] }]
 // celda = texto | número | null | { v, s } (s = estilo de XS) | { d: 'aaaa-mm-dd', s }
 // gráfico = { title, r1, r2 (filas de los datos, desde 0), catCol, valCol, cats: [fechas Excel], vals: [números | null], at: [col, fila, colFin, filaFin] }
-const XS = { head: 1, date: 2, dec: 3, pct: 4, int: 5, bold: 6, up: 7, down: 8, muted: 9, title: 10, sub: 11, block: 12, sumUp: 13, sumDown: 14, text: 15, delta: 16 };
+const XS = { head: 1, date: 2, dec: 3, pct: 4, int: 5, bold: 6, up: 7, down: 8, muted: 9, title: 10, sub: 11, block: 12, sumUp: 13, sumDown: 14, text: 15, delta: 16, intC: 17, textC: 18, headC: 19 };
 const crcTable = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
 const crc32 = b => { let c = 0xffffffff; for (let i = 0; i < b.length; i++) c = crcTable[(c ^ b[i]) & 255] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
 function zipStore(files) {   // [{ name, text }] → Blob
@@ -3358,11 +3358,12 @@ function sheetXml(sh) {
   const merges = sh.merges || [];
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>
 <sheetViews><sheetView workbookViewId="0" showGridLines="0"/></sheetViews>
 <sheetFormatPr defaultRowHeight="18"/>
 <cols>${sh.cols.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>`).join('')}</cols>
 <sheetData>${rows}</sheetData>${merges.length ? `<mergeCells count="${merges.length}">${merges.map(m => `<mergeCell ref="${m}"/>`).join('')}</mergeCells>` : ''}
-<pageMargins left="0.5" right="0.5" top="0.6" bottom="0.6" header="0.3" footer="0.3"/>${(sh.charts || []).length ? '<drawing r:id="rId1"/>' : ''}
+<pageMargins left="0.5" right="0.5" top="0.6" bottom="0.6" header="0.3" footer="0.3"/><pageSetup paperSize="9" orientation="portrait" fitToWidth="1" fitToHeight="0"/>${(sh.charts || []).length ? '<drawing r:id="rId1"/>' : ''}
 </worksheet>`;
 }
 // Gráfico de línea (verde, con puntos y el valor arriba de cada punto si son pocos)
@@ -3413,7 +3414,8 @@ function buildXlsx(sheets) {
   // estilo: [formato de número, letra, relleno, borde, alineación]
   const xf = ([num, f, fill, b, al]) => `<xf numFmtId="${num}" fontId="${f}" fillId="${fill}" borderId="${b}" xfId="0"${num ? ' applyNumberFormat="1"' : ''}${f ? ' applyFont="1"' : ''}${fill ? ' applyFill="1"' : ''}${b ? ' applyBorder="1"' : ''}${al ? ` applyAlignment="1"><alignment ${al}/></xf>` : '/>'}`;
   const xfs = [[0, 0, 0, 0], [0, 1, 3, 1, 'vertical="center"'], [164, 0, 0, 1, 'horizontal="left"'], [165, 0, 0, 1], [166, 0, 0, 1], [1, 0, 0, 1], [0, 2, 0, 1], [0, 3, 0, 1], [0, 4, 0, 1], [0, 5, 0, 1],
-    [0, 6, 0, 0, 'vertical="center"'], [0, 5, 0, 0], [0, 7, 2, 0, 'vertical="center" indent="1"'], [0, 3, 0, 0], [0, 4, 0, 0], [0, 0, 0, 1], [167, 5, 0, 1]];
+    [0, 6, 0, 0, 'vertical="center"'], [0, 5, 0, 0], [0, 7, 2, 0, 'vertical="center" indent="1"'], [0, 3, 0, 0], [0, 4, 0, 0], [0, 0, 0, 1], [167, 5, 0, 1],
+    [1, 0, 0, 1, 'horizontal="center"'], [0, 0, 0, 1, 'horizontal="center"'], [0, 1, 3, 1, 'vertical="center" horizontal="center"']];
   const styles = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="${W}">
 <numFmts count="4"><numFmt numFmtId="164" formatCode="dd-mm-yyyy"/><numFmt numFmtId="165" formatCode="#,##0.0"/><numFmt numFmtId="166" formatCode="+0.0%;-0.0%;0.0%"/><numFmt numFmtId="167" formatCode="+#,##0.0;-#,##0.0;0"/></numFmts>
@@ -3477,7 +3479,13 @@ function exportExcel() {
   const ws = db.workouts.slice().sort((a, b) => (a.date < b.date ? -1 : 1));
   const bws = db.bodyweight.filter(e => e.kg != null).sort((a, b) => (a.date < b.date ? -1 : 1));
   const meas = db.measures.slice().sort((a, b) => (a.date < b.date ? -1 : 1));
-  if (!ws.length && !bws.length && !meas.length) { notice('Todavía no tienes datos para descargar.'); return; }
+  // Tu split: el activo (o tu semana armada sin split guardado; si no, el primero de Mis splits)
+  const act = activeProgram();
+  const split = act ? { name: act.name || 'Mi split', weeks: act.weeks, days: act.days, on: true }
+    : planIsLoose() ? { name: 'Mi semana', weeks: db.plan.weeks, days: db.plan.days, on: true }
+    : db.programs[0] ? { name: db.programs[0].name || 'Mi split', weeks: db.programs[0].weeks, days: db.programs[0].days, on: false } : null;
+  const splitIds = split ? [...new Set(split.days.slice(0, split.weeks).flatMap(w => w.r))].filter(id => id && db.routines.some(r => r.id === id)) : [];
+  if (!ws.length && !bws.length && !meas.length && !splitIds.length) { notice('Todavía no tienes datos para descargar.'); return; }
   const dd = key => key.split('-').reverse().join('-');
   const CH = 14;   // filas que ocupa cada gráfico (13 de gráfico + 1 de aire)
   const sheets = [];
@@ -3559,6 +3567,35 @@ function exportExcel() {
       if (pts >= 2) sh.charts.push({ title: repsMode ? 'Repeticiones (mejor serie)' : `1RM estimado (${u})`, r1, r2: sh.rows.length - 1, catCol: 0, valCol: 2, fmt: repsMode ? '0' : '',
         cats: items.map(x => excelDate(dayKeyOf(x.w.date))), vals: items.map(valOf), at: [0, chartAt, 4, chartAt + CH - 1] });
       sh.rows.push([], []);
+    }
+    sheets.push(sh);
+  }
+  // Mi split: la semana (qué rutina toca cada día) y cada rutina con sus ejercicios, series, reps, RIR y descanso
+  if (splitIds.length) {
+    const sh = { name: 'Mi split', cols: [11, 30, 7, 10, 7, 9, 22], rows: [], merges: [], heights: { 0: 32 }, charts: [] };
+    const days = split.days.slice(0, split.weeks), rName = id => (db.routines.find(r => r.id === id) || {}).name || '(sin nombre)';
+    sh.rows.push([{ v: split.name, s: XS.title }]);
+    sh.rows.push([{ v: `${plural(days[0].r.filter(Boolean).length, 'día')} de entreno por semana${split.weeks > 1 ? ` · se repite cada ${split.weeks} semanas` : ''}${split.on ? '' : ' · no es tu split activo'}`, s: XS.sub }]);
+    sh.rows.push([]);
+    days.forEach((w, i) => {
+      block(sh, split.weeks > 1 ? `Semana ${i + 1}` : 'Tu semana', 2);
+      sh.rows.push([{ v: 'Día', s: XS.head }, { v: 'Rutina', s: XS.head }]);
+      DAY_NAMES.forEach((d, k) => { const id = w.r[k] && db.routines.some(r => r.id === w.r[k]) ? w.r[k] : null;
+        sh.rows.push([{ v: d, s: XS.text }, id ? { v: rName(id), s: XS.bold } : { v: 'Descanso', s: XS.muted }]); });
+      sh.rows.push([]);
+    });
+    for (const id of splitIds) {
+      const r = db.routines.find(x => x.id === id);
+      sh.rows.push([]);
+      block(sh, r.name || '(sin nombre)', 7);
+      sh.rows.push(['#', 'Ejercicio', 'Series', 'Reps', 'RIR', 'Descanso', 'Detalles'].map((v, c) => ({ v, s: c === 1 || c === 6 ? XS.head : XS.headC })));
+      if (!r.exercises.length) sh.rows.push([{ v: '', s: XS.text }, { v: 'Sin ejercicios', s: XS.muted }]);
+      r.exercises.forEach((ex, j) => {
+        const reps = hasRepsBy(ex) ? ex.goalRepsBy.slice(0, ex.goalSets).map(x => x || '–').join(' / ') : ex.goalReps || '';
+        const extra = [(ex.ssNext || (j && r.exercises[j - 1].ssNext)) && 'Superserie', ex.dropset && 'Dropset', ex.side && 'Unilateral', ex.bw && 'Peso corporal'].filter(Boolean).join(' · ');
+        sh.rows.push([{ v: j + 1, s: XS.intC }, { v: ex.name, s: XS.bold }, ex.goalSets ? { v: ex.goalSets, s: XS.intC } : { v: '', s: XS.text },
+          { v: String(reps), s: XS.textC }, { v: ex.rir ? String(rirText(ex)) : '', s: XS.textC }, { v: ex.rest ? fmtRest(ex.rest) : '', s: XS.textC }, { v: extra, s: XS.muted }]);
+      });
     }
     sheets.push(sh);
   }
