@@ -2,7 +2,7 @@
 import { BASE_FOODS, synonymsOf } from './foods-base.js';
 import { QUIZ, QUIZ_CATS } from './quiz.js';
 import { GUIDES, GUIDE_ZONES } from './ejercicios.js';
-import { PROGRAMS, LEVELS } from './programas.js';
+import { PROGRAMS, LEVELS, LOOSE_ROUTINES } from './programas.js';
 import { ANIMS, mountAnim } from './animaciones.js';
 
 // ---------- Datos ----------
@@ -8254,7 +8254,7 @@ function viewProgram(id) {
 
 // Copia una rutina del programa a tus rutinas (si ya hiciste ese ejercicio, se usa el tuyo para mantener tu historial)
 // ---------- Rutinas listas: todas las rutinas de los splits listos, para buscarlas sin pasar por un split ----------
-const RT_TYPES = [['full', 'Cuerpo completo', /cuerpo completo/i], ['torso', 'Torso', /torso/i], ['pierna', 'Pierna', /pierna|cu[aá]driceps|cadena posterior/i],
+const RT_TYPES = [['full', 'Cuerpo completo', /cuerpo completo/i], ['torso', 'Torso', /torso/i], ['pierna', 'Pierna', /pierna|cu[aá]driceps|cadena posterior|gl[uú]teo/i],
   ['empuje', 'Empuje', /empuje/i], ['tiron', 'Tirón', /tir[oó]n/i], ['brazo', 'Brazo y hombro', /brazo/i], ['grupos', 'Por grupos', /./]];
 let rtType = '', rtQ = '';
 const rtOpen = new Set();
@@ -8275,6 +8275,12 @@ function readyRoutines() {
     const label = `${p.name} (${p.days} días)`;
     if (!it.from.includes(label)) it.from.push(label);
   }
+  // Rutinas sueltas: no vienen de ningún split
+  for (const [lvl, list] of Object.entries(LOOSE_ROUTINES)) for (const rt of list) {
+    const sets = new Map();
+    for (const [gid, n] of rt.ex) { const g = GUIDE_BY_ID.get(gid); if (g) sets.set(g.zone, (sets.get(g.zone) || 0) + n); }
+    out.push({ key: `${lvl}${out.length}`, level: lvl, rt, type: RT_TYPES.find(t => t[2].test(rt.name))[0], from: [], zones: [...sets].sort((a, b) => b[1] - a[1]).map(([z]) => GUIDE_ZONES[z]) });
+  }
   return (readyRtCache = out);
 }
 function readyRtListHtml() {
@@ -8287,7 +8293,7 @@ function readyRtListHtml() {
       <button type="button" class="rt-head" data-action="rt-open" data-k="${x.key}" aria-expanded="${open}">
         <span class="grow"><strong>${esc(x.rt.name)}</strong>
           <span class="muted small">${plural(x.rt.ex.length, 'ejercicio')} · ${esc(x.zones.slice(0, 4).join(', '))}</span>
-          <span class="muted small">De: ${esc(x.from.join(' · '))}</span></span>
+          <span class="muted small">${x.from.length ? `De: ${esc(x.from.join(' · '))}` : 'Rutina suelta'}</span></span>
         <span class="chev">${open ? '▴' : '▾'}</span></button>
       ${open ? `<ul class="prog-ex">${x.rt.ex.map(([gid, sets, reps, rir, rest]) => `<li><span>${esc((GUIDE_BY_ID.get(gid) || {}).name || gid)}</span>
         <span class="muted small">${sets} × ${reps} · RIR ${rir} · ${fmtRest(rest)}</span></li>`).join('')}</ul>` : ''}

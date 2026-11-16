@@ -111,3 +111,9 @@ export const PROGRAMS = [
       i: lvl({ E: PPL_I_E, T: PPL_I_T, P: PPL_I_P, EB: PPL_I_EB, TB: PPL_I_TB, PB: PPL_I_PB }, ['E', 'T', 'P', 'EB', 'TB', 'PB', null]),
     } },
 ];
+
+// ---------- Rutinas sueltas (no son parte de ningún split; salen solo en Rutinas listas) ----------
+export const LOOSE_ROUTINES = {
+  p: [R('Glúteo', [['hip-thrust', 3, '10-12', '2', 120], ['peso-muerto-rumano', 3, '10-12', '2', 120], ['zancada-inversa', 3, '10-12', '2', 90], ['abductores', 3, '12-15', '1-2', 60], ['patada-gluteo', 2, '12-15', '1-2', 60]])],
+  i: [R('Glúteo', [['hip-thrust', 4, '6-10', '1-2', 150], ['peso-muerto-rumano', 3, '8-10', '1-2', 150], ['sentadilla-bulgara', 3, '8-10', '1-2', 120], ['hiperextensiones', 3, '12-15', '1', 75], ['abductores', 3, '12-15', '0-1', 60], ['patada-gluteo-maquina', 3, '12-15', '0-1', 60]])],
+};
