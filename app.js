@@ -1874,7 +1874,7 @@ const repsByBlock = (ex, i) => (ex.goalSets && ex.rir
 const INFO = {
   rm: '1RM = el peso máximo que podrías levantar 1 vez. Desdel lo estima con tu 1ª serie (peso y repeticiones), así ves si te estás haciendo más fuerte aunque cambies las repeticiones.',
   rir: 'RIR = repeticiones en reserva: cuántas más podrías haber hecho con buena técnica. RIR 2 es que te quedaban 2; RIR 0, que no podías hacer otra. No es lo mismo que el fallo: al fallo intentas otra repetición y no la completas.',
-  prog: 'Escribe una línea por sesión. 8x80% = 1 serie de 8 repeticiones con el 80% de tu 1RM base. 2x8x75% = 2 series de 8 al 75%. Separa con coma lo que va en la misma sesión: 8x80%, 2x8x75%. 4x4 @8 = 4 series de 4 a RPE 8, o sea, te quedan 2 repeticiones (también vale 4x4 rir2); el peso se calcula con tu 1RM. "Intentar récord" = ese día buscas una marca nueva y, si superas tu 1RM base, al terminar te propongo actualizarlo. Los pesos son exactos, sin redondear a discos. Después de la última sesión vuelve a la primera.',
+  prog: 'Escribe una línea por sesión. 3x3 (sin % ni RPE) = 3 series de 3 con tu peso de trabajo, el mismo en todas las sesiones: si completas todas las series pasas a la siguiente, si no la repites, y al terminar la última el peso sube y vuelves a empezar. 8x80% = 1 serie de 8 repeticiones con el 80% de tu 1RM base. 2x8x75% = 2 series de 8 al 75%. Separa con coma lo que va en la misma sesión: 8x80%, 2x8x75%. 4x4 @8 = 4 series de 4 a RPE 8, o sea, te quedan 2 repeticiones (también vale 4x4 rir2); el peso se calcula con tu 1RM. "Intentar récord" = ese día buscas una marca nueva y, si superas tu 1RM base, al terminar te propongo actualizarlo. Los pesos son exactos, sin redondear a discos. Después de la última sesión vuelve a la primera.',
   opts: 'RIR: al entrenar anotas cuántas repeticiones te quedaban en cada serie (y puedes ponerle un RIR objetivo). Peso corporal: para dominadas, fondos y similares; lo que anotas es el lastre. Unilateral: anotas las repeticiones de cada lado. Calentamiento: al entrenar, arriba de tus series aparecen las series de aproximación con su peso, calculadas desde tu primera serie: el primer ejercicio de cada músculo lleva calentamiento completo y, si el músculo ya trabajó antes en la rutina, una sola aproximación. Si tu primera serie es pesada (1 a 5 repeticiones) lleva una aproximación más y más cerca del peso; si es larga (11 o más), una menos. En dominadas y fondos con lastre, primero sin lastre y después con la mitad. Apágalo en los ejercicios donde no lo quieras. Pesos por gimnasio (si entrenas en más de uno): en máquinas y poleas tus pesos y marcas se separan por gimnasio, porque cada máquina pesa distinto; apágalo si en todos los gimnasios pesa igual.',
 };
 const infoOpen = new Set();
@@ -1915,6 +1915,14 @@ function parseProg(text) {
     for (const b0 of l.split(/[,;+]|\s+y\s+|\s+luego\s+/)) {
       const b = b0.trim();
       if (!b) continue;
+      // "3x3" sin % ni RPE = series con tu peso de trabajo (el mismo en todas las sesiones)
+      const fx = b.match(/^(\d{1,2})\s*x\s*(\d{1,2})(?:\s*(?:reps?|repes|repeticiones))?$/);
+      if (fx) {
+        const n = +fx[1], r = +fx[2];
+        if (n < 1 || n > 10 || r < 1 || r > 30) { ok = false; break; }
+        for (let k = 0; k < n; k++) sets.push({ r, fixed: true });
+        continue;
+      }
       const m = b.match(/^(?:(\d{1,2})\s*x\s*)?(\d{1,2})(?:(?:\s*(?:x|al|a)\s*|\s+)(\d{1,3}(?:[.,]\d+)?)\s*%|\s*@\s*(?:rpe\s*)?(\d{1,2}(?:\.5)?)|\s*(?:x\s*)?rpe\s*(\d{1,2}(?:\.5)?)|\s*(?:x\s*)?rir\s*(\d(?:\.5)?))$/);
       if (!m) { ok = false; break; }
       const n = m[1] ? +m[1] : 1, r = +m[2];
@@ -1940,15 +1948,15 @@ function progStep(ex) {
   return { ...st[at], at, n: st.length };
 }
 // "80 kg × 8 · 2 series de 75 kg × 8"; sin 1RM base: "8 al 80% · 2 series de 8 al 75%"
-function progText(step, base, unit) {
+function progText(step, base, unit, fw) {
   if (step.kind === 'record') return 'Intentar récord';
-  const u = unitShort(unit), one = x => (x.pct != null
+  const u = unitShort(unit), one = x => (x.fixed ? (fw ? `${fmtNum(fw)} ${u} × ${x.r}` : `${x.r} reps`) : x.pct != null
     ? (base ? `${fmtNum(progW(base, x))} ${u} × ${x.r}` : `${x.r} al ${fmtNum(x.pct)}%`)
     : `${x.r} ${x.rpe ? `@${fmtNum(10 - x.rir)}` : `RIR ${fmtNum(x.rir)}`}${base ? ` (≈ ${fmtNum(progW(base, x))} ${u})` : ''}`);
   const groups = [];
   for (const x of step.sets) {
     const g = groups[groups.length - 1];
-    if (g && g.x.r === x.r && g.x.pct === x.pct && g.x.rir === x.rir) g.n++; else groups.push({ x, n: 1 });
+    if (g && g.x.r === x.r && g.x.pct === x.pct && g.x.rir === x.rir && !g.x.fixed === !x.fixed) g.n++; else groups.push({ x, n: 1 });
   }
   return groups.map(g => (g.n > 1 ? `${g.n} series de ${one(g.x)}` : one(g.x))).join(' · ');
 }
@@ -1963,10 +1971,11 @@ function progRmGuess(ex) {
 function progDraft(dx, ex) {
   const st = progStep(ex);
   if (!st) return dx;
-  const base = ex.prog.base > 0 ? ex.prog.base : null;
+  const base = ex.prog.base > 0 ? ex.prog.base : null, fw = ex.prog.w > 0 ? ex.prog.w : null;
   Object.assign(dx, { progAt: st.at, progN: st.n, ...(base ? { progBase: base } : {}) });
   if (st.kind === 'record') { dx.progRecord = true; return dx; }
   const rows = st.sets, useRir = rows.some(x => x.rir != null);
+  if (rows.some(x => x.fixed)) { dx.progFixed = true; if (fw) dx.progW = fw; }
   if (useRir) dx.rir = true;
   for (const k of ['goalSets', 'goalReps', 'goalRepsBy', 'goalRir', 'goalRirBy']) delete dx[k];
   dx.goalSets = rows.length;
@@ -1979,7 +1988,8 @@ function progDraft(dx, ex) {
   const prev = dx.sets;
   dx.sets = rows.map((x, j) => {
     const p = prev[j] || prev[prev.length - 1] || {};
-    return { w: '', r: '', ...(dx.rir ? { rir: '' } : {}), ...(base ? { pw: toField(progW(base, x)) } : p.pw ? { pw: p.pw } : {}), pr: String(x.r),
+    const pw = x.fixed ? (fw ? toField(fw) : p.pw) : base ? toField(progW(base, x)) : p.pw;
+    return { w: '', r: '', ...(dx.rir ? { rir: '' } : {}), ...(pw ? { pw } : {}), pr: String(x.r),
       ...(x.rir != null ? { prir: toField(x.rir) } : {}), ...(p.pnote ? { pnote: p.pnote } : {}) };
   });
   if (ex.dropset) dx.sets[dx.sets.length - 1].drops = [{ w: '', r: '' }];
@@ -1990,27 +2000,58 @@ const exProgOpen = new Set();   // ejercicios con la sección abierta
 function progPrevHtml(ex, i) {
   const items = parseProg(ex.prog && ex.prog.text);
   if (!items.length) return '<p class="muted small" style="margin:0">Escribe una línea por sesión para ver aquí los pesos de cada una.</p>';
-  const base = ex.prog.base > 0 ? ex.prog.base : null, at = (progStep(ex) || {}).at;
+  const base = ex.prog.base > 0 ? ex.prog.base : null, fw = ex.prog.w > 0 ? ex.prog.w : null, at = (progStep(ex) || {}).at;
+  const sets = items.filter(x => x.kind === 'sets').flatMap(x => x.sets);
   let k = -1;
   return items.map(x => {
     if (x.kind === 'bad') return `<div class="exprog-row bad">No entendí: «${esc(x.raw)}»</div>`;
     if (x.kind === 'skip') return '';
     k++;
     return `<button type="button" class="exprog-row${k === at ? ' on' : ''}" data-action="exprog-pos" data-i="${i}" data-k="${k}">
-      <span class="exprog-n">${k + 1}</span><span class="grow">${progText(x, base, ex.unit)}</span>${k === at ? '<span class="exprog-today">Toca hoy</span>' : ''}</button>`;
-  }).join('') + (!base && items.some(x => x.kind === 'sets') ? '<p class="muted small" style="margin:0">Pon tu 1RM base para ver los pesos.</p>' : '');
+      <span class="exprog-n">${k + 1}</span><span class="grow">${progText(x, base, ex.unit, fw)}</span>${k === at ? '<span class="exprog-today">Toca hoy</span>' : ''}</button>`;
+  }).join('') + (!base && sets.some(x => !x.fixed) ? '<p class="muted small" style="margin:0">Pon tu 1RM base para ver los pesos.</p>' : '')
+    + (!fw && sets.some(x => x.fixed) ? '<p class="muted small" style="margin:0">Pon tu peso de trabajo para ver los pesos.</p>' : '');
+}
+// Progresión con peso fijo: mismo peso en todas las sesiones; si completas todas las series pasas a la siguiente,
+// y al terminar la última el peso sube (prog.inc) y vuelves a la primera
+const PROG_FUERZA = '3x3\n4x3\n5x3\n3x4\n4x4\n5x4\n3x5\n4x5\n5x5';
+const progHasFixed = ex => progSteps(ex).some(x => x.kind === 'sets' && x.sets.some(s => s.fixed));
+const progHasPct = ex => progSteps(ex).some(x => x.kind === 'sets' && x.sets.some(s => !s.fixed));
+const progIncDef = unit => (unit === 'lb' ? 5 : unit === 'placas' ? 1 : 2.5);
+const progInc = ex => (ex.prog && ex.prog.inc > 0 ? ex.prog.inc : progIncDef(ex.unit));
+// Peso sugerido para empezar: lo más pesado que hiciste 8 veces o más en los últimos 4 meses (unas 2 reps más que 5x5)
+function progWGuess(ex) {
+  if (!ex) return null;
+  const since = Date.now() - 120 * 864e5;
+  let best = null;
+  for (const w of db.workouts) {
+    if (new Date(w.date).getTime() < since || w.deload || w.comeback) continue;
+    for (const x of w.exercises) {
+      if (x.exerciseId !== ex.id || x.unit === 'placas' && ex.unit !== 'placas') continue;
+      for (const s of x.sets) if (s.w != null && (repsMin(s) || 0) >= 8) { const v = round1(convertWeight(s.w, x.unit, ex.unit)); if (best == null || v > best) best = v; }
+    }
+  }
+  return best;
 }
 function progSection(ex, i) {
-  if (!ex.prog && !exProgOpen.has(ex.id)) return `<button class="link small" data-action="exprog-add" data-i="${i}" style="justify-self:start">+ Progresión por porcentajes o RPE</button>`;
-  const p = ex.prog || {}, guess = progRmGuess(ex), u = unitShort(ex.unit);
+  if (!ex.prog && !exProgOpen.has(ex.id)) return `<button class="link small" data-action="exprog-add" data-i="${i}" style="justify-self:start">+ Progresión (3x3 a 5x5, porcentajes o RPE)</button>`;
+  const p = ex.prog || {}, u = unitShort(ex.unit), fixed = progHasFixed(ex), pct = progHasPct(ex) || !fixed;
+  const guess = pct && progRmGuess(ex), wGuess = fixed && progWGuess(ex);
   return `<div class="exprog">
       <div class="exprog-head"><strong>Progresión</strong>${infoBtn('prog')}</div>
       ${infoBox('prog')}
-      <textarea data-bind="exprog-text" data-i="${i}" rows="5" placeholder="Una línea por sesión. Ej:&#10;8x80%, 2x8x75%&#10;3x8x80%&#10;4x4 @8&#10;intentar récord" aria-label="Progresión: una línea por sesión">${esc(p.text || '')}</textarea>
-      <div class="exprog-base">
+      ${(p.text || '').trim() !== PROG_FUERZA ? `<button class="link small" data-action="exprog-fuerza" data-i="${i}" style="justify-self:start">Usar la progresión de fuerza 3x3 a 5x5</button>` : ''}
+      <textarea data-bind="exprog-text" data-i="${i}" rows="5" placeholder="Una línea por sesión. Ej:&#10;3x3 (mismo peso)&#10;8x80%, 2x8x75%&#10;4x4 @8&#10;intentar récord" aria-label="Progresión: una línea por sesión">${esc(p.text || '')}</textarea>
+      ${fixed ? `<div class="exprog-base">
+        <label>Peso de trabajo (${u})<input data-bind="exprog-w" data-i="${i}" inputmode="decimal" value="${p.w ? toField(p.w) : ''}" placeholder="–" autocomplete="off" aria-label="Peso de trabajo"></label>
+        <label>Al terminar, subir (${u})<input data-bind="exprog-inc" data-i="${i}" inputmode="decimal" value="${toField(progInc(ex))}" autocomplete="off" aria-label="Cuánto sube el peso al terminar la progresión"></label>
+        ${wGuess && wGuess !== p.w ? `<button class="link small" data-action="exprog-wguess" data-i="${i}">Usar ${fmtNum(wGuess)} ${u} (lo hiciste 8 veces o más)</button>` : ''}
+      </div>
+      <p class="muted small" style="margin:0">Elige un peso que puedas hacer unas 8 veces: así llegas al 5x5. Si no completas todas las series de una sesión, la repites.</p>` : ''}
+      ${pct ? `<div class="exprog-base">
         <label>1RM base (${u})<input data-bind="exprog-base" data-i="${i}" inputmode="decimal" value="${p.base ? toField(p.base) : ''}" placeholder="–" autocomplete="off" aria-label="1RM base"></label>
         ${guess && guess !== p.base ? `<button class="link small" data-action="exprog-rm" data-i="${i}">Usar mi 1RM estimado: ${fmtNum(guess)} ${u}</button>` : ''}
-      </div>
+      </div>` : ''}
       <div class="exprog-prev" data-i="${i}">${progPrevHtml(ex, i)}</div>
       <p class="muted small" style="margin:0">Mientras tengas progresión, las series, repeticiones y pesos de cada entreno salen de aquí. Al terminar el entreno pasa a la siguiente sesión.</p>
       <button class="link small danger-text" data-action="exprog-del" data-i="${i}" style="justify-self:start">Quitar progresión</button>
@@ -2319,7 +2360,10 @@ function viewWorkout() {
     let hint = '';
     if (!editing && ex.progAt != null) {
       const u = unitShort(ex.unit);
-      hint = `<p class="prog-line"><strong>Progresión · sesión ${ex.progAt + 1} de ${ex.progN}</strong>${ex.progBase ? ` · 1RM base ${fmtNum(ex.progBase)} ${u}` : ''}</p>
+      hint = ex.progFixed
+        ? `<p class="prog-line"><strong>Progresión · sesión ${ex.progAt + 1} de ${ex.progN}</strong>${ex.progW ? ` · peso de trabajo ${fmtNum(ex.progW)} ${u}` : ''}</p>
+          <p class="goal-hint">${ex.progW ? `Completa todas las series con ${fmtNum(ex.progW)} ${u} para pasar a la siguiente sesión.` : 'Pon tu peso de trabajo en Editar rutina.'}</p>`
+        : `<p class="prog-line"><strong>Progresión · sesión ${ex.progAt + 1} de ${ex.progN}</strong>${ex.progBase ? ` · 1RM base ${fmtNum(ex.progBase)} ${u}` : ''}</p>
         ${ex.progRecord ? `<p class="goal-hint">Hoy toca intentar un récord.${ex.progBase ? ' Si superas tu 1RM base, al terminar te propongo actualizarlo.' : ''}</p>`
           : !ex.progBase ? '<p class="goal-hint">Pon tu 1RM base en Editar rutina para ver los pesos de la progresión.</p>' : ''}`;
     } else if (!editing && !noCmp && (ex.goalReps || hasRepsBy(ex))) {
@@ -7564,8 +7608,10 @@ function finishWorkout() {
   announcePRs(w);
   justFinished = id;
   location.replace('#/sesion/' + id);
-  if (recs.length) setTimeout(() => progAskBase(recs), 450);
+  const notes = progNotes; progNotes = [];
+  if (recs.length || notes.length) setTimeout(async () => { if (notes.length) await notice(notes.join('\n\n')); if (recs.length) progAskBase(recs); }, 450);
 }
+let progNotes = [];   // avisos de la progresión con peso fijo (repetir sesión / subir el peso), al terminar el entreno
 function progAdvance(d, w) {
   const r = !d.free && db.routines.find(x => x.id === d.routineId), recs = [];
   if (!r || d.deload) return recs;   // semana de descarga: la progresión espera
@@ -7573,8 +7619,21 @@ function progAdvance(d, w) {
     if (e.progAt == null || e.swapOf) continue;
     const done = w.exercises.find(x => x.exerciseId === e.exerciseId), rex = r.exercises.find(x => x.id === e.exerciseId);
     if (!done || !rex || !rex.prog) continue;
-    const n = progSteps(rex).length;
+    const steps = progSteps(rex), n = steps.length;
     if (!n) continue;
+    const step = steps[e.progAt], need = step && step.kind === 'sets' ? step.sets.filter(x => x.fixed) : [];
+    if (need.length) {   // peso fijo: avanzas solo si completaste todas las series con tu peso de trabajo
+      if (d.comeback) continue;   // vuelta de una pausa: la progresión espera
+      const fw = rex.prog.w > 0 ? rex.prog.w : 0, u = unitShort(rex.unit);
+      const got = done.sets.filter(x => x.w != null && convertWeight(x.w, done.unit, rex.unit) >= fw - 0.01).map(x => repsMin(x) || 0).sort((a, b) => b - a);
+      const ok = need.map(x => x.r).sort((a, b) => b - a).every((r, j) => (got[j] || 0) >= r);
+      if (!ok) { progNotes.push(`${rex.name}: no completaste las ${plural(need.length, 'serie')} de ${need[0].r}${fw ? ` con ${fmtNum(fw)} ${u}` : ''}. La próxima vez repites esta sesión.`); continue; }
+      if (e.progAt + 1 >= n) {
+        rex.prog.pos = 0;
+        if (fw) { rex.prog.w = round1(fw + progInc(rex)); progNotes.push(`¡Terminaste la progresión de ${rex.name}! Partes de nuevo desde la primera sesión con ${fmtNum(rex.prog.w)} ${u} (antes ${fmtNum(fw)} ${u}).`); }
+      } else rex.prog.pos = e.progAt + 1;
+      continue;
+    }
     rex.prog.pos = (e.progAt + 1) % n;
     if (e.progRecord && rex.unit !== 'placas') {
       const best = Math.max(...done.sets.filter(x => x.w != null && x.r != null).map(x => e1rmEx(done, x, w.date)));
@@ -9426,6 +9485,20 @@ $app.addEventListener('click', async e => {
       if (g) { ex.prog = { text: '', pos: 0, ...(ex.prog || {}), base: g }; save(); render(); }
       break;
     }
+    case 'exprog-fuerza': {   // plantilla 3x3 → 5x5 con el mismo peso
+      const ex = edEx(i);
+      if (ex.prog && (ex.prog.text || '').trim() && !(await ask('¿Reemplazar lo que tienes escrito por la progresión 3x3 a 5x5?', 'Reemplazar'))) break;
+      const g = progWGuess(ex);
+      ex.prog = { ...(ex.prog || {}), text: PROG_FUERZA, pos: 0, ...(!(ex.prog && ex.prog.w > 0) && g ? { w: g } : {}) };
+      exProgOpen.add(ex.id);
+      save(); render();
+      break;
+    }
+    case 'exprog-wguess': {
+      const ex = edEx(i), g = progWGuess(ex);
+      if (g && ex.prog) { ex.prog.w = g; save(); render(); }
+      break;
+    }
     case 'exprog-pos': {
       const ex = edEx(i);
       if (ex.prog) { ex.prog.pos = +el.dataset.k; save(); render(); }
@@ -10709,11 +10782,12 @@ $app.addEventListener('input', e => {
     ex.goalRirBy = by;
     repsByOpen.add(ex.id);
   }
-  else if (bind === 'exprog-text' || bind === 'exprog-base') {
+  else if (bind === 'exprog-text' || bind === 'exprog-base' || bind === 'exprog-w' || bind === 'exprog-inc') {
     const ex = edEx(i);
     ex.prog = { text: '', pos: 0, ...(ex.prog || {}) };
+    const key = { 'exprog-base': 'base', 'exprog-w': 'w', 'exprog-inc': 'inc' }[bind];
     if (bind === 'exprog-text') ex.prog.text = el.value;
-    else { const v = num(el.value); if (v > 0 && v < 2000) ex.prog.base = v; else if (!el.value.trim()) delete ex.prog.base; }
+    else { const v = num(el.value); if (v > 0 && v < 2000) ex.prog[key] = v; else if (!el.value.trim()) delete ex.prog[key]; }
     const prev = $app.querySelector(`.exprog-prev[data-i="${i}"]`);
     if (prev) prev.innerHTML = progPrevHtml(ex, i);   // sin redibujar todo (para no cerrar el teclado)
   }
@@ -10801,9 +10875,15 @@ $app.addEventListener('focusout', e => {
   } else if (bind === 'gym-name') {   // vacío: vuelve a un nombre
     const g = gymsList().find(x => x.id === e.target.dataset.id);
     if (g && !g.name.trim()) { g.name = 'Gimnasio'; e.target.value = g.name; save(); }
-  } else if (bind === 'exprog-base') {
+  } else if (bind === 'exprog-base' || bind === 'exprog-w' || bind === 'exprog-inc') {
     const ex = curRoutine() && edEx(+e.target.dataset.i);
-    if (ex && ex.prog) { e.target.value = ex.prog.base ? toField(ex.prog.base) : ''; refresh(); }
+    if (ex && ex.prog) {   // muestra el valor guardado (si escribiste algo inválido vuelve al anterior)
+      const k = { 'exprog-base': 'base', 'exprog-w': 'w' }[bind];
+      e.target.value = bind === 'exprog-inc' ? toField(progInc(ex)) : ex.prog[k] ? toField(ex.prog[k]) : '';
+      refresh();
+    }
+  } else if (bind === 'exprog-text') {
+    if (curRoutine()) refresh();   // aparecen o se esconden "Peso de trabajo" y "1RM base" según lo escrito
   } else if (bind === 'ex-repby' || bind === 'ex-rirby') {
     const ex = curRoutine() && edEx(+e.target.dataset.i);
     if (ex) e.target.value = (ex[bind === 'ex-repby' ? 'goalRepsBy' : 'goalRirBy'] || [])[+e.target.dataset.j] || '';
