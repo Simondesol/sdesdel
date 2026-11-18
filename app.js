@@ -1033,6 +1033,8 @@ function viewDietEditor(id) {
     return `<section class="card meal-edit">
       <div class="meal-title">
         <input class="grow" data-bind="meal-name" data-m="${mi}" value="${esc(meal.name)}" aria-label="Nombre de la comida">
+        ${diet.meals.length > 1 ? `<button class="icon small" data-action="meal-move" data-m="${mi}" data-d="-1" aria-label="Subir comida" title="Subir"${mi === 0 ? ' disabled' : ''}>↑</button>
+        <button class="icon small" data-action="meal-move" data-m="${mi}" data-d="1" aria-label="Bajar comida" title="Bajar"${mi === diet.meals.length - 1 ? ' disabled' : ''}>↓</button>` : ''}
         <button class="icon small" data-action="meal-dup" data-m="${mi}" aria-label="Duplicar comida" title="Duplicar comida">⧉</button>
         <button class="icon small danger" data-action="meal-del" data-m="${mi}" aria-label="Eliminar comida">${TRASH_ICON}</button>
       </div>
@@ -10280,6 +10282,17 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       const diet = dietById(routeParts()[1]);
       diet.meals.push({ id: uid(), name: `Comida ${diet.meals.length + 1}`, items: [] });
       save(); render();
+      break;
+    }
+    case 'meal-move': {   // sube o baja la comida un lugar
+      const diet = dietById(routeParts()[1]), m = +el.dataset.m, to = m + +el.dataset.d;
+      if (to < 0 || to >= diet.meals.length) break;
+      [diet.meals[m], diet.meals[to]] = [diet.meals[to], diet.meals[m]];
+      save(); render();
+      const btn = $app.querySelector(`[data-action="meal-move"][data-m="${to}"][data-d="${el.dataset.d}"]`);
+      const card = $app.querySelector(`[data-bind="meal-name"][data-m="${to}"]`);
+      if (card) card.closest('.meal-edit').scrollIntoView({ block: 'nearest' });
+      if (btn && !btn.disabled) btn.focus();
       break;
     }
     case 'meal-dup': {
