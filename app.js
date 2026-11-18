@@ -1063,6 +1063,7 @@ function viewDietEditor(id) {
     <p class="muted hint">¿Falta un alimento? <a href="#/alimento/nuevo">Créalo aquí</a> y vuelve. Para cambiar uno por otro equivalente, toca su nombre (⇄).</p>
     <button class="btn primary block" data-action="diet-done" style="margin-top:20px">Terminar dieta</button>
     <button class="btn block" data-action="share-diet">Compartir dieta</button>
+    <button class="btn block" data-action="diet-dup">Duplicar dieta</button>
     <button class="btn ghost block danger-text" data-action="diet-del">Eliminar dieta</button>`;
 }
 
@@ -10368,6 +10369,22 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
     case 'diet-done':
       location.replace('#/nutricion/dietas');
       break;
+    case 'diet-dup': {
+      // Copia de la dieta (mismas comidas y cantidades) para hacer una parecida; no toma los días de la original
+      const diet = dietById(routeParts()[1]);
+      let name = `${diet.name} (copia)`;
+      for (let n = 2; N().diets.some(d => sameName(d.name, name)); n++) name = `${diet.name} (copia ${n})`;
+      const copy = { ...clone(diet), id: uid(), name, meals: diet.meals.map(m => ({ ...clone(m), id: uid() })) };
+      N().diets.splice(N().diets.indexOf(diet) + 1, 0, copy);
+      save();
+      location.replace('#/dieta/' + copy.id);
+      setTimeout(() => {
+        showNote('Dieta duplicada. Cámbiale el nombre y lo que quieras.');
+        const input = $app.querySelector('[data-bind="diet-name"]');
+        if (input) { input.scrollIntoView({ block: 'center' }); input.focus(); input.select(); }
+      }, 150);
+      break;
+    }
     case 'diet-del': {
       const diet = dietById(routeParts()[1]);
       if (!await ask(`¿Eliminar la dieta "${diet.name}"?`)) return;
