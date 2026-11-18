@@ -2876,13 +2876,15 @@ const shareText = ({ name, code, kind }) => kind === 'program'
 const routinePayload = r => ({ name: r.name, exercises: r.exercises.map(ex => ({ name: ex.name, unit: ex.unit, rest: ex.rest || 0, rir: !!ex.rir, ...planFields(ex) })) });
 
 // Se comparten las comidas con sus cantidades y los alimentos propios que usa (los de la base ya los tiene todo el mundo)
+// Peso por unidad de un alimento (lo que hace que "1 marraqueta" sean 100 g)
+const unitInfo = f => Object.fromEntries(['unitG', 'unitLabel', 'view', 'uw', 'unitName'].filter(k => f[k] != null).map(k => [k, f[k]]));
 function dietPayload(d) {
   const foods = new Map();
   const meals = d.meals.map(m => ({
     name: m.name,
     items: m.items.filter(it => foodById(it.foodId)).map(it => {
       const f = foodById(it.foodId);
-      if (!f.base) foods.set(f.id, { id: f.id, name: f.name, kcal: f.kcal, p: f.p, c: f.c, f: f.f, ...(isUnit(f) ? { per: 'unit' } : {}) });
+      if (!f.base) foods.set(f.id, { id: f.id, name: f.name, kcal: f.kcal, p: f.p, c: f.c, f: f.f, ...(isUnit(f) ? { per: 'unit' } : {}), ...unitInfo(f) });
       return it.n != null ? { foodId: it.foodId, n: it.n } : { foodId: it.foodId, g: it.g || 0 };
     }),
   }));
@@ -2972,9 +2974,9 @@ async function importDiet(data) {
   const ids = new Map();
   for (const f of d.foods || []) {
     const same = N().foods.find(x => sameName(x.name, f.name) && x.kcal === f.kcal && x.p === f.p && x.c === f.c && x.f === f.f && isUnit(x) === (f.per === 'unit'));
-    if (same) { ids.set(f.id, same.id); continue; }
+    if (same) { if (f.unitG && !same.unitG && !isUnit(same)) Object.assign(same, unitInfo(f)); ids.set(f.id, same.id); continue; }
     const taken = N().foods.some(x => sameName(x.name, f.name));
-    const food = { id: uid(), name: taken ? `${f.name} (${from || 'compartido'})` : f.name, kcal: f.kcal, p: f.p, c: f.c, f: f.f, ...(f.per === 'unit' ? { per: 'unit' } : {}) };
+    const food = { id: uid(), name: taken ? `${f.name} (${from || 'compartido'})` : f.name, kcal: f.kcal, p: f.p, c: f.c, f: f.f, ...(f.per === 'unit' ? { per: 'unit' } : {}), ...unitInfo(f) };
     N().foods.push(food);
     ids.set(f.id, food.id);
   }
@@ -2984,7 +2986,12 @@ async function importDiet(data) {
     meals: d.meals.map(m => ({
       id: uid(),
       name: m.name,
-      items: m.items.map(it => ({ ...it, foodId: ids.get(it.foodId) || it.foodId })).filter(it => foodById(it.foodId)),
+      items: m.items.map(it => ({ ...it, foodId: ids.get(it.foodId) || it.foodId })).filter(it => foodById(it.foodId)).map(it => {
+        const fd = foodById(it.foodId), src = (d.foods || []).find(x => (ids.get(x.id) || x.id) === it.foodId);
+        if (it.n == null || fd.unitG || isUnit(fd) || !(src && src.unitG)) return it;
+        const { n, ...rest } = it;
+        return { ...rest, g: Math.round(n * src.unitG) };
+      }),
     })),
   };
   N().diets.push(diet);
