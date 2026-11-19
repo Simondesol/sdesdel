@@ -2707,6 +2707,14 @@ function viewAccount() {
       <button class="btn block" data-action="gym-add" style="margin-top:0">+ Agregar gimnasio</button>
     </section>
 
+    <h2>Semana de descarga</h2>
+    <section class="card stack deload-acct">
+      ${deloadOn() ? `<p class="muted" style="margin:0"><strong>Activada.</strong> Esta semana entrenas con la mitad de las series y 10% menos de peso. El lunes vuelves a lo normal.</p>
+      <button class="btn block" data-action="deload-off" style="margin-top:0">Terminarla</button>`
+      : `<p class="muted" style="margin:0">Una semana suave para recuperarte: mismas rutinas, la mitad de las series y 10% menos de peso. Se termina sola el lunes. Desdel te la sugiere cuando llevas ${DELOAD_WEEKS} semanas seguidas, pero puedes activarla cuando quieras.</p>
+      <button class="btn block" data-action="deload-set" style="margin-top:0">Activar semana de descarga</button>`}
+    </section>
+
     <h2>Tus datos</h2>
     <section class="card stack">
       <p class="muted" style="margin:0">Descarga tu historial en un Excel ordenado: resumen y progreso de cada ejercicio, cada entreno y serie, y tu peso y medidas.</p>
@@ -10457,6 +10465,10 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       openShare('workout', el.dataset.id);
       break;
     case 'deload-on':
+      setDeload(true);
+      break;
+    case 'deload-set':   // desde Cuenta, cuando tú quieras
+      if (!await ask('¿Activar la semana de descarga? Desde hoy hasta el domingo entrenas con la mitad de las series y 10% menos de peso. Tu rutina no cambia.', 'Activar')) return;
       setDeload(true);
       break;
     case 'deload-off':
