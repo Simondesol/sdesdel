@@ -24,6 +24,9 @@ html, body {
 }
 
 body { padding-bottom: calc(80px + env(safe-area-inset-bottom)); }
+/* Mantener apretado no selecciona texto (ni abre la búsqueda de Google), salvo donde escribes y en los mensajes que te mandan */
+body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+input, textarea, select, [contenteditable], .msg:not(.mine) { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
 
 #app { max-width: 560px; margin: 0 auto; padding: 0 16px 24px; }
 
