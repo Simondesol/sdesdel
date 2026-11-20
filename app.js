@@ -176,7 +176,8 @@ const gymName = id => (gymsList().find(x => x.id === id) || {}).name || 'Otro gi
 const gymOf = w => w.gym || GYM0;
 const draftGym = d => d.gym || (d.editOf ? GYM0 : curGym());
 const ensureGyms = () => { if (!db.body.gyms || !db.body.gyms.length) db.body.gyms = [{ id: GYM0, name: 'Gimnasio actual' }]; return db.body.gyms; };
-const MACHINE_RE = /maquina|polea|cable|smith|multipower|prensa|hack|jalon|pec ?deck|peck|contractora|abductor|aductor|extension de (cuadriceps|piernas)|curl femoral|curl de piernas?|chest press|crossover|cruce de|remo en t\b|t-?bar|landmine|pendulo|belt squat|v-?squat|asistid|katana/;
+const MACHINE_RE = /maquina|polea|cable|smith|multipower|prensa|hack|jalon|pec ?deck|peck|contractora|abductor|aductor|extension de (cuadriceps|piernas)|curl femoral|curl de piernas?|chest press|crossover|cruce de|remo en t\b|t-?bar|landmine|pendulo|belt squat|v-?squat|asistid|katana|cuerda|barra t\b|remo sentado|hammer(?! curl)|pallof|soleo|(talones|pantorrillas?|gemelos) sentado/;
+const MACHINE_GUIDES = new Set(['face-pull', 'face-pull-rodillas', 'pallof', 'pantorrillas-sentado', 'triceps-cuerda', 'remo-barra-t', 'remo-barra-t-apoyado']);
 const gymExCache = new Map();
 function gymSplitEx(exerciseId, ex) {
   const o = (db.body.gymEx || {})[exerciseId];
@@ -185,7 +186,7 @@ function gymSplitEx(exerciseId, ex) {
   const key = `${exerciseId}|${ex.name}|${ex.guide}|${ex.unit}`;
   if (!gymExCache.has(key)) {
     const g = ex.guide && ex.guide !== 'none' ? GUIDE_BY_ID.get(ex.guide) : guideFor(ex.name, ex.guide);
-    gymExCache.set(key, ex.unit === 'placas' || MACHINE_RE.test(normText(`${ex.name || ''} ${g ? `${g.id} ${g.name}` : ''}`)));
+    gymExCache.set(key, ex.unit === 'placas' || (g && MACHINE_GUIDES.has(g.id)) || MACHINE_RE.test(normText(`${ex.name || ''} ${g ? `${g.id} ${g.name}` : ''}`)));
   }
   return gymExCache.get(key);
 }
@@ -1878,7 +1879,7 @@ const INFO = {
   rm: '1RM = el peso máximo que podrías levantar 1 vez. Desdel lo estima con tu 1ª serie (peso y repeticiones), así ves si te estás haciendo más fuerte aunque cambies las repeticiones.',
   rir: 'RIR = repeticiones en reserva: cuántas más podrías haber hecho con buena técnica. RIR 2 es que te quedaban 2; RIR 0, que no podías hacer otra. No es lo mismo que el fallo: al fallo intentas otra repetición y no la completas.',
   prog: 'Escribe una línea por sesión. 3x3 (sin % ni RPE) = 3 series de 3 con tu peso de trabajo, el mismo en todas las sesiones: si completas todas las series pasas a la siguiente, si no la repites, y al terminar la última el peso sube y vuelves a empezar. 8x80% = 1 serie de 8 repeticiones con el 80% de tu 1RM base. 2x8x75% = 2 series de 8 al 75%. Separa con coma lo que va en la misma sesión: 8x80%, 2x8x75%. 4x4 @8 = 4 series de 4 a RPE 8, o sea, te quedan 2 repeticiones (también vale 4x4 rir2); el peso se calcula con tu 1RM. "Intentar récord" = ese día buscas una marca nueva y, si superas tu 1RM base, al terminar te propongo actualizarlo. Los pesos son exactos, sin redondear a discos. Después de la última sesión vuelve a la primera.',
-  opts: 'RIR: al entrenar anotas cuántas repeticiones te quedaban en cada serie (y puedes ponerle un RIR objetivo). Peso corporal: para dominadas, fondos y similares; lo que anotas es el lastre. Unilateral: anotas las repeticiones de cada lado. Calentamiento: al entrenar, arriba de tus series aparecen las series de aproximación con su peso, calculadas desde tu primera serie: el primer ejercicio de cada músculo lleva calentamiento completo y, si el músculo ya trabajó antes en la rutina, una sola aproximación. Si tu primera serie es pesada (1 a 5 repeticiones) lleva una aproximación más y más cerca del peso; si es larga (11 o más), una menos. En dominadas y fondos con lastre, primero sin lastre y después con la mitad. Apágalo en los ejercicios donde no lo quieras. Pesos por gimnasio (si entrenas en más de uno): en máquinas y poleas tus pesos y marcas se separan por gimnasio, porque cada máquina pesa distinto; apágalo si en todos los gimnasios pesa igual.',
+  opts: 'RIR: al entrenar anotas cuántas repeticiones te quedaban en cada serie (y puedes ponerle un RIR objetivo). Peso corporal: para dominadas, fondos y similares; lo que anotas es el lastre. Unilateral: anotas las repeticiones de cada lado. Calentamiento: al entrenar, arriba de tus series aparecen las series de aproximación con su peso, calculadas desde tu primera serie: el primer ejercicio de cada músculo lleva calentamiento completo y, si el músculo ya trabajó antes en la rutina, una sola aproximación. Si tu primera serie es pesada (1 a 5 repeticiones) lleva una aproximación más y más cerca del peso; si es larga (11 o más), una menos. En dominadas y fondos con lastre, primero sin lastre y después con la mitad. Apágalo en los ejercicios donde no lo quieras.',
 };
 const infoOpen = new Set();
 const infoBtn = k => `<button class="info-btn ${infoOpen.has(k) ? 'on' : ''}" data-action="info" data-k="${k}" aria-label="¿Qué es?" aria-expanded="${infoOpen.has(k)}">ⓘ</button>`;
@@ -2107,7 +2108,6 @@ function viewRoutine() {
         <button class="chip toggle ${ex.bw ? 'on' : ''}" data-action="toggle-bw" data-i="${i}" aria-pressed="${!!ex.bw}" title="Dominadas, dips…: lo que anotas es el lastre">Peso corporal</button>
         <button class="chip toggle ${ex.side ? 'on' : ''}" data-action="toggle-side" data-i="${i}" aria-pressed="${!!ex.side}" title="Búlgara, remo a una mano…: repeticiones de cada lado">Unilateral</button>
         <button class="chip toggle ${ex.warm !== 'never' ? 'on' : ''}" data-action="ex-warm" data-i="${i}" aria-pressed="${ex.warm !== 'never'}" title="Series de aproximación sugeridas al entrenar">Calentamiento</button>
-        ${multiGym() && !viewing ? (on => `<button class="chip toggle ${on ? 'on' : ''}" data-action="ex-gym" data-i="${i}" aria-pressed="${on}" title="Máquinas y poleas pesan distinto en cada gimnasio">Pesos por gimnasio</button>`)(gymSplitEx(ex.id, ex)) : ''}
       </div>
       <button class="link small" data-action="info" data-k="opts" style="justify-self:start">${infoOpen.has('opts') ? 'Ocultar' : '¿Qué hace cada opción?'}</button>
       ${infoBox('opts')}
@@ -2696,7 +2696,7 @@ function viewAccount() {
 
     <h2>Gimnasios</h2>
     <section class="card stack gyms-card">
-      <span class="muted small">¿Entrenas en más de un gimnasio? Agrégalo: en máquinas y poleas tus pesos y marcas se separan por gimnasio. Con barra, mancuernas y peso corporal siguen juntos.</span>
+      <span class="muted small">¿Entrenas en más de un gimnasio? Agrégalo: en máquinas y poleas tus pesos y marcas se separan por gimnasio. Con barra, mancuernas y peso corporal siguen juntos. Si una máquina no se separa, ponle "máquina" en el nombre.</span>
       ${gymsList().map(g => `<div class="gym-item">
         <div class="gym-row">
           <input data-bind="gym-name" data-id="${g.id}" value="${esc(g.name)}" maxlength="40" autocomplete="off" aria-label="Nombre del gimnasio">
@@ -9396,12 +9396,6 @@ $app.addEventListener('click', async e => {
       const r = curRoutine();
       if (!r) break;
       if (el.dataset.id) r.gym = el.dataset.id; else delete r.gym;
-      save(); render();
-      break;
-    }
-    case 'ex-gym': {
-      const ex = edEx(i);
-      (db.body.gymEx ||= {})[ex.id] = !gymSplitEx(ex.id, ex);
       save(); render();
       break;
     }
