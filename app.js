@@ -1153,9 +1153,9 @@ function calorieTarget() {
     const missing = [];
     if (!last) missing.push(['tu peso', '#/peso']);
     if (bf == null) {
-      if (!b.heightCm) missing.push(['tu estatura', '#/cuenta']);
-      if (!b.sex) missing.push(['tu sexo', '#/cuenta']);
-      if (!age) missing.push(['tu año de nacimiento', '#/cuenta']);
+      if (!b.heightCm) missing.push(['tu estatura', '#/cuenta/datos']);
+      if (!b.sex) missing.push(['tu sexo', '#/cuenta/datos']);
+      if (!age) missing.push(['tu año de nacimiento', '#/cuenta/datos']);
     }
     return { missing };
   }
@@ -2635,10 +2635,64 @@ function syncHtml() {
 const paintSync = () => { const el = $app.querySelector('[data-sync]'); if (el) el.innerHTML = syncHtml(); };
 
 const IG_USER = 'desdel.app';   // cuenta de Instagram de Desdel (para las ideas por DM)
+// Cuenta: un menú corto por grupos; cada fila abre su pantalla (#/cuenta/datos, /clave, /gimnasios, /descarga, /quiz, /coach)
+const acctRow = (label, { href = '', action = '', value = '', on = false, ext = false } = {}) => {
+  const inner = `<span class="grow">${label}</span>${value ? `<span class="acct-val ${on ? 'on' : ''}">${value}</span>` : ''}<span class="chev" aria-hidden="true">›</span>`;
+  return action ? `<button class="acct-row" data-action="${action}">${inner}</button>`
+    : `<a class="acct-row" href="${href}"${ext ? ' target="_blank" rel="noopener"' : ''}>${inner}</a>`;
+};
 function viewAccount() {
-  const bd = db.body;
+  const sub = routeParts()[1];
+  if (sub === 'datos') return viewAcctData();
+  if (sub === 'clave') return viewAcctPassword();
+  if (sub === 'gimnasios') return viewAcctGyms();
+  if (sub === 'descarga') return viewAcctDeload();
+  if (sub === 'quiz') return viewAcctQuiz();
+  if (sub === 'coach') return viewAcctCoach();
+  const admin = (probeAdmin(), localStorage.getItem(adminKey()) === '1');
   return `${header('Cuenta', { back: true })}
-    <h2>Mis datos</h2>
+    <h2>Tu perfil</h2>
+    <section class="card acct-group">
+      ${acctRow('Mis datos', { href: '#/cuenta/datos', value: esc(user.username || '') })}
+      ${acctRow('Cambiar contraseña', { href: '#/cuenta/clave' })}
+    </section>
+
+    <h2>Entrenamiento</h2>
+    <section class="card acct-group">
+      ${acctRow('Gimnasios', { href: '#/cuenta/gimnasios', value: multiGym() ? esc(gymsList().find(g => g.id === curGym())?.name || '') : '' })}
+      ${acctRow('Semana de descarga', { href: '#/cuenta/descarga', value: deloadOn() ? 'Activada' : '', on: deloadOn() })}
+      ${acctRow('Quiz entre series', { href: '#/cuenta/quiz', value: quizOn() ? 'Activado' : 'Desactivado', on: quizOn() })}
+    </section>
+
+    <h2>Coach</h2>
+    <section class="card acct-group">
+      ${acctRow('Modo coach', { href: '#/cuenta/coach', value: coachOn() ? 'Activado' : 'Desactivado', on: coachOn() })}
+      ${coachOn() ? acctRow('Mis atletas', { href: '#/alumnos' }) : ''}
+      ${admin ? acctRow('Estadísticas de Desdel', { href: '#/estadisticas' }) : ''}
+    </section>
+
+    <h2>Tus datos</h2>
+    <section class="card acct-group">
+      ${acctRow('Descargar mi historial (Excel)', { action: 'export-excel' })}
+    </section>
+
+    <h2>Ayuda</h2>
+    <section class="card acct-group">
+      ${acctRow('Ver tutorial', { action: 'tour-open' })}
+      ${acctRow('Volver a mostrar los consejos', { action: 'tips-reset' })}
+      ${acctRow('Sugerir una idea', { href: `https://ig.me/m/${IG_USER}`, value: 'Instagram', ext: true })}
+    </section>
+
+    <p class="muted small acct-sync" data-sync>${syncHtml()}</p>
+    <button class="btn ghost block danger-text" data-action="logout" style="margin-top:16px">Cerrar sesión</button>
+    <div class="account-foot">
+      <a href="privacidad.html" target="_blank" rel="noopener">Política de privacidad</a>
+      <a href="#/eliminar-cuenta">Eliminar mi cuenta</a>
+    </div>`;
+}
+function viewAcctData() {
+  const bd = db.body;
+  return `${header('Mis datos', { back: true })}
     <form class="stack card" data-form="profile" novalidate>
       <label class="field"><span>Correo</span>
         <input class="readonly" value="${esc(user.email)}" readonly tabindex="-1" aria-label="Correo (no se puede cambiar)">
@@ -2664,37 +2718,23 @@ function viewAccount() {
       <p class="form-msg" hidden></p>
       <button class="btn primary block">Guardar cambios</button>
     </form>
-
-    <section class="card" data-sync style="margin-top:16px">${syncHtml()}</section>
-    <p class="muted hint">Tus datos se guardan en tu cuenta. Inicia sesión con el mismo correo en otro teléfono para verlos.</p>
-
-    <h2>Ayuda</h2>
-    <section class="card stack">
-      <button class="btn block" data-action="tour-open">Ver tutorial</button>
-      <button class="btn ghost block" data-action="tips-reset">Volver a mostrar los consejos</button>
-    </section>
-
-    <h2>Quiz entre series</h2>
-    <section class="card stack">
-      <div class="quiz-set"><span class="muted">Preguntas cortas de entrenamiento, nutrición y salud mientras descansas.</span>
-        <button class="chip toggle ${quizOn() ? 'on' : ''}" data-action="quiz-toggle" aria-pressed="${quizOn()}">${quizOn() ? 'Activado' : 'Desactivado'}</button></div>
-      ${quizState().n ? `<span class="muted small">${quizName()}: llevas ${quizState().ok || 0} de ${quizState().n} correctas</span>` : ''}
-    </section>
-
-    <h2>Modo coach</h2>
-    <section class="card stack">
-      <div class="quiz-set"><span class="muted">Sigue a tus atletas: ve sus entrenos, peso, medidas, nutrición y fotos, y cambia sus rutinas.</span>
-        <button class="chip toggle ${coachOn() ? 'on' : ''}" data-action="${coachOn() ? 'coach-off' : 'coach-on'}" aria-pressed="${coachOn()}">${coachOn() ? 'Activado' : 'Desactivado'}</button></div>
-      ${coachOn() ? '<a class="btn block center" href="#/alumnos" style="margin-top:0">Mis atletas</a>' : ''}
-    </section>
-
-    ${(probeAdmin(), localStorage.getItem(adminKey()) === '1') ? `<h2>Estadísticas de Desdel</h2>
-    <section class="card stack">
-      <p class="muted" style="margin:0">Usuarios, quién entrena y cuántos entrenos. Solo tú ves esto.</p>
-      <a class="btn block center stats-link" href="#/estadisticas" style="margin-top:0">Ver estadísticas</a>
-    </section>` : ''}
-
-    <h2>Gimnasios</h2>
+    <p class="muted hint">Tus datos se guardan en tu cuenta. Inicia sesión con el mismo correo en otro teléfono para verlos.</p>`;
+}
+function viewAcctPassword() {
+  return `${header('Cambiar contraseña', { back: true })}
+    <form class="stack card" data-form="password" novalidate>
+      <label class="field"><span>Contraseña actual</span>
+        <input name="current" type="password" autocomplete="current-password">
+      </label>
+      <label class="field"><span>Nueva contraseña (mínimo 6 caracteres)</span>
+        <input name="next" type="password" autocomplete="new-password">
+      </label>
+      <p class="form-msg" hidden></p>
+      <button class="btn primary block">Cambiar contraseña</button>
+    </form>`;
+}
+function viewAcctGyms() {
+  return `${header('Gimnasios', { back: true })}
     <section class="card stack gyms-card">
       <span class="muted small">¿Entrenas en más de un gimnasio? Agrégalo: en máquinas y poleas tus pesos y marcas se separan por gimnasio. Con barra, mancuernas y peso corporal siguen juntos. Si una máquina no se separa, ponle "máquina" en el nombre.</span>
       ${gymsList().map(g => `<div class="gym-item">
@@ -2705,46 +2745,32 @@ function viewAccount() {
         </div>
       </div>`).join('')}
       <button class="btn block" data-action="gym-add" style="margin-top:0">+ Agregar gimnasio</button>
-    </section>
-
-    <h2>Semana de descarga</h2>
+    </section>`;
+}
+function viewAcctDeload() {
+  return `${header('Semana de descarga', { back: true })}
     <section class="card stack deload-acct">
       ${deloadOn() ? `<p class="muted" style="margin:0"><strong>Activada.</strong> Esta semana entrenas con la mitad de las series y 10% menos de peso. El lunes vuelves a lo normal.</p>
       <button class="btn block" data-action="deload-off" style="margin-top:0">Terminarla</button>`
       : `<p class="muted" style="margin:0">Una semana suave para recuperarte: mismas rutinas, la mitad de las series y 10% menos de peso. Se termina sola el lunes. Desdel te la sugiere cuando llevas ${DELOAD_WEEKS} semanas seguidas, pero puedes activarla cuando quieras.</p>
       <button class="btn block" data-action="deload-set" style="margin-top:0">Activar semana de descarga</button>`}
-    </section>
-
-    <h2>Tus datos</h2>
+    </section>`;
+}
+function viewAcctQuiz() {
+  return `${header('Quiz entre series', { back: true })}
     <section class="card stack">
-      <p class="muted" style="margin:0">Descarga tu historial en un Excel ordenado: resumen y progreso de cada ejercicio, cada entreno y serie, y tu peso y medidas.</p>
-      <button class="btn block" data-action="export-excel" style="margin-top:0">Descargar mi historial (Excel)</button>
-    </section>
-
-    <h2>Ideas</h2>
+      <div class="quiz-set"><span class="muted">Preguntas cortas de entrenamiento, nutrición y salud mientras descansas.</span>
+        <button class="chip toggle ${quizOn() ? 'on' : ''}" data-action="quiz-toggle" aria-pressed="${quizOn()}">${quizOn() ? 'Activado' : 'Desactivado'}</button></div>
+      ${quizState().n ? `<span class="muted small">${quizName()}: llevas ${quizState().ok || 0} de ${quizState().n} correctas</span>` : ''}
+    </section>`;
+}
+function viewAcctCoach() {
+  return `${header('Modo coach', { back: true })}
     <section class="card stack">
-      <p class="muted" style="margin:0">¿Qué le falta a Desdel? Mándame tu idea o cuéntame si algo no funciona.</p>
-      <a class="btn primary block center" href="https://ig.me/m/${IG_USER}" target="_blank" rel="noopener" style="margin-top:0">Sugerir una idea</a>
-      <span class="muted small">Se abre un mensaje a @${IG_USER} en Instagram.</span>
-    </section>
-
-    <h2>Cambiar contraseña</h2>
-    <form class="stack" data-form="password" novalidate>
-      <label class="field"><span>Contraseña actual</span>
-        <input name="current" type="password" autocomplete="current-password">
-      </label>
-      <label class="field"><span>Nueva contraseña (mínimo 6 caracteres)</span>
-        <input name="next" type="password" autocomplete="new-password">
-      </label>
-      <p class="form-msg" hidden></p>
-      <button class="btn block">Cambiar contraseña</button>
-    </form>
-
-    <button class="btn ghost block danger-text" data-action="logout" style="margin-top:32px">Cerrar sesión</button>
-    <div class="account-foot">
-      <a href="privacidad.html" target="_blank" rel="noopener">Política de privacidad</a>
-      <a href="#/eliminar-cuenta">Eliminar mi cuenta</a>
-    </div>`;
+      <div class="quiz-set"><span class="muted">Sigue a tus atletas: ve sus entrenos, peso, medidas, nutrición y fotos, y cambia sus rutinas.</span>
+        <button class="chip toggle ${coachOn() ? 'on' : ''}" data-action="${coachOn() ? 'coach-off' : 'coach-on'}" aria-pressed="${coachOn()}">${coachOn() ? 'Activado' : 'Desactivado'}</button></div>
+      ${coachOn() ? '<a class="btn block center" href="#/alumnos" style="margin-top:0">Mis atletas</a>' : ''}
+    </section>`;
 }
 
 // Eliminar la cuenta: explica qué se borra, ofrece descargar el historial y pide la contraseña
@@ -6229,7 +6255,7 @@ function ffmiMissing() {
   if (currentBf() == null) miss.push(viewing ? 'su % de grasa' : 'tu % de grasa (anótalo aquí arriba)');
   if (!db.bodyweight.length) miss.push(`${su} peso`);
   const list = miss.length > 1 ? `${miss.slice(0, -1).join(', ')} y ${miss[miss.length - 1]}` : miss[0];
-  return `${list}.${!viewing && (!db.body.heightCm || !db.body.sex) ? ' La estatura y el sexo se ponen en <a href="#/cuenta">⚙️ Cuenta → Mis datos</a>' : ''}`;
+  return `${list}.${!viewing && (!db.body.heightCm || !db.body.sex) ? ' La estatura y el sexo se ponen en <a href="#/cuenta/datos">⚙️ Cuenta → Mis datos</a>' : ''}`;
 }
 
 function bodyweightCard() {
@@ -6458,7 +6484,7 @@ function viewSkinfolds() {
   const b = db.body, age = skinAge();
   if (!b.sex || !age) {
     return `${header('Pliegues', { back: true })}
-      <p class="muted card">Para calcular tu % de grasa con pliegues falta ${[!b.sex && 'tu sexo', !age && 'tu año de nacimiento'].filter(Boolean).join(' y ')}. Ponlo en <a href="#/cuenta">⚙️ Cuenta → Mis datos</a>.</p>`;
+      <p class="muted card">Para calcular tu % de grasa con pliegues falta ${[!b.sex && 'tu sexo', !age && 'tu año de nacimiento'].filter(Boolean).join(' y ')}. Ponlo en <a href="#/cuenta/datos">⚙️ Cuenta → Mis datos</a>.</p>`;
   }
   const sites = SKIN_SITES[b.sex], today = db.skinfolds.find(e => e.date === todayKey());
   const form = `<form class="stack card" data-form="skin" novalidate>
@@ -7333,6 +7359,7 @@ function parentRoute() {
     listos: '#/programas', programa: '#/listos', miprograma: '#/programas',
     alimento: '#/nutricion/alimentos', dieta: '#/nutricion/dietas', objetivo: '#/nutricion/dietas',
     chat: '#/social', gymbro: '#/social', perfil: '#/social', privacidad: '#/perfil/yo', pliegues: '#/grasa',
+    cuenta: arg ? '#/cuenta' : '#/',
   }[screen] || '#/';
 }
 // Volver atrás. Si no hay pantalla anterior (ej. la app se reabrió directo en el entrenamiento),
