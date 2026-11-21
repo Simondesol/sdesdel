@@ -225,7 +225,8 @@ function bestSets(exerciseId, before = db.workouts.length, unit = null, rid = nu
   return best;
 }
 
-// Mejor bajada de cada serie (best[j][k]: bajada k de la serie j), igual que bestSets
+// Mejor bajada de cada serie (best[j][k]: bajada k de la serie j), igual que bestSets. El rest pause va aparte (best[j]['rp' + k])
+const dKey = (x, k) => (x.rp ? `rp${k}` : k);
 function bestDrops(exerciseId, before = db.workouts.length, unit = null, rid = null, gym = null, machine = '') {
   const best = [];
   for (let n = 0; n < before; n++) {
@@ -236,9 +237,9 @@ function bestDrops(exerciseId, before = db.workouts.length, unit = null, rid = n
     if (gymSkip(w, ex, gym, exerciseId) || machineSkip(ex, machine)) continue;
     const bw = bwFor(ex, w.date);
     ex.sets.forEach((s, j) => (s.drops || []).forEach((x, k) => {
-      const c = { w: x.w, r: x.r, unit: ex.unit, bw };
+      const c = { w: x.w, r: x.r, unit: ex.unit, bw }, key = dKey(x, k);
       best[j] ||= [];
-      if (!best[j][k] || cmpSet(c, best[j][k]) > 0) best[j][k] = c;
+      if (!best[j][key] || cmpSet(c, best[j][key]) > 0) best[j][key] = c;
     }));
   }
   return best;
@@ -1655,7 +1656,7 @@ function prefillSets(prev, rir, goalSets = 0, dropset = false) {
   const ph = s => ({ w: '', r: '', ...(rir ? { rir: '' } : {}), pw: toField(s.w), pr: toField(s.r), ...(isSideSet(s) ? { pr2: toField(s.r2) } : {}), ...(s.note ? { pnote: s.note } : {}), ...(rir && s.rir != null ? { prir: toField(s.rir) } : {}) });
   const sets = prev ? prev.ex.sets.map(s => ({
     ...ph(s),
-    ...(s.drops && s.drops.length ? { drops: s.drops.map(x => ({ w: '', r: '', pw: toField(x.w), pr: toField(x.r) })) } : {}),
+    ...(s.drops && s.drops.length ? { drops: s.drops.map(x => ({ w: '', r: '', pw: toField(x.w), pr: toField(x.r), ...(x.rp ? { rp: true } : {}) })) } : {}),
   })) : [];
   while (sets.length < Math.max(1, goalSets || 0)) {
     const last = sets[sets.length - 1];
@@ -1704,7 +1705,8 @@ const goalFields = ex => ({
 });
 
 // Texto de una serie guardada: "40 kg × 10" o "40 kg × 10 · RIR 2"
-const dropsText = s => (s.drops && s.drops.length ? s.drops.map(x => ` ↓ ${fmtNum(x.w)}×${fmtNum(x.r)}`).join('') : '');
+const dropsText = s => (s.drops && s.drops.length ? s.drops.map(x => (x.rp ? ` + ${fmtNum(x.r)}` : ` ↓ ${fmtNum(x.w)}×${fmtNum(x.r)}`)).join('')
+  + (s.drops.some(x => x.rp) ? ' (rest pause)' : '') : '');
 const setText = (s, unit) => `${fmtNum(s.w)} ${unit} × ${repsText(s)}${s.rir != null ? ` · RIR ${fmtNum(s.rir)}` : ''}${dropsText(s)}`;
 let setNoteOpen = null;   // serie con la casilla de nota abierta ("i-j")
 let setMenuOpen = null;   // serie con su menú ⋮ abierto ("i-j")
@@ -2303,8 +2305,10 @@ function viewWorkout() {
       <div class="set-pop" role="menu" aria-label="Opciones de la serie ${label}">
         ${s.note && s.note.trim() ? `<button class="set-pop-item" role="menuitem" data-action="set-note-del" data-i="${i}" data-j="${j}">Quitar nota</button>`
           : `<button class="set-pop-item" role="menuitem" data-action="set-note" data-i="${i}" data-j="${j}">Agregar nota</button>`}
-        <button class="set-pop-item" role="menuitem" data-action="add-drop" data-i="${i}" data-j="${j}">${(s.drops || []).length ? 'Agregar otro dropset' : 'Agregar dropset'}</button>
-        ${(s.drops || []).length ? `<button class="set-pop-item" role="menuitem" data-action="del-drop" data-i="${i}" data-j="${j}" data-k="${s.drops.length - 1}">Quitar dropset</button>` : ''}
+        <button class="set-pop-item" role="menuitem" data-action="add-drop" data-i="${i}" data-j="${j}">${(s.drops || []).some(x => !x.rp) ? 'Agregar otro dropset' : 'Agregar dropset'}</button>
+        ${(s.drops || []).some(x => !x.rp) ? `<button class="set-pop-item" role="menuitem" data-action="del-drop" data-i="${i}" data-j="${j}" data-k="${s.drops.map(x => !x.rp).lastIndexOf(true)}">Quitar dropset</button>` : ''}
+        <button class="set-pop-item" role="menuitem" data-action="add-rp" data-i="${i}" data-j="${j}">${(s.drops || []).some(x => x.rp) ? 'Agregar otro rest pause' : 'Agregar rest pause'}</button>
+        ${(s.drops || []).some(x => x.rp) ? `<button class="set-pop-item" role="menuitem" data-action="del-drop" data-i="${i}" data-j="${j}" data-k="${s.drops.map(x => !!x.rp).lastIndexOf(true)}">Quitar rest pause</button>` : ''}
         ${editing ? '' : `<button class="set-pop-item" role="menuitem" data-action="set-video" data-i="${i}" data-j="${j}">${s.video ? 'Cambiar video' : 'Grabar o subir video'}</button>`}
         <button class="set-pop-item danger" role="menuitem" data-action="del-set" data-i="${i}" data-j="${j}">${TRASH_ICON}Borrar serie</button>
       </div>
@@ -2313,7 +2317,19 @@ function viewWorkout() {
   const setRow = (ex, i, s, j, label, badge = '') => {
     const best = bests.get(i);
     const dots = `${badge}<button class="set-dots${setMenuOpen === `${i}-${j}` ? ' on' : ''}" data-action="set-menu" data-i="${i}" data-j="${j}" aria-label="Opciones de la serie ${label}" aria-expanded="${setMenuOpen === `${i}-${j}`}">⋮</button>`;
-    const drops = (s.drops || []).map((x, k) => `
+    const rpW = bwEff(s, lastreEx(ex)).w;
+    const drops = (s.drops || []).map((x, k) => x.rp ? `
+      <div class="set drop rp ${ex.rir ? 'has-rir' : ''}">
+        <span class="n">RP</span>
+        <span class="rp-w" data-rpw="${i}-${j}">${rpW !== '' ? esc(rpW) : '–'}</span>
+        <span class="u">${unitShort(ex.unit)}</span>
+        <span class="x">×</span>
+        <input inputmode="numeric" enterkeyhint="next" data-bind="dr" data-i="${i}" data-j="${j}" data-k="${k}" value="${esc(x.r)}" placeholder="${esc(x.pr || 'reps')}" aria-label="Repeticiones rest pause ${k + 1} de la serie ${label}">
+        ${ex.rir ? '<span></span>' : ''}
+        <span class="mark-cell" data-mark="${i}-${j}-${k}" data-action="mark-why" data-key="${i}-${j}-${k}">${markSpan(dropCmp({ ...x, w: rpW }, ex, (dropBests.get(i)[j] || [])[dKey(x, k)]))}</span>
+      </div>
+      ${whyPop(`${i}-${j}-${k}`, liveSet({ ...x, w: rpW }, { ...ex, rir: false, side: false }), (dropBests.get(i)[j] || [])[dKey(x, k)], ex)}
+      ${bestLine((dropBests.get(i)[j] || [])[dKey(x, k)], true)}` : `
       <div class="set drop ${ex.rir ? 'has-rir' : ''}">
         <span class="n">↓</span>
         <input inputmode="decimal" enterkeyhint="next" data-bind="dw" data-i="${i}" data-j="${j}" data-k="${k}" value="${esc(x.w)}" placeholder="${esc(x.pw || (ex.unit === 'placas' ? 'placas' : 'peso'))}" aria-label="Peso bajada ${k + 1} de la serie ${label}">
@@ -3726,7 +3742,7 @@ function exportWorkouts() {
       const unit = `${ex.unit}${ex.bw && ex.unit !== 'placas' ? ' (lastre)' : ''}`;
       ex.sets.forEach((st, j) => {
         rows.push([day, w.routineName || '', ex.name, j + 1, st.w, unit, st.r, ex.side ? st.r2 : null, st.rir, st.note || '']);
-        for (const dr of st.drops || []) rows.push([day, w.routineName || '', ex.name, `${j + 1} (dropset)`, dr.w, unit, dr.r, null, null, '']);
+        for (const dr of st.drops || []) rows.push([day, w.routineName || '', ex.name, `${j + 1} (${dr.rp ? 'rest pause' : 'dropset'})`, dr.w, unit, dr.r, null, null, '']);
       });
     }
   }
@@ -7626,7 +7642,8 @@ const cleanExercises = d => d.exercises
           if (tL || tR) { set.r = tL ? num(s.r) : null; set.r2 = tR ? num(s.r2) : null; }
           else set.r2 = num(e.r2 != null && e.r2 !== '' ? e.r2 : e.r);
         }
-        const drops = (s.drops || []).map(effSet).map(x => ({ w: num(x.w), r: num(x.r) })).filter(x => x.w != null || x.r != null);
+        const drops = (s.drops || []).map(x => (x.rp ? { w: set.w, r: num(effSet(x).r), rp: true } : (y => ({ w: num(y.w), r: num(y.r) }))(effSet(x))))
+          .filter(x => (x.rp ? x.r != null : x.w != null || x.r != null));
         if (drops.length) set.drops = drops;   // bajadas del dropset
         return set;
       })
@@ -7743,7 +7760,7 @@ function makeEditBuf(id) {
       rir: !!ex.rir, ...(ex.bw ? { bw: true } : {}), ...(ex.side ? { side: true } : {}), ...(ex.guide ? { guide: ex.guide } : {}), ...(ex.machine ? { machine: ex.machine } : {}),
       sets: ex.sets.map(s => ({
         w: toField(s.w), r: toField(s.r), ...(isSideSet(s) ? { r2: toField(s.r2) } : {}), ...(s.note ? { note: s.note } : {}), ...(s.video ? { video: s.video } : {}), ...(ex.rir ? { rir: toField(s.rir) } : {}),
-        ...(s.drops ? { drops: s.drops.map(x => ({ w: toField(x.w), r: toField(x.r) })) } : {}),
+        ...(s.drops ? { drops: s.drops.map(x => ({ w: toField(x.w), r: toField(x.r), ...(x.rp ? { rp: true } : {}) })) } : {}),
       })),
     })),
   };
@@ -9801,12 +9818,20 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       if (input) input.focus();
       break;
     }
+    case 'add-rp': {
+      const st = cur().exercises[i].sets[j];
+      (st.drops ||= []).push({ w: '', r: '', rp: true });
+      save(); render();
+      const input = $app.querySelector(`[data-bind="dr"][data-i="${i}"][data-j="${j}"][data-k="${st.drops.length - 1}"]`);
+      if (input) input.focus();
+      break;
+    }
     case 'del-drop': {
       const d = cur(), st = d.exercises[i].sets[j], k = +el.dataset.k;
       const [removed] = st.drops.splice(k, 1);
       if (!st.drops.length) delete st.drops;
       save(); render();
-      undoDel('Bajada borrada', () => {
+      undoDel(removed.rp ? 'Rest pause borrado' : 'Bajada borrada', () => {
         if (cur() !== d) return;
         (st.drops ||= []).splice(Math.min(k, st.drops.length), 0, removed);
       });
@@ -10902,6 +10927,7 @@ $app.addEventListener('input', e => {
     ex.sets[j][bind] = el.value;
     const cell = $app.querySelector(`[data-mark="${i}-${j}"]`);
     if (cell && !d.deload && !d.comeback) cell.innerHTML = markSpan(liveCmp(ex.sets[j], ex, bestSets(ex.exerciseId, beforeIndex(d), ex.unit, ex.extra ? null : d.routineId, draftGym(d), ex.machine || '')[j]));
+    if (bind === 'w') { const v = bwEff(ex.sets[j], lastreEx(ex)).w; $app.querySelectorAll(`[data-rpw="${i}-${j}"]`).forEach(e => { e.textContent = v !== '' ? v : '–'; }); }
     const wl = (bind === 'w' || bind === 'r') && j === 0 && $app.querySelector(`[data-warm="${i}"]`);
     if (wl) wl.innerHTML = warmLine(d, i);
   }
@@ -10909,7 +10935,8 @@ $app.addEventListener('input', e => {
     const d = cur(), ex = d.exercises[i], k = +el.dataset.k, x = ex.sets[j].drops[k];
     x[bind === 'dw' ? 'w' : 'r'] = el.value;
     const cell = $app.querySelector(`[data-mark="${i}-${j}-${k}"]`);
-    if (cell && !d.deload && !d.comeback) cell.innerHTML = markSpan(dropCmp(x, ex, (bestDrops(ex.exerciseId, beforeIndex(d), ex.unit, ex.extra ? null : d.routineId, draftGym(d), ex.machine || '')[j] || [])[k]));
+    const xc = x.rp ? { ...x, w: bwEff(ex.sets[j], lastreEx(ex)).w } : x;
+    if (cell && !d.deload && !d.comeback) cell.innerHTML = markSpan(dropCmp(xc, ex, (bestDrops(ex.exerciseId, beforeIndex(d), ex.unit, ex.extra ? null : d.routineId, draftGym(d), ex.machine || '')[j] || [])[dKey(x, k)]));
   }
   else if (bind === 'snote') cur().exercises[i].sets[j].note = el.value;
   else if (bind === 'note') {

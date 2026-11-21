@@ -1483,3 +1483,7 @@ body.viewing .free-start { display: none; }
 .acct-val.on { color: var(--accent); font-weight: 600; }
 .acct-row .chev { flex: none; font-size: 22px; line-height: 1; }
 .acct-sync { text-align: center; margin: 20px 0 0; }
+
+/* Rest pause: mismo peso de la serie (no se escribe), solo las repeticiones */
+.set.drop.rp .n { font-size: 11px; letter-spacing: .02em; }
+.rp-w { text-align: center; color: var(--muted); font-size: 16px; align-self: center; }
