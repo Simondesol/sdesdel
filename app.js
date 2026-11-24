@@ -2309,7 +2309,7 @@ function viewWorkout() {
         ${(s.drops || []).some(x => !x.rp) ? `<button class="set-pop-item" role="menuitem" data-action="del-drop" data-i="${i}" data-j="${j}" data-k="${s.drops.map(x => !x.rp).lastIndexOf(true)}">Quitar dropset</button>` : ''}
         <button class="set-pop-item" role="menuitem" data-action="add-rp" data-i="${i}" data-j="${j}">${(s.drops || []).some(x => x.rp) ? 'Agregar otro rest pause' : 'Agregar rest pause'}</button>
         ${(s.drops || []).some(x => x.rp) ? `<button class="set-pop-item" role="menuitem" data-action="del-drop" data-i="${i}" data-j="${j}" data-k="${s.drops.map(x => !!x.rp).lastIndexOf(true)}">Quitar rest pause</button>` : ''}
-        ${editing ? '' : `<button class="set-pop-item" role="menuitem" data-action="set-video" data-i="${i}" data-j="${j}">${s.video ? 'Cambiar video' : 'Grabar o subir video'}</button>`}
+        ${editing ? '' : `<button class="set-pop-item" role="menuitem" data-action="set-video" data-i="${i}" data-j="${j}">${s.video ? 'Cambiar video' : 'Subir video'}</button>`}
         <button class="set-pop-item danger" role="menuitem" data-action="del-set" data-i="${i}" data-j="${j}">${TRASH_ICON}Borrar serie</button>
       </div>
     </div>` : '');
@@ -9760,7 +9760,7 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       save(); render();
       break;
     }
-    case 'set-video':   // grabar o elegir el video de esta serie
+    case 'set-video':   // elegir el video de esta serie
       $app.querySelector('.set-pop-wrap')?.remove();   // cierra el menú sin redibujar (la elección del video sigue abierta)
       pickSetVideo(i, j);
       break;
