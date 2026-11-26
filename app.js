@@ -3470,7 +3470,7 @@ function sheetXml(sh) {
 <sheetFormatPr defaultRowHeight="18"/>
 <cols>${sh.cols.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>`).join('')}</cols>
 <sheetData>${rows}</sheetData>${merges.length ? `<mergeCells count="${merges.length}">${merges.map(m => `<mergeCell ref="${m}"/>`).join('')}</mergeCells>` : ''}
-<pageMargins left="0.5" right="0.5" top="0.6" bottom="0.6" header="0.3" footer="0.3"/><pageSetup paperSize="9" orientation="portrait" fitToWidth="1" fitToHeight="0"/>${(sh.charts || []).length ? '<drawing r:id="rId1"/>' : ''}
+<pageMargins left="0.5" right="0.5" top="0.6" bottom="0.6" header="0.3" footer="0.3"/><pageSetup paperSize="9" orientation="portrait" fitToWidth="1" fitToHeight="0"/>${(sh.charts || []).length ? '<drawing r:id="rId1"/>' : ''}${(sh.tables || []).length ? `<tableParts count="${sh.tables.length}">${sh.tables.map((_, j) => `<tablePart r:id="rIdT${j + 1}"/>`).join('')}</tableParts>` : ''}
 </worksheet>`;
 }
 // Gráfico de línea (verde, con puntos y el valor arriba de cada punto si son pocos)
@@ -3533,14 +3533,22 @@ function buildXlsx(sheets) {
 <cellXfs count="${xfs.length}">${xfs.map(xf).join('')}</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`;
   const names = sheets.map(sh => sh.name.replace(/[\\/?*[\]:]/g, ' ').slice(0, 31));
   const files = [], over = [];
-  let k = 0;   // gráficos numerados en todo el libro
+  let k = 0, t = 0;   // gráficos y tablas numerados en todo el libro
   sheets.forEach((sh, i) => {
     files.push({ name: `xl/worksheets/sheet${i + 1}.xml`, text: sheetXml(sh) });
     over.push(`<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="${CT}.spreadsheetml.worksheet+xml"/>`);
-    const charts = sh.charts || [];
+    const charts = sh.charts || [], tables = sh.tables || [], srels = [];
+    if (charts.length) srels.push(`<Relationship Id="rId1" Type="${R}/drawing" Target="../drawings/drawing${i + 1}.xml"/>`);
+    tables.forEach((tb, j) => {
+      t++;
+      files.push({ name: `xl/tables/table${t}.xml`, text: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<table xmlns="${W}" id="${t}" name="Tabla${t}" displayName="Tabla${t}" ref="${tb.ref}" totalsRowShown="0"><autoFilter ref="${tb.ref}"/><tableColumns count="${tb.cols.length}">${tb.cols.map((c, n) => `<tableColumn id="${n + 1}" name="${xmlEsc(c)}"/>`).join('')}</tableColumns><tableStyleInfo showFirstColumn="0" showLastColumn="0" showRowStripes="0" showColumnStripes="0"/></table>` });
+      over.push(`<Override PartName="/xl/tables/table${t}.xml" ContentType="${CT}.spreadsheetml.table+xml"/>`);
+      srels.push(`<Relationship Id="rIdT${j + 1}" Type="${R}/table" Target="../tables/table${t}.xml"/>`);
+    });
+    if (srels.length) files.push({ name: `xl/worksheets/_rels/sheet${i + 1}.xml.rels`, text: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="${PR}">${srels.join('')}</Relationships>` });
     if (!charts.length) return;
-    files.push({ name: `xl/worksheets/_rels/sheet${i + 1}.xml.rels`, text: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="${PR}"><Relationship Id="rId1" Type="${R}/drawing" Target="../drawings/drawing${i + 1}.xml"/></Relationships>` });
     files.push({ name: `xl/drawings/drawing${i + 1}.xml`, text: drawingXml(charts) });
     over.push(`<Override PartName="/xl/drawings/drawing${i + 1}.xml" ContentType="${CT}.drawing+xml"/>`);
     const rels = [];
@@ -3681,9 +3689,8 @@ function exportExcel() {
   // Mi split: de cada split, la semana (qué rutina toca cada día), las series por semana y el rango de repeticiones
   // de cada músculo, y cada rutina con sus ejercicios, series, reps, RIR y descanso
   if (splits.length) {
-    const sh = { name: splits.length > 1 ? 'Mis splits' : 'Mi split', cols: [11, 30, 7, 10, 7, 9, 22], rows: [], merges: [], heights: {}, charts: [] };
+    const sh = { name: splits.length > 1 ? 'Mis splits' : 'Mi split', cols: [11, 30, 10, 12, 12, 16, 22], rows: [], merges: [], heights: {}, charts: [], tables: [] };
     const rName = id => (db.routines.find(r => r.id === id) || {}).name || '(sin nombre)';
-    const merge = (c1, c2) => { const r = sh.rows.length + 1; sh.merges.push(`${c1}${r}:${c2}${r}`); };
     splits.forEach((split, si) => {
       if (si) sh.rows.push([], []);
       sh.heights[sh.rows.length] = 32;
@@ -3709,18 +3716,21 @@ function exportExcel() {
           reps.set(z, [Math.min(o[0], ...nums.map(Number)), Math.max(o[1], ...nums.map(Number))]);
         }
       }
-      const zones = [...Object.keys(GUIDE_ZONES), ''].filter(z => planned.get(z) || reps.has(z));
+      // De más series a menos (sin músculo, al final). Va como tabla de Excel: con las flechas del título se ordena por músculo, series o repeticiones
+      const zones = [...Object.keys(GUIDE_ZONES), ''].filter(z => planned.get(z) || reps.has(z))
+        .sort((x, y) => (!x) - (!y) || (planned.get(y) || 0) - (planned.get(x) || 0) || (GUIDE_ZONES[x] || '').localeCompare(GUIDE_ZONES[y] || '', 'es'));
       if (zones.length) {
         block(sh, 'Series por semana de cada músculo', 7);
-        merge('A', 'B'); merge('E', 'G');
-        sh.rows.push([{ v: 'Músculo', s: XS.head }, { v: '', s: XS.head }, { v: 'Series', s: XS.headC }, { v: 'Reps', s: XS.headC }, { v: 'Volumen', s: XS.head }, { v: '', s: XS.head }, { v: '', s: XS.head }]);
+        const cols = ['Músculo', 'Series', 'Reps desde', 'Reps hasta', 'Volumen'], r1 = sh.rows.length + 1;
+        sh.rows.push([{ v: '', s: XS.head }, ...cols.map((v, c) => ({ v, s: c === 0 || c === 4 ? XS.head : XS.headC })), { v: '', s: XS.head }]);
         for (const z of zones) {
           const n = round1(planned.get(z) || 0), rg = reps.get(z);
           const st = !z ? ['Sin guía de técnica', XS.muted] : !n ? ['Sin series objetivo', XS.muted] : n < VOL_RANGE[0] ? ['Pocas series', XS.down] : n > VOL_RANGE[1] ? ['Muchas series', XS.down] : ['En rango', XS.up];
-          merge('A', 'B'); merge('E', 'G');
-          sh.rows.push([{ v: z ? GUIDE_ZONES[z] : 'Sin músculo', s: XS.bold }, { v: '', s: XS.text }, n ? { v: fmtNum(n), s: XS.textC } : { v: '–', s: XS.textC },
-            { v: rg ? (rg[0] === rg[1] ? String(rg[0]) : `${rg[0]}-${rg[1]}`) : '–', s: XS.textC }, { v: st[0], s: st[1] }, { v: '', s: XS.text }, { v: '', s: XS.text }]);
+          sh.rows.push([{ v: '', s: XS.text }, { v: z ? GUIDE_ZONES[z] : 'Sin músculo', s: XS.bold }, { v: n, s: XS.textC },
+            rg ? { v: rg[0], s: XS.textC } : { v: '', s: XS.textC }, rg ? { v: rg[1], s: XS.textC } : { v: '', s: XS.textC }, { v: st[0], s: st[1] }, { v: '', s: XS.text }]);
         }
+        sh.tables.push({ ref: `B${r1}:F${sh.rows.length}`, cols });
+        sh.rows.push([{ v: 'Toca las flechas de los títulos (Músculo, Series, Reps) para ordenar la tabla como quieras.', s: XS.muted }]);
         sh.rows.push([{ v: `Para crecer, lo típico es de ${VOL_RANGE[0]} a ${VOL_RANGE[1]} series por semana de cada músculo.`, s: XS.muted }]);
         sh.rows.push([{ v: `Cada ejercicio cuenta para su músculo principal (el press banca, para pecho).${missing ? ` ${plural(missing, 'ejercicio')} sin series objetivo no ${missing === 1 ? 'se cuenta' : 'se cuentan'}.` : ''}`, s: XS.muted }]);
         if (split.weeks > 1) sh.rows.push([{ v: `Como se repite cada ${split.weeks} semanas, las series son el promedio por semana.`, s: XS.muted }]);
