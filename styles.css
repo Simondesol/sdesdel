@@ -1487,3 +1487,30 @@ body.viewing .free-start { display: none; }
 /* Rest pause: mismo peso de la serie (no se escribe), solo las repeticiones */
 .set.drop.rp .n { font-size: 11px; letter-spacing: .02em; }
 .rp-w { text-align: center; color: var(--muted); font-size: 16px; align-self: center; }
+
+/* Resumen del entreno: kilos levantados, comparación, vs la vez pasada y récords por ejercicio */
+.sum-hero { display: grid; gap: 4px; text-align: center; padding: 20px 16px 16px; background: radial-gradient(300px 160px at 50% 0%, rgba(76,173,52,.18), transparent 70%), var(--surface); }
+.sum-hero .saved { color: var(--accent); font-size: 15px; font-weight: 700; }
+.sum-kg { font-size: 52px; font-weight: 900; letter-spacing: -1.5px; line-height: 1; margin-top: 6px; font-variant-numeric: tabular-nums; }
+.sum-kg small { font-size: 24px; font-weight: 800; color: var(--muted); margin-left: 4px; letter-spacing: 0; }
+.sum-fun { margin: 12px 0 4px; padding: 12px; border-radius: 12px; background: var(--surface2); display: grid; gap: 4px; }
+.sum-emo { font-size: 32px; letter-spacing: 4px; line-height: 1.15; }
+.sum-fun b { color: var(--accent); }
+.sum-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
+.sum-stats div { display: grid; gap: 2px; padding: 8px 4px; border-radius: 10px; border: 1px solid var(--border); }
+.sum-stats span { font-size: 12px; color: var(--muted); line-height: 1.2; }
+.sum-stats strong { font-size: 17px; }
+.sum-stats .up, .rec-row .up { color: var(--accent); }
+.sum-stats .down { color: #ff8a6a; }
+.sum-recs { gap: 0; }
+.sum-recs .rec-title { font-size: 17px; margin-bottom: 6px; }
+.rec-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 0; border-top: 1px solid var(--border); }
+.rec-row > span:first-child { display: grid; min-width: 0; }
+.rec-row > span:first-child b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rec-row small { font-size: 12px; }
+.rec-row > span:last-child { text-align: right; white-space: nowrap; font-size: 14px; }
+.rec-row em { font-style: normal; font-size: 13px; }
+.sum-recs > .muted.small { margin-top: 8px; }
+.sum-share { display: grid; gap: 8px; margin: 0 0 10px; }
+.sum-share .btn { margin: 0; padding-left: 8px; padding-right: 8px; }
+.sum-legend { margin: 4px 0 10px; text-align: center; }

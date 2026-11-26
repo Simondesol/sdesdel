@@ -3140,11 +3140,10 @@ function viewSession(id) {
     </section>`;
   }).join('');
 
-  const summary = `
+  const summary = sessionKg(w) ? sessionHero(w) : `
     <section class="card summary">
       ${justFinished === id ? '<strong class="saved">¡Entrenamiento guardado!</strong>' : ''}
       ${w.durationSec ? `<div>Duración total: <strong>${fmtDuration(w.durationSec)}</strong></div>` : ''}
-      <div class="legend-line muted small"><span class="mark up">${TREND_ICON.up}</span> superaste · <span class="mark eq">${TREND_ICON.eq}</span> igualaste · <span class="mark down">${TREND_ICON.down}</span> bajo tu récord</div>
     </section>`;
 
   // Entreno libre: se puede guardar como rutina (justo al terminar se ofrece; después, un botón chico)
@@ -3161,10 +3160,11 @@ function viewSession(id) {
     ${summary}
     ${coachCommentHtml(w)}
     ${asRoutine}
-    ${(prs => (prs.length ? `<section class="card pr-card"><strong>🔥 ${prs.length === 1 ? 'Nuevo récord' : `${prs.length} récords nuevos`}</strong>
-      ${prs.map(pr => `<span>${esc(pr.text)}</span>`).join('')}
-      <span class="muted small">Récord = superar tu mejor 1ª serie (en cualquier rutina), o tu mejor 2ª, 3ª… serie en esta rutina.${prsSent && prsSent.id === w.id ? ' Se lo avisamos a tus gymbros.' : ''}</span></section>` : ''))(newPRs(w))}
-    ${viewing ? '' : `<button class="btn primary block" data-action="share-workout" data-id="${w.id}" style="margin:0 0 10px">📤 Compartir entrenamiento</button>`}
+    ${(gs => (gs.length ? `<section class="card pr-card sum-recs"><strong class="rec-title">🔥 ${gs.length === 1 ? 'Récord en 1 ejercicio' : `Récords en ${gs.length} ejercicios`}</strong>
+      ${gs.map(o => `<div class="rec-row"><span><b>${esc(o.name)}</b><small class="muted">${plural(o.n, 'serie récord', 'series récord')}</small></span><span>${prRight(o)}</span></div>`).join('')}
+      <span class="muted small">Récord = superar tu mejor 1ª serie (en cualquier rutina), o tu mejor 2ª, 3ª… serie en esta rutina.${prsSent && prsSent.id === w.id ? ' Se lo avisamos a tus gymbros.' : ''}</span></section>` : ''))(prGroups(w))}
+    ${viewing ? '' : `<div class="sum-share"><button class="btn primary" data-action="share-story" data-id="${w.id}">Compartir en historia</button><button class="btn" data-action="share-workout" data-id="${w.id}">Enviar a un gymbro</button></div>`}
+    ${blocks ? `<p class="legend-line muted small sum-legend"><span class="mark up">${TREND_ICON.up}</span> superaste · <span class="mark eq">${TREND_ICON.eq}</span> igualaste · <span class="mark down">${TREND_ICON.down}</span> bajo tu récord</p>` : ''}
     ${blocks}
     ${viewing ? '' : `<a class="btn block center" href="#/editar/${w.id}">Editar entrenamiento</a>
     <button class="btn ghost block danger-text" data-action="del-session" data-id="${w.id}" style="margin-top:24px">Eliminar este entrenamiento</button>`}`;
@@ -5326,6 +5326,133 @@ const E1RM_GUIDES = new Set(['sentadilla', 'sentadilla-frontal', 'peso-muerto', 
 const showsE1rm = ex => { const g = guideFor(ex.name, (db.routines.flatMap(r => r.exercises).find(e => e.id === ex.exerciseId) || {}).guide); return !!g && E1RM_GUIDES.has(g.id); };
 // PRs del entrenamiento: 1RM estimado de la 1ª serie mayor que el mejor anterior (en cualquier rutina),
 // y desde la 2ª serie, superar a tu mejor serie de esa misma posición en esa rutina (lo que marca el gráfico que sube)
+// ---------- Resumen del entreno ----------
+// Kilos levantados: peso × repeticiones de todas las series (con bajadas y rest pause). Peso corporal: solo el lastre.
+// En placas no se sabe cuánto pesa, así que no suma
+function sessionKg(w) {
+  let t = 0;
+  for (const ex of w.exercises) {
+    if (ex.unit === 'placas') continue;
+    const add = x => { t += toKg(Math.max(0, x.w || 0), ex.unit) * ((x.r || 0) + (isSideSet(x) ? x.r2 || 0 : 0)); };
+    for (const st of ex.sets) { add(st); (st.drops || []).forEach(add); }
+  }
+  return Math.round(t);
+}
+const kgTxt = n => Math.round(n).toLocaleString('es-CL');
+// Con qué se compara: cosas y animales; se elige uno que dé entre 2 y 20 (distinto según el entreno)
+const VOL_THINGS = [[45, '🐕', 'perro grande', 'perros grandes', 'Un perro grande'], [190, '🦁', 'león', 'leones', 'Un león'], [400, '🎹', 'piano de cola', 'pianos de cola', 'Un piano de cola'],
+  [500, '🐎', 'caballo', 'caballos', 'Un caballo'], [900, '🐂', 'toro', 'toros', 'Un toro'], [1200, '🚗', 'auto', 'autos', 'Un auto'], [2300, '🦏', 'rinoceronte', 'rinocerontes', 'Un rinoceronte'],
+  [5000, '🐘', 'elefante', 'elefantes', 'Un elefante'], [13000, '🚌', 'micro', 'micros', 'Una micro'], [30000, '🐋', 'ballena jorobada', 'ballenas jorobadas', 'Una ballena jorobada']];
+function volThing(kg, seed) {
+  const c = VOL_THINGS.map(t => ({ kg: t[0], emo: t[1], one: t[2], many: t[3], art: t[4], n: Math.round(kg / t[0]) })).filter(t => t.n >= 2 && t.n <= 20);
+  if (!c.length) return null;
+  const h = [...String(seed)].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) >>> 0, 7);
+  return c[h % c.length];
+}
+// Lo mismo que la vez pasada que hiciste esta rutina (sin descargas ni vueltas de pausa)
+function prevSameRoutine(w) {
+  if (!w.routineId || w.deload || w.comeback) return null;
+  let p = null;
+  for (const o of db.workouts) if (o !== w && o.routineId === w.routineId && o.date < w.date && !o.deload && !o.comeback && (!p || o.date > p.date)) p = o;
+  return p;
+}
+// Récords agrupados por ejercicio: cuántas series récord y, si se puede, el 1RM de la 1ª serie
+function prGroups(w) {
+  const g = new Map();
+  for (const pr of newPRs(w)) {
+    const o = g.get(pr.id) || { name: pr.name, n: 0, rm: null, set: null };
+    o.n++; if (pr.rm && !o.rm) o.rm = pr.rm; if (!o.set) o.set = pr.set;
+    g.set(pr.id, o);
+  }
+  return [...g.values()];
+}
+const prRight = (o, html = true) => {
+  const b = t => (html ? `<b>${t}</b>` : t);
+  if (!o.rm) return b(o.set || '');
+  const u = unitShort(o.rm.unit);
+  return `${o.rm.bw ? 'Lastre máx.' : '1RM'} ${b(`${o.rm.bw ? '+' : ''}${fmtNum(o.rm.v)} ${u}`)}${o.rm.d > 0 ? ` ${html ? `<em class="up">▲ ${fmtNum(o.rm.d)}</em>` : `▲ ${fmtNum(o.rm.d)}`}` : ''}`;
+};
+function sessionStats(w) {
+  const kg = sessionKg(w), prev = prevSameRoutine(w), pkg = prev ? sessionKg(prev) : 0;
+  return { kg, thing: kg ? volThing(kg, w.id) : null, diff: pkg ? kg - pkg : null };
+}
+const diffTxt = d => (d > 0 ? `▲ +${kgTxt(d)} kg` : d < 0 ? `▼ −${kgTxt(-d)} kg` : '= igual');
+function sessionHero(w) {
+  const { kg, thing, diff } = sessionStats(w);
+  const tiles = [w.durationSec && ['Duración', fmtDuration(w.durationSec), ''], diff != null && ['vs la vez pasada', diffTxt(diff), diff > 0 ? 'up' : diff < 0 ? 'down' : '']].filter(Boolean);
+  return `<section class="card sum-hero">
+      ${justFinished === w.id ? '<span class="saved">¡Entrenamiento guardado!</span>' : ''}
+      <div class="sum-kg">${kgTxt(kg)}<small>kg</small></div>
+      <div class="muted small">levantaste${justFinished === w.id ? ' hoy' : ''}</div>
+      ${thing ? `<div class="sum-fun"><span class="sum-emo">${thing.emo.repeat(Math.min(thing.n, 5))}</span><span>Como levantar <b>${thing.n} ${thing.many}</b></span><small class="muted">${thing.art} pesa unos ${kgTxt(thing.kg)} kg</small></div>` : ''}
+      ${tiles.length ? `<div class="sum-stats">${tiles.map(([l, v, c]) => `<div><span>${l}</span><strong class="${c}">${v}</strong></div>`).join('')}</div>` : ''}
+    </section>`;
+}
+
+// Imagen para la historia de Instagram (1080×1920), dibujada en el teléfono
+async function storyBlob(w) {
+  const W = 1080, H = 1920, c = document.createElement('canvas'); c.width = W; c.height = H;
+  const x = c.getContext('2d'), F = (wt, px) => `${wt} ${px}px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`;
+  x.fillStyle = '#0c0e12'; x.fillRect(0, 0, W, H);
+  for (const [cx, cy, r, a] of [[W, 0, 900, 0.3], [0, H, 800, 0.16]]) {
+    const g = x.createRadialGradient(cx, cy, 0, cx, cy, r); g.addColorStop(0, `rgba(76,173,52,${a})`); g.addColorStop(1, 'rgba(76,173,52,0)'); x.fillStyle = g; x.fillRect(0, 0, W, H);
+  }
+  const fit = (t, max) => { if (x.measureText(t).width <= max) return t; while (t && x.measureText(t + '…').width > max) t = t.slice(0, -1); return t + '…'; };
+  const rr = (X, Y, w2, h2, r) => { x.beginPath(); x.roundRect(X, Y, w2, h2, r); };
+  const logo = await new Promise(res => { const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = 'icons/logo-full.png'; });
+  if (logo) x.drawImage(logo, 90, 140, (logo.width / logo.height) * 80, 80);
+  x.textBaseline = 'alphabetic';
+  x.font = F(600, 34); x.fillStyle = '#b4bccb'; x.textAlign = 'right'; x.fillText(fmtDate(w.date), 990, 195); x.textAlign = 'left';
+  x.font = F(900, 70); x.fillStyle = '#f2f4f8'; x.fillText(fit(w.routineName || 'Entrenamiento', 900), 90, 370);
+  const { kg, thing, diff } = sessionStats(w);
+  let y = 610;
+  x.font = F(900, 210); const big = kgTxt(kg); x.fillText(big, 86, y); const bigW = x.measureText(big).width;
+  x.font = F(800, 80); x.fillStyle = '#8b93a7'; x.fillText('kg', 86 + bigW + 18, y);
+  y += 80;
+  if (thing) {
+    rr(90, y, 900, 260, 36); x.fillStyle = '#181b22'; x.fill(); x.lineWidth = 3; x.strokeStyle = '#2c3140'; x.stroke();
+    x.font = F(400, 90); x.fillStyle = '#f2f4f8'; x.fillText(thing.emo.repeat(Math.min(thing.n, 5)), 134, y + 125);
+    x.font = F(800, 48); const a = 'Como levantar '; x.fillText(a, 134, y + 215);
+    x.fillStyle = '#5ccb3c'; x.fillText(`${thing.n} ${thing.many}`, 134 + x.measureText(a).width, y + 215);
+    y += 300;
+  }
+  const tiles = [w.durationSec && ['Duración', fmtDuration(w.durationSec), '#f2f4f8'], diff != null && ['vs la vez pasada', diffTxt(diff), diff > 0 ? '#5ccb3c' : diff < 0 ? '#ff8a6a' : '#f2f4f8']].filter(Boolean);
+  if (tiles.length) {
+    const tw = (900 - 24 * (tiles.length - 1)) / tiles.length;
+    tiles.forEach(([l, v, col], i) => {
+      const X = 90 + i * (tw + 24); rr(X, y + 20, tw, 170, 28); x.lineWidth = 3; x.strokeStyle = '#2c3140'; x.stroke();
+      x.font = F(500, 30); x.fillStyle = '#8b93a7'; x.fillText(l, X + 28, y + 75);
+      x.font = F(900, 52); x.fillStyle = col; x.fillText(fit(v, tw - 56), X + 28, y + 150);
+    });
+    y += 250;
+  }
+  const groups = prGroups(w).slice(0, 3);
+  if (groups.length && y < 1500) {
+    const all = prGroups(w).length;
+    x.font = F(800, 44); x.fillStyle = '#f5b335'; x.fillText(`🔥 ${all === 1 ? 'Récord en 1 ejercicio' : `Récords en ${all} ejercicios`}`, 90, y + 50);
+    y += 80;
+    for (const o of groups) {
+      if (y > 1680) break;
+      x.fillStyle = '#2c3140'; x.fillRect(90, y, 900, 2);
+      x.font = F(700, 38); x.fillStyle = '#5ccb3c'; x.textAlign = 'right'; const r = prRight(o, false); x.fillText(r, 990, y + 56);
+      const rw = x.measureText(r).width; x.textAlign = 'left';
+      x.font = F(500, 38); x.fillStyle = '#f2f4f8'; x.fillText(fit(o.name, 900 - rw - 30), 90, y + 56);
+      y += 82;
+    }
+  }
+  x.font = F(500, 34); x.fillStyle = '#8b93a7'; x.textAlign = 'center'; x.fillText(`Anotado en Desdel · @${IG_USER}`, W / 2, 1790);
+  return new Promise(res => c.toBlob(res, 'image/png'));
+}
+async function shareStory(id) {
+  const w = db.workouts.find(x => x.id === id);
+  if (!w) return;
+  const blob = await storyBlob(w);
+  const file = new File([blob], `desdel-${dayKeyOf(w.date)}.png`, { type: 'image/png' });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) { navigator.share({ files: [file] }).catch(() => {}); return; }
+  downloadFile(file.name, blob);
+  showNote('Imagen descargada: súbela a tu historia.');
+}
+
 function newPRs(w) {
   const firstE1rm = (ex, date) => {
     const s = ex.sets.find(x => x.w != null);
@@ -5347,7 +5474,9 @@ function newPRs(w) {
       const s = ex.sets.find(x => x.w != null);
       const bw = isBwEx(ex);
       const est = showsE1rm(ex) ? ` → ${bw ? 'lastre máx.' : '1RM'} ≈ ${bw ? '+' : ''}${fmtNum(round1(e1rmEx(ex, s, w.date)))} ${ex.unit}` : '';
-      prs.push({ id: ex.exerciseId, name: ex.name, text: `${ex.name}: ${fmtNum(s.w)} ${ex.unit} × ${isSideSet(s) ? repsText(s) : fmtNum(s.r || 1)}${s.rir != null ? ` · RIR ${fmtNum(s.rir)}` : ''}${bw ? ' + peso corporal' : ''}${est}` });
+      const rm = showsE1rm(ex) ? { v: round1(e1rmEx(ex, s, w.date)), d: round1((cur - prev) / (ex.unit === 'lb' ? 0.45359237 : 1)), unit: ex.unit, bw } : null;
+      prs.push({ id: ex.exerciseId, name: ex.name, rm, set: `${fmtNum(s.w)} ${ex.unit} × ${repsText(s)}`,
+        text: `${ex.name}: ${fmtNum(s.w)} ${ex.unit} × ${isSideSet(s) ? repsText(s) : fmtNum(s.r || 1)}${s.rir != null ? ` · RIR ${fmtNum(s.rir)}` : ''}${bw ? ' + peso corporal' : ''}${est}` });
     }
     const best = bestSets(ex.exerciseId, idx < 0 ? db.workouts.length : idx, ex.unit, ex.extra ? null : w.routineId, gymOf(w), ex.machine || '');
     const first = ex.sets.findIndex(x => x.w != null);
@@ -5355,7 +5484,7 @@ function newPRs(w) {
       if (j <= first || x.w == null || !best[j]) return;
       const c = { w: x.w, r: x.r, ...(isSideSet(x) ? { r2: x.r2 } : {}), rir: x.rir, unit: ex.unit, bw: bwFor(ex, w.date) };
       if (cmpSet(c, best[j]) > 0) {
-        prs.push({ id: ex.exerciseId, name: ex.name, text: `${ex.name} · serie ${j + 1}: ${setText(x, ex.unit)}` });
+        prs.push({ id: ex.exerciseId, name: ex.name, set: `${fmtNum(x.w)} ${ex.unit} × ${repsText(x)}`, text: `${ex.name} · serie ${j + 1}: ${setText(x, ex.unit)}` });
       }
     });
   }
@@ -10564,6 +10693,9 @@ Está en tu plan: ${uses.join(' · ')}. Esos días quedarán de descanso.` : '';
       break;
     case 'share-workout':
       openShare('workout', el.dataset.id);
+      break;
+    case 'share-story':
+      shareStory(el.dataset.id);
       break;
     case 'deload-on':
       setDeload(true);
