@@ -3586,13 +3586,14 @@ function exportExcel() {
   const ws = db.workouts.slice().sort((a, b) => (a.date < b.date ? -1 : 1));
   const bws = db.bodyweight.filter(e => e.kg != null).sort((a, b) => (a.date < b.date ? -1 : 1));
   const meas = db.measures.slice().sort((a, b) => (a.date < b.date ? -1 : 1));
-  // Tu split: el activo (o tu semana armada sin split guardado; si no, el primero de Mis splits)
-  const act = activeProgram();
-  const split = act ? { name: act.name || 'Mi split', weeks: act.weeks, days: act.days, on: true }
-    : planIsLoose() ? { name: 'Mi semana', weeks: db.plan.weeks, days: db.plan.days, on: true }
-    : db.programs[0] ? { name: db.programs[0].name || 'Mi split', weeks: db.programs[0].weeks, days: db.programs[0].days, on: false } : null;
-  const splitIds = split ? [...new Set(split.days.slice(0, split.weeks).flatMap(w => w.r))].filter(id => id && db.routines.some(r => r.id === id)) : [];
-  if (!ws.length && !bws.length && !meas.length && !splitIds.length) { notice('Todavía no tienes datos para descargar.'); return; }
+  // Tus splits: el activo primero (o tu semana armada sin split guardado) y después los otros de Mis splits
+  const act = activeProgram(), splitsAll = [];
+  if (act) splitsAll.push({ name: act.name || 'Mi split', weeks: act.weeks, days: act.days, on: true });
+  else if (planIsLoose()) splitsAll.push({ name: 'Mi semana', weeks: db.plan.weeks, days: db.plan.days, on: true });
+  for (const p of db.programs) if (p !== act) splitsAll.push({ name: p.name || 'Mi split', weeks: p.weeks, days: p.days, on: false });
+  const splitIdsOf = sp => [...new Set(sp.days.slice(0, sp.weeks).flatMap(w => w.r))].filter(id => id && db.routines.some(r => r.id === id));
+  const splits = splitsAll.filter(sp => splitIdsOf(sp).length);
+  if (!ws.length && !bws.length && !meas.length && !splits.length) { notice('Todavía no tienes datos para descargar.'); return; }
   const dd = key => key.split('-').reverse().join('-');
   const CH = 14;   // filas que ocupa cada gráfico (13 de gráfico + 1 de aire)
   const sheets = [];
@@ -3677,33 +3678,67 @@ function exportExcel() {
     }
     sheets.push(sh);
   }
-  // Mi split: la semana (qué rutina toca cada día) y cada rutina con sus ejercicios, series, reps, RIR y descanso
-  if (splitIds.length) {
-    const sh = { name: 'Mi split', cols: [11, 30, 7, 10, 7, 9, 22], rows: [], merges: [], heights: { 0: 32 }, charts: [] };
-    const days = split.days.slice(0, split.weeks), rName = id => (db.routines.find(r => r.id === id) || {}).name || '(sin nombre)';
-    sh.rows.push([{ v: split.name, s: XS.title }]);
-    sh.rows.push([{ v: `${plural(days[0].r.filter(Boolean).length, 'día')} de entreno por semana${split.weeks > 1 ? ` · se repite cada ${split.weeks} semanas` : ''}${split.on ? '' : ' · no es tu split activo'}`, s: XS.sub }]);
-    sh.rows.push([]);
-    days.forEach((w, i) => {
-      block(sh, split.weeks > 1 ? `Semana ${i + 1}` : 'Tu semana', 2);
-      sh.rows.push([{ v: 'Día', s: XS.head }, { v: 'Rutina', s: XS.head }]);
-      DAY_NAMES.forEach((d, k) => { const id = w.r[k] && db.routines.some(r => r.id === w.r[k]) ? w.r[k] : null;
-        sh.rows.push([{ v: d, s: XS.text }, id ? { v: rName(id), s: XS.bold } : { v: 'Descanso', s: XS.muted }]); });
+  // Mi split: de cada split, la semana (qué rutina toca cada día), las series por semana y el rango de repeticiones
+  // de cada músculo, y cada rutina con sus ejercicios, series, reps, RIR y descanso
+  if (splits.length) {
+    const sh = { name: splits.length > 1 ? 'Mis splits' : 'Mi split', cols: [11, 30, 7, 10, 7, 9, 22], rows: [], merges: [], heights: {}, charts: [] };
+    const rName = id => (db.routines.find(r => r.id === id) || {}).name || '(sin nombre)';
+    const merge = (c1, c2) => { const r = sh.rows.length + 1; sh.merges.push(`${c1}${r}:${c2}${r}`); };
+    splits.forEach((split, si) => {
+      if (si) sh.rows.push([], []);
+      sh.heights[sh.rows.length] = 32;
+      sh.rows.push([{ v: split.name, s: XS.title }]);
+      const days = split.days.slice(0, split.weeks);
+      sh.rows.push([{ v: `${split.on ? 'Tu split activo' : 'Split guardado (no es el activo)'} · ${plural(days[0].r.filter(Boolean).length, 'día')} de entreno por semana${split.weeks > 1 ? ` · se repite cada ${split.weeks} semanas` : ''}`, s: XS.sub }]);
       sh.rows.push([]);
-    });
-    for (const id of splitIds) {
-      const r = db.routines.find(x => x.id === id);
-      sh.rows.push([]);
-      block(sh, r.name || '(sin nombre)', 7);
-      sh.rows.push(['#', 'Ejercicio', 'Series', 'Reps', 'RIR', 'Descanso', 'Detalles'].map((v, c) => ({ v, s: c === 1 || c === 6 ? XS.head : XS.headC })));
-      if (!r.exercises.length) sh.rows.push([{ v: '', s: XS.text }, { v: 'Sin ejercicios', s: XS.muted }]);
-      r.exercises.forEach((ex, j) => {
-        const reps = hasRepsBy(ex) ? ex.goalRepsBy.slice(0, ex.goalSets).map(x => x || '–').join(' / ') : ex.goalReps || '';
-        const extra = [(ex.ssNext || (j && r.exercises[j - 1].ssNext)) && 'Superserie', ex.dropset && 'Dropset', ex.side && 'Unilateral', ex.bw && 'Peso corporal'].filter(Boolean).join(' · ');
-        sh.rows.push([{ v: j + 1, s: XS.intC }, { v: ex.name, s: XS.bold }, ex.goalSets ? { v: ex.goalSets, s: XS.intC } : { v: '', s: XS.text },
-          { v: String(reps), s: XS.textC }, { v: ex.rir ? String(rirText(ex)) : '', s: XS.textC }, { v: ex.rest ? fmtRest(ex.rest) : '', s: XS.textC }, { v: extra, s: XS.muted }]);
+      days.forEach((w, i) => {
+        block(sh, split.weeks > 1 ? `Semana ${i + 1}` : 'Tu semana', 2);
+        sh.rows.push([{ v: 'Día', s: XS.head }, { v: 'Rutina', s: XS.head }]);
+        DAY_NAMES.forEach((d, k) => { const id = w.r[k] && db.routines.some(r => r.id === w.r[k]) ? w.r[k] : null;
+          sh.rows.push([{ v: d, s: XS.text }, id ? { v: rName(id), s: XS.bold } : { v: 'Descanso', s: XS.muted }]); });
+        sh.rows.push([]);
       });
-    }
+      // Series por semana y rango de repeticiones de cada músculo (cada ejercicio cuenta para su músculo principal)
+      const { planned, missing } = myProgVolume(split), reps = new Map();
+      for (const w of days) for (const rid of w.r) {
+        const r = rid && db.routines.find(x => x.id === rid);
+        for (const e of r ? r.exercises : []) {
+          const nums = (hasRepsBy(e) ? e.goalRepsBy.slice(0, e.goalSets) : [e.goalReps]).join(' ').match(/\d+/g);
+          if (!nums) continue;
+          const z = zoneOfEx(e.name, e.guide), o = reps.get(z) || [Infinity, -Infinity];
+          reps.set(z, [Math.min(o[0], ...nums.map(Number)), Math.max(o[1], ...nums.map(Number))]);
+        }
+      }
+      const zones = [...Object.keys(GUIDE_ZONES), ''].filter(z => planned.get(z) || reps.has(z));
+      if (zones.length) {
+        block(sh, 'Series por semana de cada músculo', 7);
+        merge('A', 'B'); merge('E', 'G');
+        sh.rows.push([{ v: 'Músculo', s: XS.head }, { v: '', s: XS.head }, { v: 'Series', s: XS.headC }, { v: 'Reps', s: XS.headC }, { v: 'Volumen', s: XS.head }, { v: '', s: XS.head }, { v: '', s: XS.head }]);
+        for (const z of zones) {
+          const n = round1(planned.get(z) || 0), rg = reps.get(z);
+          const st = !z ? ['Sin guía de técnica', XS.muted] : !n ? ['Sin series objetivo', XS.muted] : n < VOL_RANGE[0] ? ['Pocas series', XS.down] : n > VOL_RANGE[1] ? ['Muchas series', XS.down] : ['En rango', XS.up];
+          merge('A', 'B'); merge('E', 'G');
+          sh.rows.push([{ v: z ? GUIDE_ZONES[z] : 'Sin músculo', s: XS.bold }, { v: '', s: XS.text }, n ? { v: fmtNum(n), s: XS.textC } : { v: '–', s: XS.textC },
+            { v: rg ? (rg[0] === rg[1] ? String(rg[0]) : `${rg[0]}-${rg[1]}`) : '–', s: XS.textC }, { v: st[0], s: st[1] }, { v: '', s: XS.text }, { v: '', s: XS.text }]);
+        }
+        sh.rows.push([{ v: `Para crecer, lo típico es de ${VOL_RANGE[0]} a ${VOL_RANGE[1]} series por semana de cada músculo.`, s: XS.muted }]);
+        sh.rows.push([{ v: `Cada ejercicio cuenta para su músculo principal (el press banca, para pecho).${missing ? ` ${plural(missing, 'ejercicio')} sin series objetivo no ${missing === 1 ? 'se cuenta' : 'se cuentan'}.` : ''}`, s: XS.muted }]);
+        if (split.weeks > 1) sh.rows.push([{ v: `Como se repite cada ${split.weeks} semanas, las series son el promedio por semana.`, s: XS.muted }]);
+      }
+      for (const id of splitIdsOf(split)) {
+        const r = db.routines.find(x => x.id === id);
+        sh.rows.push([]);
+        block(sh, r.name || '(sin nombre)', 7);
+        sh.rows.push(['#', 'Ejercicio', 'Series', 'Reps', 'RIR', 'Descanso', 'Detalles'].map((v, c) => ({ v, s: c === 1 || c === 6 ? XS.head : XS.headC })));
+        if (!r.exercises.length) sh.rows.push([{ v: '', s: XS.text }, { v: 'Sin ejercicios', s: XS.muted }]);
+        r.exercises.forEach((ex, j) => {
+          const reps = hasRepsBy(ex) ? ex.goalRepsBy.slice(0, ex.goalSets).map(x => x || '–').join(' / ') : ex.goalReps || '';
+          const extra = [(ex.ssNext || (j && r.exercises[j - 1].ssNext)) && 'Superserie', ex.dropset && 'Dropset', ex.side && 'Unilateral', ex.bw && 'Peso corporal'].filter(Boolean).join(' · ');
+          sh.rows.push([{ v: j + 1, s: XS.intC }, { v: ex.name, s: XS.bold }, ex.goalSets ? { v: ex.goalSets, s: XS.intC } : { v: '', s: XS.text },
+            { v: String(reps), s: XS.textC }, { v: ex.rir ? String(rirText(ex)) : '', s: XS.textC }, { v: ex.rest ? fmtRest(ex.rest) : '', s: XS.textC }, { v: extra, s: XS.muted }]);
+        });
+      }
+    });
     sheets.push(sh);
   }
   if (bws.length || meas.length) {
