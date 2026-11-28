@@ -2313,8 +2313,16 @@ function viewWorkout() {
         <button class="set-pop-item danger" role="menuitem" data-action="del-set" data-i="${i}" data-j="${j}">${TRASH_ICON}Borrar serie</button>
       </div>
     </div>` : '');
+  // Título de la columna del peso con la unidad (null = va "Peso" y la unidad en cada fila)
+  const headUnit = list => {
+    const rir = !!list[0].rir, side = !!list[0].side, u = list[0].unit;
+    if (list.some(x => !!x.rir !== rir || !!x.side !== side || x.unit !== u)) return null;
+    return u === 'placas' ? 'Placas' : list.every(isBwEx) ? `Lastre ${u}` : u;
+  };
+  const grpOf = i => (groups.find(g => g.includes(i)) || [i]).map(k => d.exercises[k]);
   // badge: en un superset, la letra de color (va junto a los ⋮)
   const setRow = (ex, i, s, j, label, badge = '') => {
+    const noU = !ex.side && !!headUnit(grpOf(i));
     const best = bests.get(i);
     const dots = `${badge}<button class="set-dots${setMenuOpen === `${i}-${j}` ? ' on' : ''}" data-action="set-menu" data-i="${i}" data-j="${j}" aria-label="Opciones de la serie ${label}" aria-expanded="${setMenuOpen === `${i}-${j}`}">⋮</button>`;
     const rpW = bwEff(s, lastreEx(ex)).w;
@@ -2322,11 +2330,11 @@ function viewWorkout() {
     const dReps = (x, k, what) => (ex.side
       ? `<input inputmode="numeric" enterkeyhint="next" data-bind="dr" data-i="${i}" data-j="${j}" data-k="${k}" value="${esc(x.r)}" placeholder="${esc(x.pr || 'izq')}" aria-label="Repeticiones izquierda ${what} ${k + 1} de la serie ${label}">
         <input inputmode="numeric" enterkeyhint="next" data-bind="dr2" data-i="${i}" data-j="${j}" data-k="${k}" value="${esc(x.r2 ?? '')}" placeholder="${esc(x.pr2 ?? x.pr ?? 'der')}" aria-label="Repeticiones derecha ${what} ${k + 1} de la serie ${label}">`
-      : `<span class="u">${unitShort(ex.unit)}</span>
+      : `${noU ? '' : `<span class="u">${unitShort(ex.unit)}</span>`}
         <span class="x">×</span>
         <input inputmode="numeric" enterkeyhint="next" data-bind="dr" data-i="${i}" data-j="${j}" data-k="${k}" value="${esc(x.r)}" placeholder="${esc(x.pr || 'reps')}" aria-label="Repeticiones ${what} ${k + 1} de la serie ${label}">`);
     const drops = (s.drops || []).map((x, k) => x.rp ? `
-      <div class="set drop rp ${ex.side ? 'side' : ''} ${ex.rir ? 'has-rir' : ''}">
+      <div class="set drop rp ${ex.side ? 'side' : ''} ${ex.rir ? 'has-rir' : ''} ${noU ? 'no-u' : ''}">
         <span class="n">RP</span>
         <span class="rp-w" data-rpw="${i}-${j}">${rpW !== '' ? esc(rpW) : '–'}</span>
         ${dReps(x, k, 'rest pause')}
@@ -2335,7 +2343,7 @@ function viewWorkout() {
       </div>
       ${whyPop(`${i}-${j}-${k}`, liveSet({ ...x, w: rpW }, { ...ex, rir: false }), (dropBests.get(i)[j] || [])[dKey(x, k)], ex)}
       ${bestLine((dropBests.get(i)[j] || [])[dKey(x, k)], true)}` : `
-      <div class="set drop ${ex.side ? 'side' : ''} ${ex.rir ? 'has-rir' : ''}">
+      <div class="set drop ${ex.side ? 'side' : ''} ${ex.rir ? 'has-rir' : ''} ${noU ? 'no-u' : ''}">
         <span class="n">↓</span>
         <input inputmode="decimal" enterkeyhint="next" data-bind="dw" data-i="${i}" data-j="${j}" data-k="${k}" value="${esc(x.w)}" placeholder="${esc(x.pw || (ex.unit === 'placas' ? 'placas' : 'peso'))}" aria-label="Peso bajada ${k + 1} de la serie ${label}">
         ${dReps(x, k, 'bajada')}
@@ -2361,10 +2369,10 @@ function viewWorkout() {
       ${drops}
       ${setFoot(ex, i, s, j, best, label)}`;
     return `
-      <div class="set ${ex.rir ? 'has-rir' : ''}">
+      <div class="set ${ex.rir ? 'has-rir' : ''} ${noU ? 'no-u' : ''}">
         <span class="n">${dots}</span>
         <input inputmode="decimal" enterkeyhint="next" data-bind="w" data-i="${i}" data-j="${j}" value="${esc(s.w)}" placeholder="${esc(wPh)}" aria-label="${ex.unit === 'placas' ? 'Placas' : isBwEx(ex) ? 'Lastre' : 'Peso'} serie ${label}">
-        <span class="u">${unitShort(ex.unit)}</span>
+        ${noU ? '' : `<span class="u">${unitShort(ex.unit)}</span>`}
         <span class="x">×</span>
         <input inputmode="numeric" enterkeyhint="next" data-bind="r" data-i="${i}" data-j="${j}" value="${esc(s.r)}" placeholder="${esc(repsFor(ex, j) || s.pr || 'reps')}" aria-label="Repeticiones serie ${label}">
         ${ex.rir ? `<input class="rir" inputmode="numeric" enterkeyhint="next" data-bind="rir" data-i="${i}" data-j="${j}" value="${esc(s.rir ?? '')}" placeholder="${esc(rirFor(ex, j) || s.prir || 'RIR')}" aria-label="RIR serie ${label}">` : ''}
@@ -2433,10 +2441,10 @@ function viewWorkout() {
   const setHead = list => {
     const rir = !!list[0].rir, side = !!list[0].side;
     if (list.some(x => !!x.rir !== rir || !!x.side !== side)) return '';
-    const ex = list[0], w = list.length > 1 ? 'Peso' : ex.unit === 'placas' ? 'Placas' : isBwEx(ex) ? 'Lastre' : 'Peso';
-    if (side) return `<div class="set set-head side${rir ? ' has-rir' : ''}"><span></span><span>${w}${ex.unit === 'placas' ? '' : ` ${unitShort(ex.unit)}`}</span><span>Izq</span><span>Der</span>
+    const hu = headUnit(list);
+    if (side) return `<div class="set set-head side${rir ? ' has-rir' : ''}"><span></span><span>${hu || `Peso ${unitShort(list[0].unit)}`}</span><span>Izq</span><span>Der</span>
       ${rir ? `<span class="rir-h">RIR${infoBtn('rir')}</span>` : ''}<span></span></div>${rir ? infoBox('rir') : ''}`;
-    return `<div class="set set-head${rir ? ' has-rir' : ''}"><span></span><span>${w}</span><span></span><span></span><span>${rir ? 'Reps' : 'Repeticiones'}</span>
+    return `<div class="set set-head${rir ? ' has-rir' : ''}${hu ? ' no-u' : ''}"><span></span><span>${hu || 'Peso'}</span>${hu ? '' : '<span></span>'}<span></span><span>${rir ? 'Reps' : 'Repeticiones'}</span>
       ${rir ? `<span class="rir-h">RIR${infoBtn('rir')}</span>` : ''}<span></span></div>${rir ? infoBox('rir') : ''}`;
   };
   const exerciseBlock = (ex, i) => {

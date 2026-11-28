@@ -1514,3 +1514,7 @@ body.viewing .free-start { display: none; }
 .sum-share { display: grid; gap: 8px; margin: 0 0 10px; }
 .sum-share .btn { margin: 0; padding-left: 8px; padding-right: 8px; }
 .sum-legend { margin: 4px 0 10px; text-align: center; }
+
+/* La unidad va en el título de la columna: las filas no llevan "kg" / "pl." / "lb" */
+.set.no-u { grid-template-columns: var(--n, 26px) 1fr 12px 1fr 20px; }
+.set.no-u.has-rir { grid-template-columns: var(--n, 26px) 1fr 12px 1fr 44px 20px; }
