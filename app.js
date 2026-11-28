@@ -32,6 +32,9 @@ let lastUnit = 'kg';
 // Unidades de peso; "placas" es para máquinas con los números borrados (se anota cuántas placas)
 const UNITS = ['kg', 'lb', 'placas'];
 const unitShort = u => (u === 'placas' ? 'pl.' : u);
+// Nombre con la flecha › pegada a su última palabra (si no cabe, baja junto con la palabra)
+const nameChev = name => { const t = esc(name), k = t.lastIndexOf(' ');
+  return `${k < 0 ? '' : t.slice(0, k + 1)}<span class="nw">${k < 0 ? t : t.slice(k + 1)}&nbsp;<span class="chev">›</span></span>`; };
 const unitKind = u => (u === 'placas' ? 'placas' : 'peso');
 const openHistory = new Set();   // ejercicios con el historial desplegado
 const HIST_FIRST = 5;
@@ -156,9 +159,10 @@ function cmpSet(a, b) {
 }
 // "25 lb × 7 / 8" (o "Izq 25 lb × 7 · Der 20 lb × 10" si el mejor de cada lado fue con distinto peso)
 function bestText(b, unit = b.unit) {
-  if (!b.side) return `${fmtNum(b.w)} ${unit} × ${repsText(b)}`;
-  const { l, d } = b.side, one = x => `${fmtNum(x.w)} ${unit} × ${fmtNum(x.r)}`;
-  if (l && d && l.w === d.w) return `${fmtNum(l.w)} ${unit} × ${fmtNum(l.r)} / ${fmtNum(d.r)}`;
+  const u = unit ? ` ${unit}` : '';   // unit '' = sin unidad (ya está en el título)
+  if (!b.side) return `${fmtNum(b.w)}${u} × ${repsText(b)}`;
+  const { l, d } = b.side, one = x => `${fmtNum(x.w)}${u} × ${fmtNum(x.r)}`;
+  if (l && d && l.w === d.w) return `${fmtNum(l.w)}${u} × ${fmtNum(l.r)} / ${fmtNum(d.r)}`;
   return [l && `Izq ${one(l)}`, d && `Der ${one(d)}`].filter(Boolean).join(' · ');
 }
 // Tu peso de ese día, solo en ejercicios con peso corporal
@@ -2077,7 +2081,7 @@ function exSummary(ex) {
   if (ex.side) parts.push('Unilateral');
   if (ex.warm === 'never') parts.push('Sin calentamiento');
   { const st = progStep(ex); if (st) parts.push(`Progresión ${st.at + 1}/${st.n}`); }
-  if (ex.rest) parts.push(`Rest ${fmtRest(ex.rest)}`);
+  if (ex.rest) parts.push(`Descanso ${fmtRest(ex.rest)}`);
   if (ex.unit !== 'kg') parts.push(ex.unit);
   return parts.join(' · ') || 'Toca para configurar';
 }
@@ -2101,7 +2105,7 @@ function viewRoutine() {
         <label>Series<input data-bind="ex-goal-sets" data-i="${i}" inputmode="numeric" value="${ex.goalSets || ''}" placeholder="–" autocomplete="off" aria-label="Series objetivo"></label>
         <div class="reps-cell" data-i="${i}">${repsCell(ex, i)}</div>
         <div class="reps-cell rir-cell" data-i="${i}">${rirCell(ex, i)}</div>
-        <label>Rest<input data-bind="ex-rest" data-i="${i}" value="${ex.rest ? fmtRest(ex.rest) : ''}" placeholder="m:ss" autocomplete="off" aria-label="Descanso entre series"></label>
+        <label>Descanso<input data-bind="ex-rest" data-i="${i}" value="${ex.rest ? fmtRest(ex.rest) : ''}" placeholder="m:ss" autocomplete="off" aria-label="Descanso entre series"></label>
       </div>
       <div class="reps-by-wrap" data-i="${i}">${repsByOn(ex) ? repsByBlock(ex, i) : ''}</div>
       <button class="link small reps-by-toggle" data-action="reps-by" data-i="${i}" ${ex.goalSets >= 2 ? '' : 'hidden'}>${repsByOn(ex) ? 'Usar un solo rango' : 'Distinto por serie'}</button>
@@ -2291,7 +2295,7 @@ function viewWorkout() {
   // "↓ drop" solo en ejercicios marcados como Dropset en la rutina (o que ya tienen bajadas, al editar uno guardado)
   // Fila de una serie, con sus bajadas de dropset debajo (label: "1", o "A1" en un superset)
   // Debajo de cada serie: tu mejor marca, "+ nota" (o la nota que escribiste) y la nota de la vez pasada
-  const bestLine = (b, drop = false) => (b ? `<div class="set-ref${drop ? ' drop-ref' : ''}"><span>Mejor: ${bestText(b)}</span></div>` : '');
+  const bestLine = (b, drop = false, noUnit = false) => (b ? `<div class="set-ref${drop ? ' drop-ref' : ''}"><span>Mejor: ${bestText(b, noUnit ? '' : b.unit)}</span></div>` : '');
   const setFoot = (ex, i, s, j, best, label) => {
     const open = !!s.note || setNoteOpen === `${i}-${j}`;
     return `${open ? `<input class="set-note-in" data-bind="snote" data-i="${i}" data-j="${j}" value="${esc(s.note || '')}" maxlength="140" placeholder="Nota de esta serie (ej. me dolió el codo)" aria-label="Nota de la serie ${label}">` : ''}
@@ -2322,7 +2326,7 @@ function viewWorkout() {
   const grpOf = i => (groups.find(g => g.includes(i)) || [i]).map(k => d.exercises[k]);
   // badge: en un superset, la letra de color (va junto a los ⋮)
   const setRow = (ex, i, s, j, label, badge = '') => {
-    const noU = !ex.side && !!headUnit(grpOf(i));
+    const uInHead = !!headUnit(grpOf(i)), noU = !ex.side && uInHead;
     const best = bests.get(i);
     const dots = `${badge}<button class="set-dots${setMenuOpen === `${i}-${j}` ? ' on' : ''}" data-action="set-menu" data-i="${i}" data-j="${j}" aria-label="Opciones de la serie ${label}" aria-expanded="${setMenuOpen === `${i}-${j}`}">⋮</button>`;
     const rpW = bwEff(s, lastreEx(ex)).w;
@@ -2342,17 +2346,17 @@ function viewWorkout() {
         <span class="mark-cell" data-mark="${i}-${j}-${k}" data-action="mark-why" data-key="${i}-${j}-${k}">${markSpan(dropCmp({ ...x, w: rpW }, ex, (dropBests.get(i)[j] || [])[dKey(x, k)]))}</span>
       </div>
       ${whyPop(`${i}-${j}-${k}`, liveSet({ ...x, w: rpW }, { ...ex, rir: false }), (dropBests.get(i)[j] || [])[dKey(x, k)], ex)}
-      ${bestLine((dropBests.get(i)[j] || [])[dKey(x, k)], true)}` : `
+      ${bestLine((dropBests.get(i)[j] || [])[dKey(x, k)], true, uInHead)}` : `
       <div class="set drop ${ex.side ? 'side' : ''} ${ex.rir ? 'has-rir' : ''} ${noU ? 'no-u' : ''}">
         <span class="n">↓</span>
-        <input inputmode="decimal" enterkeyhint="next" data-bind="dw" data-i="${i}" data-j="${j}" data-k="${k}" value="${esc(x.w)}" placeholder="${esc(x.pw || (ex.unit === 'placas' ? 'placas' : 'peso'))}" aria-label="Peso bajada ${k + 1} de la serie ${label}">
+        <input inputmode="decimal" enterkeyhint="next" data-bind="dw" data-i="${i}" data-j="${j}" data-k="${k}" value="${esc(x.w)}" placeholder="${esc(x.pw || '')}" aria-label="Peso bajada ${k + 1} de la serie ${label}">
         ${dReps(x, k, 'bajada')}
         ${ex.rir ? '<span></span>' : ''}
         <span class="mark-cell" data-mark="${i}-${j}-${k}" data-action="mark-why" data-key="${i}-${j}-${k}">${markSpan(dropCmp(x, ex, (dropBests.get(i)[j] || [])[k]))}</span>
       </div>
       ${whyPop(`${i}-${j}-${k}`, liveSet(x, { ...ex, rir: false }), (dropBests.get(i)[j] || [])[k], ex)}
-      ${bestLine((dropBests.get(i)[j] || [])[k], true)}`).join('');
-    const wPh = s.pw || (lastreEx(ex) ? '0' : ex.unit === 'placas' ? 'placas' : 'peso');
+      ${bestLine((dropBests.get(i)[j] || [])[k], true, uInHead)}`).join('');
+    const wPh = s.pw || (lastreEx(ex) ? '0' : '');
     const rPh = (pr, side) => repsFor(ex, j) || pr || side;
     if (ex.side) return `
       <div class="set side ${ex.rir ? 'has-rir' : ''}">
@@ -2364,7 +2368,7 @@ function viewWorkout() {
         <span class="mark-cell" data-mark="${i}-${j}" data-action="mark-why" data-key="${i}-${j}">${markSpan(liveCmp(s, ex, best[j]))}</span>
       </div>
       ${whyPop(`${i}-${j}`, liveSet(s, ex), best[j], ex)}
-      ${bestLine(best[j])}
+      ${bestLine(best[j], false, uInHead)}
       ${setMenu(s, i, j, label)}
       ${drops}
       ${setFoot(ex, i, s, j, best, label)}`;
@@ -2379,7 +2383,7 @@ function viewWorkout() {
         <span class="mark-cell" data-mark="${i}-${j}" data-action="mark-why" data-key="${i}-${j}">${markSpan(liveCmp(s, ex, best[j]))}</span>
       </div>
       ${whyPop(`${i}-${j}`, liveSet(s, ex), best[j], ex)}
-      ${bestLine(best[j])}
+      ${bestLine(best[j], false, uInHead)}
       ${setMenu(s, i, j, label)}
       ${drops}
       ${setFoot(ex, i, s, j, best, label)}`;
@@ -2427,7 +2431,7 @@ function viewWorkout() {
   };
   // pre: letra del ejercicio en un superset ("A "), para saber de cuál es cada descanso
   const restBtn = (i, pre = '') => (!editing && d.exercises[i].rest
-    ? `<button class="btn ghost" data-action="rest" data-i="${i}" data-rest="${i}" data-pre="${pre}">Rest ${pre}${fmtRest(d.exercises[i].rest)}</button>` : '');
+    ? `<button class="btn ghost" data-action="rest" data-i="${i}" data-rest="${i}" data-pre="${pre}">Descanso ${pre}${fmtRest(d.exercises[i].rest)}</button>` : '');
   const dropBadge = () => '';
   // Técnica: ícono de video (deja más espacio para el nombre del ejercicio)
   const techBtn = i => `<button class="btn small-btn tech-btn" data-action="guide-view" data-i="${i}" aria-label="Ver técnica" title="Técnica">${VIDEO_ICON}</button>`;
@@ -2444,7 +2448,7 @@ function viewWorkout() {
     const hu = headUnit(list);
     if (side) return `<div class="set set-head side${rir ? ' has-rir' : ''}"><span></span><span>${hu || `Peso ${unitShort(list[0].unit)}`}</span><span>Izq</span><span>Der</span>
       ${rir ? `<span class="rir-h">RIR${infoBtn('rir')}</span>` : ''}<span></span></div>${rir ? infoBox('rir') : ''}`;
-    return `<div class="set set-head${rir ? ' has-rir' : ''}${hu ? ' no-u' : ''}"><span></span><span>${hu || 'Peso'}</span>${hu ? '' : '<span></span>'}<span></span><span>${rir ? 'Reps' : 'Repeticiones'}</span>
+    return `<div class="set set-head${rir ? ' has-rir' : ''}${hu ? ' no-u' : ''}"><span></span><span>${hu || 'Peso'}</span>${hu ? '' : '<span></span>'}<span></span><span>Repeticiones</span>
       ${rir ? `<span class="rir-h">RIR${infoBtn('rir')}</span>` : ''}<span></span></div>${rir ? infoBox('rir') : ''}`;
   };
   const exerciseBlock = (ex, i) => {
@@ -3141,7 +3145,7 @@ function viewSession(id) {
         || '<span class="muted">Sin series para comparar</span>';
     return `<section class="card">
       <div class="ex-link">
-        <a href="#/ejercicio/${encodeURIComponent(ex.exerciseId)}">${esc(ex.name)} <span class="chev">›</span></a>
+        <a href="#/ejercicio/${encodeURIComponent(ex.exerciseId)}">${nameChev(ex.name)}</a>
         <span class="tally">${tally}</span>
       </div>
       <div class="sets-list">${chips}</div>
@@ -9020,7 +9024,7 @@ function paintTimer() {
     b.classList.toggle('running', !!active && left > 0);
     b.classList.toggle('done', !!active && left <= 0);
     const pre = b.dataset.pre || '';
-    b.textContent = !active ? `Rest ${pre}${fmtRest(d.exercises[i].rest)}` : left > 0 ? `Rest ${pre}${fmtRest(left)}` : '¡A darle!';
+    b.textContent = !active ? `Descanso ${pre}${fmtRest(d.exercises[i].rest)}` : left > 0 ? `Descanso ${pre}${fmtRest(left)}` : '¡A darle!';
   });
 
   const bar = document.getElementById('restbar');
@@ -9030,7 +9034,7 @@ function paintTimer() {
   const ex = d.exercises[t.i];
   bar.classList.toggle('done', left <= 0);
   bar.querySelector('.rb-text').textContent = left > 0
-    ? `Rest · ${ex ? ex.name : ''} · ${fmtRest(left)}`
+    ? `Descanso ${fmtRest(left)} · ${ex ? ex.name : ''}`
     : `¡A darle! · ${ex ? ex.name : ''}`;
 }
 

@@ -1518,3 +1518,7 @@ body.viewing .free-start { display: none; }
 /* La unidad va en el título de la columna: las filas no llevan "kg" / "pl." / "lb" */
 .set.no-u { grid-template-columns: var(--n, 26px) 1fr 12px 1fr 20px; }
 .set.no-u.has-rir { grid-template-columns: var(--n, 26px) 1fr 12px 1fr 44px 20px; }
+.nw { white-space: nowrap; }
+/* Botones del ejercicio al entrenar (+ serie · Descanso · Historial): en una sola fila también a 360 px */
+[data-ex] .ex-actions { flex-wrap: nowrap; gap: 6px; }
+[data-ex] .ex-actions .btn { flex: 1 1 auto; min-width: 0; padding: 0 8px; white-space: nowrap; font-size: 15px; }
