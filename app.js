@@ -2349,14 +2349,14 @@ function viewWorkout() {
       ${bestLine((dropBests.get(i)[j] || [])[dKey(x, k)], true, uInHead)}` : `
       <div class="set drop ${ex.side ? 'side' : ''} ${ex.rir ? 'has-rir' : ''} ${noU ? 'no-u' : ''}">
         <span class="n">↓</span>
-        <input inputmode="decimal" enterkeyhint="next" data-bind="dw" data-i="${i}" data-j="${j}" data-k="${k}" value="${esc(x.w)}" placeholder="${esc(x.pw || '')}" aria-label="Peso bajada ${k + 1} de la serie ${label}">
+        <input inputmode="decimal" enterkeyhint="next" data-bind="dw" data-i="${i}" data-j="${j}" data-k="${k}" value="${esc(x.w)}" placeholder="${esc(x.pw || ex.unit)}" aria-label="Peso bajada ${k + 1} de la serie ${label}">
         ${dReps(x, k, 'bajada')}
         ${ex.rir ? '<span></span>' : ''}
         <span class="mark-cell" data-mark="${i}-${j}-${k}" data-action="mark-why" data-key="${i}-${j}-${k}">${markSpan(dropCmp(x, ex, (dropBests.get(i)[j] || [])[k]))}</span>
       </div>
       ${whyPop(`${i}-${j}-${k}`, liveSet(x, { ...ex, rir: false }), (dropBests.get(i)[j] || [])[k], ex)}
       ${bestLine((dropBests.get(i)[j] || [])[k], true, uInHead)}`).join('');
-    const wPh = s.pw || (lastreEx(ex) ? '0' : '');
+    const wPh = s.pw || (lastreEx(ex) ? '0' : ex.unit);   // vacía: la unidad (kg, lb o placas)
     const rPh = (pr, side) => repsFor(ex, j) || pr || side;
     if (ex.side) return `
       <div class="set side ${ex.rir ? 'has-rir' : ''}">
